@@ -77,6 +77,7 @@ window.I18n = (function () {
     'Вверх и вниз': 'Up and down',
     'Масштаб': 'Zoom',
     'Отразить': 'Mirror',
+    'Повернуть': 'Rotate',
     'Сбросить': 'Reset',
     'Яркость': 'Brightness',
     'Контраст': 'Contrast',

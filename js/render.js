@@ -410,13 +410,13 @@
      x и y это доли окна: при отражении сдвиг идёт в обратную сторону, чтобы на экране совпасть с жестом. */
   function coverGeom(slot, rect) {
     const { sw, sh } = slot.src;
-    const k = Math.max(rect.w / sw, rect.h / sh) * slot.zoom;
-    const dw = sw * k;
-    const dh = sh * k;
+    const sideways = slot.turn % 180 !== 0;
+    const k = Math.max(rect.w / (sideways ? sh : sw), rect.h / (sideways ? sw : sh)) * slot.zoom;
     return {
-      dw, dh,
-      dx: rect.x + (rect.w - dw) / 2 + (slot.flip ? -slot.x : slot.x) * rect.w,
-      dy: rect.y + (rect.h - dh) / 2 + slot.y * rect.h,
+      dw: sw * k,
+      dh: sh * k,
+      cx: rect.x + rect.w / 2 + (slot.flip ? -slot.x : slot.x) * rect.w,
+      cy: rect.y + rect.h / 2 + slot.y * rect.h,
     };
   }
 
@@ -485,7 +485,9 @@
         x.translate(rect.x * 2 + rect.w, 0);
         x.scale(-1, 1);
       }
-      x.drawImage(slot.src.el, g.dx, g.dy, g.dw, g.dh);
+      x.translate(g.cx, g.cy);
+      x.rotate((slot.turn * Math.PI) / 180);
+      x.drawImage(slot.src.el, -g.dw / 2, -g.dh / 2, g.dw, g.dh);
       x.restore();
     });
     if (!neutral(s.adjust)) applyAdjust(x, c.width, c.height, s.adjust);

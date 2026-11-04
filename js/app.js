@@ -37,7 +37,7 @@
 
   const sample = sampleScene();
   const sampleSrc = { kind: 'sample', el: sample, sw: sample.width, sh: sample.height };
-  const newSlot = (src) => ({ src, x: 0, y: 0, zoom: 1, flip: false });
+  const newSlot = (src) => ({ src, x: 0, y: 0, zoom: 1, flip: false, turn: 0 });
 
   const card = $('card');
   const ctx = card.getContext('2d');
@@ -237,15 +237,17 @@
 
   async function takePhoto() {
     const flip = Camera.mirrored;
+    const { turn } = slots[0];
     const src = await imageSrc(await Camera.snapshot());
     slots = [newSlot(src)];
-    slots[0].flip = flip;
+    Object.assign(slots[0], { flip, turn });
     goEdit();
   }
 
   async function takeClip() {
     if (recording) return recording.stop();
     const flip = Camera.mirrored;
+    const { turn } = slots[0];
     $('shutter').classList.add('rec');
     recording = Camera.record(CLIP_MS);
     const blob = await recording.done;
@@ -258,7 +260,7 @@
       return toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
     }
     slots = [newSlot(src)];
-    slots[0].flip = flip;
+    Object.assign(slots[0], { flip, turn });
     goEdit();
   }
 
@@ -362,7 +364,7 @@
       Store.set('draft', {
         state,
         mode,
-        slots: slots.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, blob: s.src && s.src.blob, kind: s.src && s.src.kind })),
+        slots: slots.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, blob: s.src && s.src.blob, kind: s.src && s.src.kind })),
         bgBlob: assets.bgBlob,
         maskBlob: assets.maskBlob,
       });
@@ -376,7 +378,7 @@
     const restored = [];
     for (const s of draft.slots) {
       const src = !s.blob ? sampleSrc : s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
-      restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip });
+      restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0 });
     }
     slots = restored;
     if (draft.bgBlob) {
@@ -1049,10 +1051,15 @@
       const s = slots[activeSlot];
       if (s) { s.flip = !s.flip; update(); }
     };
+    /* У отражённого снимка поворот идёт в обратную сторону, а на экране всегда по часовой. */
+    $('slotTurn').onclick = () => {
+      const s = slots[activeSlot];
+      if (s) { s.turn = (s.turn + (s.flip ? 270 : 90)) % 360; update(); }
+    };
     $('slotReset').onclick = () => {
       const s = slots[activeSlot];
       if (!s) return;
-      Object.assign(s, { x: 0, y: 0, zoom: 1 });
+      Object.assign(s, { x: 0, y: 0, zoom: 1, turn: 0 });
       syncSlotUI();
       update();
     };
