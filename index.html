@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Lunajour</title>
+<meta name="description" content="Фото сквозь звёзды, точки и слова: карточки для сторис прямо на телефоне.">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Lunajour">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Caveat:wght@700&family=Golos+Text:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Unbounded:wght@800;900&family=Yeseva+One&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app">
+  <header class="top">
+    <div class="brand">
+      <span class="logo">Lunajour</span>
+      <div class="deco" id="deco"></div>
+    </div>
+    <div class="top-side">
+      <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
+        <button type="button" data-v="ru">RU</button>
+        <button type="button" data-v="en">EN</button>
+      </div>
+      <span class="readout" id="readout"></span>
+    </div>
+  </header>
+
+  <main class="stage" id="stage">
+    <div class="floaters" id="floaters" aria-hidden="true"></div>
+    <canvas id="card" aria-label="Карточка"></canvas>
+    <span class="tag" id="sampleTag">пример</span>
+    <div class="countdown" id="countdown" hidden></div>
+    <div class="starter" id="starter">
+      <button class="btn primary" id="startCamera" type="button">Включить камеру</button>
+      <button class="btn" id="startUpload" type="button">Загрузить фото</button>
+      <button class="btn" id="startSample" type="button">Попробовать на примере</button>
+    </div>
+  </main>
+
+  <aside class="dock">
+    <div class="bar" id="shootBar">
+      <div class="seg" id="modeSeg" role="radiogroup" aria-label="Режим съёмки">
+        <button type="button" data-v="photo">Фото</button>
+        <button type="button" data-v="video">Видео 5 с</button>
+        <button type="button" data-v="booth">Будка</button>
+      </div>
+      <div class="shoot-row">
+        <button class="btn small" id="uploadBtn" type="button">Галерея</button>
+        <button class="shutter" id="shutter" type="button" aria-label="Снять"></button>
+        <div class="stack">
+          <button class="btn small" id="flipCam" type="button">Камера</button>
+          <button class="btn small" id="zoomBtn" type="button">1×</button>
+          <button class="btn small" id="torchBtn" type="button" hidden>Вспышка</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="bar row" id="editBar" hidden>
+      <button class="btn" id="retake" type="button">Новый снимок</button>
+      <button class="btn primary" id="finish" type="button">Готово</button>
+    </div>
+
+    <nav class="tabs" id="tabs" role="tablist" aria-label="Настройки карточки">
+      <button type="button" role="tab" data-tab="motif">Фигуры</button>
+      <button type="button" role="tab" data-tab="paper">Бумага</button>
+      <button type="button" role="tab" data-tab="photo">Кадр</button>
+      <button type="button" role="tab" data-tab="color">Цвет</button>
+      <button type="button" role="tab" data-tab="note">Подпись</button>
+      <button type="button" role="tab" data-tab="format">Формат</button>
+    </nav>
+
+    <div class="panels">
+      <section class="panel" data-panel="motif">
+        <div class="chips" id="motifCats"></div>
+        <div class="thumbs" id="motifGrid"></div>
+        <label class="field" id="wordField" hidden>Своё слово
+          <input id="word" type="text" maxlength="24" data-bind="word" placeholder="HOME">
+        </label>
+        <div class="chips" id="wordFonts" hidden></div>
+        <p class="hint" id="fontHint" hidden></p>
+        <div class="group" id="handTools" hidden>
+          <span class="label">Добавить фигуру</span>
+          <div class="palette" id="palette"></div>
+          <p class="hint">Перетаскивай фигуры прямо на карточке. Нажми на фигуру, чтобы изменить её размер и поворот.</p>
+          <label class="slider">Размер фигуры<input id="pieceSize" type="range" min="0.05" max="1.2" step="0.01"></label>
+          <label class="slider">Поворот<input id="pieceRot" type="range" min="-180" max="180" step="1"></label>
+          <div class="row">
+            <button class="btn small" id="pieceCopy" type="button">Копия</button>
+            <button class="btn small" id="pieceDelete" type="button">Удалить</button>
+            <button class="btn small" id="pieceClear" type="button">Очистить</button>
+          </div>
+        </div>
+        <button class="btn" id="maskUpload" type="button" hidden>Загрузить картинку для выреза</button>
+        <p class="hint" id="maskHint" hidden>Подойдёт PNG с прозрачностью или чёрная фигура на белом фоне.</p>
+        <div class="group" id="genTools">
+          <button class="btn" id="shuffle" type="button">Перемешать</button>
+          <label class="slider">Размер<input id="size" type="range" min="0.4" max="1.8" step="0.05" data-bind="size"></label>
+          <label class="slider">Плотность<input id="density" type="range" min="0.3" max="2" step="0.05" data-bind="density"></label>
+        </div>
+        <label class="slider">Фото вокруг фигур<input id="ghost" type="range" min="0" max="45" step="1" data-bind="ghost"></label>
+        <div class="group"><span class="label">Края</span>
+          <div class="seg" data-seg="effect">
+            <button type="button" data-v="none">Ровные</button>
+            <button type="button" data-v="shadow">Тень</button>
+          </div>
+        </div>
+        <label class="check"><input id="invert" type="checkbox" data-bind="invert">Наоборот: фигуры закрывают фото</label>
+      </section>
+
+      <section class="panel" data-panel="paper" hidden>
+        <div class="thumbs papers" id="paperList"></div>
+        <button class="btn" id="bgUpload" type="button">Загрузить свой фон</button>
+        <div class="thumbs" id="templateGrid"></div>
+        <div class="group"><span class="label">Цвет бумаги</span>
+          <div class="swatches" id="paperSwatches"></div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="photo" hidden>
+        <p class="hint">Двигай снимок прямо на карточке. На компьютере масштаб меняется колесом мыши.</p>
+        <div class="group" id="slotGroup" hidden><span class="label">Какой снимок</span>
+          <div class="seg" id="slotSeg">
+            <button type="button" data-v="0">Первый</button>
+            <button type="button" data-v="1">Второй</button>
+          </div>
+        </div>
+        <label class="slider">Влево и вправо<input id="slotX" type="range" min="-1" max="1" step="0.01"></label>
+        <label class="slider">Вверх и вниз<input id="slotY" type="range" min="-1" max="1" step="0.01"></label>
+        <label class="slider">Масштаб<input id="slotZoom" type="range" min="1" max="4" step="0.01"></label>
+        <div class="row">
+          <button class="btn" id="slotFlip" type="button">Отразить</button>
+          <button class="btn" id="slotReset" type="button">Сбросить</button>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="color" hidden>
+        <label class="slider">Яркость<input id="adjB" type="range" min="-60" max="60" data-bind="adjust.b"></label>
+        <label class="slider">Контраст<input id="adjC" type="range" min="-60" max="60" data-bind="adjust.c"></label>
+        <label class="slider">Насыщенность<input id="adjS" type="range" min="-100" max="80" data-bind="adjust.s"></label>
+        <label class="slider">Теплота<input id="adjW" type="range" min="-60" max="60" data-bind="adjust.w"></label>
+        <label class="slider">Зерно<input id="adjG" type="range" min="0" max="100" data-bind="adjust.g"></label>
+        <button class="btn" id="adjReset" type="button">Сбросить цвет</button>
+      </section>
+
+      <section class="panel" data-panel="note" hidden>
+        <label class="field">Подпись<input id="noteTitle" type="text" maxlength="60" data-bind="note.title" placeholder="Golden hour with you"></label>
+        <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
+        <label class="field">Дата<input id="noteDate" type="date" data-bind="note.date"></label>
+        <label class="field">Штамп настроения<input id="noteMood" type="text" maxlength="16" data-bind="note.mood" placeholder="warm"></label>
+        <div class="chips" id="moodChips"></div>
+        <div class="group"><span class="label">Шрифт</span><div class="chips" id="fontList"></div></div>
+        <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="textSwatches"></div></div>
+      </section>
+
+      <section class="panel" data-panel="format" hidden>
+        <div class="group"><span class="label">Где лежит бумага</span>
+          <div class="seg layouts" data-seg="paperPos">
+            <button type="button" data-v="bottom"><i class="lay col"><b class="f"></b><b class="p"></b></i>Снизу</button>
+            <button type="button" data-v="top"><i class="lay col"><b class="p"></b><b class="f"></b></i>Сверху</button>
+            <button type="button" data-v="left"><i class="lay"><b class="p"></b><b class="f"></b></i>Слева</button>
+            <button type="button" data-v="right"><i class="lay"><b class="f"></b><b class="p"></b></i>Справа</button>
+            <button type="button" data-v="pieces"><i class="lay"><b class="p"></b></i>Только бумага</button>
+            <button type="button" data-v="photo"><i class="lay"><b class="f"></b></i>Только фото</button>
+          </div>
+        </div>
+        <div class="group"><span class="label">Размер карточки</span>
+          <div class="ratios" id="ratioList"></div>
+        </div>
+      </section>
+    </div>
+  </aside>
+</div>
+
+<dialog class="sheet" id="exportSheet" aria-labelledby="exportTitle">
+  <div class="sheet-head">
+    <h2 id="exportTitle">Куда отправить карточку</h2>
+    <button class="btn small" id="exportClose" type="button">Закрыть</button>
+  </div>
+  <div class="sheet-list">
+    <button class="btn primary" id="saveCard" type="button">Сохранить карточку</button>
+    <button class="btn" id="saveStory" type="button">Сохранить для сторис 9:16</button>
+    <button class="btn" id="saveVideo" type="button">Сохранить видео 5 с</button>
+    <button class="btn" id="shareCard" type="button" hidden>Поделиться</button>
+  </div>
+  <p class="hint" id="exportStatus" role="status"></p>
+</dialog>
+
+<div class="toast" id="toast" role="status" hidden></div>
+<input id="filePhoto" type="file" accept="image/*,video/*" multiple hidden>
+<input id="fileBg" type="file" accept="image/*" hidden>
+<input id="fileMask" type="file" accept="image/*" hidden>
+
+<script src="js/i18n.js"></script>
+<script src="js/motifs.js"></script>
+<script src="js/render.js"></script>
+<script src="js/decor.js"></script>
+<script src="js/templates.js"></script>
+<script src="js/store.js"></script>
+<script src="js/camera.js"></script>
+<script src="js/export.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
