@@ -41,25 +41,21 @@
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
     </button>
     <div class="countdown" id="countdown" hidden></div>
-    <div class="starter" id="starter">
-      <button class="btn primary" id="startCamera" type="button">Камера</button>
-      <button class="btn" id="startUpload" type="button">Загрузить</button>
-      <button class="btn" id="startSample" type="button">Пример</button>
-    </div>
   </main>
 
   <aside class="dock">
     <button class="grip" id="dockGrip" type="button" aria-label="Панель на весь экран" aria-expanded="false"><i></i></button>
     <div class="bar" id="shootBar">
-      <div class="seg" id="modeSeg" role="radiogroup" aria-label="Режим съёмки">
+      <div class="seg modes" id="modeSeg" role="radiogroup" aria-label="Режим съёмки">
         <button type="button" data-v="photo">Фото</button>
         <button type="button" data-v="video">Видео 5 с</button>
         <button type="button" data-v="booth">Будка</button>
       </div>
       <div class="shoot-row">
         <button class="btn small" id="uploadBtn" type="button">Галерея</button>
-        <button class="shutter" id="shutter" type="button" aria-label="Снять"></button>
-        <div class="stack">
+        <button class="shutter" id="shutter" type="button" aria-label="Камера"></button>
+        <button class="btn small" id="startSample" type="button">Пример</button>
+        <div class="stack" id="camTools">
           <button class="btn small" id="flipCam" type="button">Камера</button>
           <button class="btn small" id="zoomBtn" type="button">1×</button>
           <button class="btn small" id="torchBtn" type="button" hidden>Вспышка</button>

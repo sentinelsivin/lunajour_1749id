@@ -160,21 +160,6 @@ button { cursor: pointer; }
   text-shadow: 0 4px 28px rgba(49, 113, 198, .9);
   pointer-events: none;
 }
-.starter {
-  position: absolute;
-  left: 50%;
-  bottom: 10px;
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  width: min(420px, calc(100% - 32px));
-}
-.starter .btn { flex: 1 1 40%; padding-inline: 6px; font-size: 11px; }
-.starter .primary { flex-basis: 100%; }
-/* Пока видны кнопки старта, карточка поднимается и не прячется под ними. */
-.app:not(.view) .stage:has(.starter:not([hidden])) #card { bottom: 100px; max-height: calc(100% - 114px); }
-
 .expand {
   position: absolute;
   top: 10px;
@@ -193,7 +178,7 @@ button { cursor: pointer; }
 /* Карточка на весь экран: нажатие в любом месте возвращает обратно. */
 .app.view .stage { position: fixed; inset: 0; z-index: 25; background: var(--ink); }
 .app.view #card { max-width: 100%; max-height: 100%; border-radius: 0; box-shadow: none; pointer-events: none; }
-.app.view .starter, .app.view .tag, .app.view .floaters { display: none; }
+.app.view .tag, .app.view .floaters { display: none; }
 
 .dock {
   grid-area: dock;
@@ -210,6 +195,9 @@ button { cursor: pointer; }
 .row > .btn { flex: 1; }
 .shoot-row { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
 .shoot-row > .btn { justify-self: start; }
+.shoot-row > #startSample { justify-self: end; }
+/* Боковые кнопки тише затвора: он здесь главный. */
+.shoot-row .btn { border-color: transparent; background: none; }
 .stack { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 .shutter {
@@ -224,6 +212,11 @@ button { cursor: pointer; }
 }
 .shutter:active { transform: scale(.92); }
 .shutter.rec { background: #d7263d; }
+
+/* Режимы съёмки как в камере телефона: просто слова, выбранное выделено цветом. */
+.seg.modes { justify-content: center; gap: 22px; border: 0; overflow: visible; }
+.seg.modes button, .seg.modes button:first-child { flex: none; padding: 4px 2px; border: 0; }
+.seg.modes button.on { background: none; color: var(--accent-light); }
 
 .btn {
   padding: 10px 14px;
@@ -446,16 +439,28 @@ button { cursor: pointer; }
   #card { max-width: calc(100% - 16px); max-height: calc(100% - 12px); }
   .tag { top: 6px; left: 8px; }
   .expand { top: 6px; right: 8px; }
-  /* Кнопки старта стоят в один ряд и заменяют затвор, пока камера выключена. */
-  .starter { bottom: 6px; flex-wrap: nowrap; gap: 6px; width: calc(100% - 16px); }
-  .starter .btn, .starter .primary { flex: 1 1 0; padding: 8px 4px; letter-spacing: .06em; }
-  .app:not(.view) .stage:has(.starter:not([hidden])) #card { bottom: 44px; max-height: calc(100% - 52px); }
-  .app:has(.starter:not([hidden])) .shoot-row { display: none; }
 
-  .dock { border-left: 0; border-top: 1px solid var(--hairline); }
+  /* Панель лежит поверх пустого ряда сетки, поэтому её высота меняется плавно и не двигает карточку. */
+  .dock {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 22;
+    height: 38dvh;
+    border-left: 0;
+    border-top: 1px solid var(--hairline);
+    transition: height .34s cubic-bezier(.22, 1, .36, 1), padding-top .34s cubic-bezier(.22, 1, .36, 1);
+  }
   .grip { display: block; flex: none; width: 100%; padding: 7px 0; border: 0; background: none; touch-action: none; }
   .grip i { display: block; width: 44px; height: 4px; margin: 0 auto; border-radius: 2px; background: var(--muted); }
-  .bar { padding: 0 12px 6px; gap: 6px; }
+  .bar {
+    max-height: 130px;
+    padding: 0 12px 6px;
+    gap: 6px;
+    overflow: hidden;
+    transition: max-height .34s cubic-bezier(.22, 1, .36, 1), padding-bottom .34s, opacity .2s, visibility .34s;
+  }
   .seg button { padding: 6px 4px; }
   .shutter { width: 52px; height: 52px; }
   .tabs button { padding: 8px 7px; }
@@ -468,14 +473,27 @@ button { cursor: pointer; }
   .thumbs { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 84px; align-items: start; overflow-x: auto; scrollbar-width: none; }
   .thumbs.papers { grid-template-columns: none; grid-auto-columns: 120px; }
 
-  .app.dock-full .dock { position: fixed; inset: 0; z-index: 22; padding-top: env(safe-area-inset-top); }
-  .app.dock-full .bar { display: none; }
+  .app.dock-full .dock { height: 100dvh; padding-top: env(safe-area-inset-top); }
+  .app.dock-full .bar { max-height: 0; padding-bottom: 0; border-bottom-width: 0; opacity: 0; visibility: hidden; }
+
+  /* Превью перестраиваются из полосы в сетку, и проявление скрывает этот скачок. */
+  .panels { animation: panelStrip .3s ease-out; }
+  .app.dock-full .panels { animation: panelGrid .3s ease-out; }
   .app.dock-full .chips { flex-wrap: wrap; }
   .app.dock-full .thumbs { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); overflow-x: visible; }
   .app.dock-full .thumbs.papers { grid-template-columns: repeat(2, 1fr); }
 }
 
+@keyframes panelStrip { from { opacity: 0; } }
+@keyframes panelGrid { from { opacity: 0; } }
+
+/* Карточка плавно вырастает на весь экран и возвращается на место. */
+#card { view-transition-name: card; }
+::view-transition-group(card) { animation-duration: .3s; animation-timing-function: cubic-bezier(.22, 1, .36, 1); }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: .24s; }
+
 @media (prefers-reduced-motion: reduce) {
-  .shutter { transition: none; }
+  .shutter, .dock, .bar { transition: none; }
+  .panels, .app.dock-full .panels { animation: none; }
   .logo, .floaters svg { animation: none; }
 }

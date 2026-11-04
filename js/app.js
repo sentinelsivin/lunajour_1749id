@@ -111,7 +111,11 @@
   }
 
   function syncStarter() {
-    $('starter').hidden = phase !== 'shoot' || Camera.active || slots.some((s) => s.src && s.src.kind !== 'sample');
+    /* Пока камера выключена, затвор её включает, а режимы съёмки и её кнопки не нужны. */
+    const idle = phase === 'shoot' && !Camera.active && !slots.some((s) => s.src && s.src.kind !== 'sample');
+    $('modeSeg').hidden = idle;
+    $('camTools').hidden = idle;
+    $('startSample').hidden = !idle;
     $('sampleTag').hidden = !slots.some((s) => s.src && s.src.kind === 'sample');
   }
 
@@ -858,8 +862,13 @@
     const app = document.querySelector('.app');
     const grip = $('dockGrip');
     const setView = (on) => {
-      app.classList.toggle('view', on);
-      $('expandCard').setAttribute('aria-pressed', on);
+      const apply = () => {
+        app.classList.toggle('view', on);
+        $('expandCard').setAttribute('aria-pressed', on);
+      };
+      const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (document.startViewTransition && !calm) document.startViewTransition(apply);
+      else apply();
     };
     const setFull = (on) => {
       app.classList.toggle('dock-full', on);
@@ -973,8 +982,7 @@
     });
 
     $('shutter').onclick = shutter;
-    $('startCamera').onclick = () => openCamera(Camera.start);
-    $('startUpload').onclick = $('uploadBtn').onclick = () => $('filePhoto').click();
+    $('uploadBtn').onclick = () => $('filePhoto').click();
     $('startSample').onclick = goEdit;
     $('flipCam').onclick = () => {
       if (!Camera.active) return openCamera(Camera.start);

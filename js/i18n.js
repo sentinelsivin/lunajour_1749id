@@ -4,7 +4,6 @@ window.I18n = (function () {
   const EN = {
     /* съёмка */
     'пример': 'sample',
-    'Загрузить': 'Upload',
     'Пример': 'Sample',
     'Карточка на весь экран': 'Card full screen',
     'Панель на весь экран': 'Panel full screen',
