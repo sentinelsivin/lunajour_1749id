@@ -18,7 +18,7 @@
     pieces: [],
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5',
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
-    note: { title: SAMPLE_TITLE, place: '', date: today(), mood: '', font: 'sexsmith', color: 'auto' },
+    note: { title: SAMPLE_TITLE, place: '', date: today(), showDate: true, mood: '', font: 'sexsmith', color: 'auto' },
   });
 
   let state = defaults();
@@ -373,6 +373,7 @@
 
   async function restoreDraft(draft) {
     state = { ...defaults(), ...draft.state };
+    state.note = { ...defaults().note, ...draft.state.note };
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];

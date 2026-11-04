@@ -76,6 +76,7 @@ window.I18n = (function () {
     'Влево и вправо': 'Left and right',
     'Вверх и вниз': 'Up and down',
     'Масштаб': 'Zoom',
+    'Показывать дату': 'Show date',
     'Отразить': 'Mirror',
     'Повернуть': 'Rotate',
     'Сбросить': 'Reset',

@@ -533,7 +533,7 @@
 
   function drawNote(ctx, s, L, W, H) {
     const n = s.note;
-    const meta = [n.place, formatDate(n.date)].filter(Boolean).join(' · ');
+    const meta = [n.place, n.showDate && formatDate(n.date)].filter(Boolean).join(' · ');
     if (!n.title && !meta && !n.mood) return;
     const font = FONTS.find((f) => f.id === n.font) || FONTS[0];
     const u = Math.min(W, H) / 1080;
