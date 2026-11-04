@@ -158,6 +158,13 @@
         <label class="check"><input id="noteShowDate" type="checkbox" data-bind="note.showDate">Показывать дату</label>
         <label class="field">Штамп настроения<input id="noteMood" type="text" maxlength="16" data-bind="note.mood" placeholder="warm"></label>
         <div class="chips" id="moodChips"></div>
+        <div class="group"><span class="label">Размер текста</span>
+          <div class="seg" data-seg="note.size">
+            <button type="button" data-v="s">Маленький</button>
+            <button type="button" data-v="m">Средний</button>
+            <button type="button" data-v="l">Большой</button>
+          </div>
+        </div>
         <div class="group"><span class="label">Шрифт</span><div class="chips" id="fontList"></div></div>
         <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="textSwatches"></div></div>
       </section>

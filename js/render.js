@@ -531,12 +531,15 @@
     return d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
+  const NOTE_SIZES = { s: 0.75, m: 1, l: 1.3 };
+
   function drawNote(ctx, s, L, W, H) {
     const n = s.note;
     const meta = [n.place, n.showDate && formatDate(n.date)].filter(Boolean).join(' · ');
     if (!n.title && !meta && !n.mood) return;
     const font = FONTS.find((f) => f.id === n.font) || FONTS[0];
     const u = Math.min(W, H) / 1080;
+    const scale = NOTE_SIZES[n.size] || 1;
     const overlay = !L.note;
     const box = L.note || { x: 0, y: H - 210 * u, w: W, h: 210 * u };
     const color = overlay ? '#ffffff' : n.color === 'auto' ? (luminance(s.paperColor) > 0.45 ? '#1b2522' : '#f6f6ef') : n.color;
@@ -557,13 +560,13 @@
     let titleSize = 0;
     if (n.title) {
       ctx.textAlign = 'left';
-      titleSize = fitText(ctx, n.title, font, textW, (meta ? 66 : 80) * u);
+      titleSize = fitText(ctx, n.title, font, textW, (meta ? 66 : 80) * u * scale);
       ctx.fillText(n.title, pad, bh / 2 + (meta ? -4 * u : titleSize * 0.34));
     }
     if (meta) {
       ctx.textAlign = 'left';
       const small = { ...font, weight: Math.min(font.weight, 500) };
-      const size = fitText(ctx, meta, small, textW, 32 * u);
+      const size = fitText(ctx, meta, small, textW, 32 * u * scale);
       ctx.fillText(meta, pad, n.title ? bh / 2 + size + 16 * u : bh / 2 + size * 0.34);
     }
     if (n.mood) {
