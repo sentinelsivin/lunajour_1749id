@@ -194,20 +194,42 @@
     return { kind: 'image', el, sw: el.naturalWidth, sh: el.naturalHeight, blob };
   }
 
+  const VIDEO_WAIT_MS = 15000;
+  const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp)$/i;
+
   async function videoSrc(blob) {
     const el = document.createElement('video');
     el.muted = true;
     el.loop = true;
     el.playsInline = true;
     el.setAttribute('playsinline', '');
+    el.preload = 'auto';
     el.src = URL.createObjectURL(blob);
-    await new Promise((resolve, reject) => {
-      el.onloadeddata = resolve;
-      el.onerror = () => reject(new Error('bad video'));
-    });
+    /* Телефонные браузеры могут не грузить кадры, пока видео не запущено. */
+    el.load();
     el.play().catch(() => {});
+    let timer = 0;
+    try {
+      await new Promise((resolve, reject) => {
+        el.onloadeddata = resolve;
+        el.onerror = () => reject(new Error('bad video'));
+        timer = setTimeout(() => reject(new Error('video timeout')), VIDEO_WAIT_MS);
+      });
+      /* Без кодека браузер открывает только звук, и кадра нет. */
+      if (!el.videoWidth) throw new Error('no picture');
+    } catch (err) {
+      el.pause();
+      URL.revokeObjectURL(el.src);
+      throw err;
+    } finally {
+      clearTimeout(timer);
+    }
     return { kind: 'video', el, sw: el.videoWidth, sh: el.videoHeight, blob };
   }
+
+  /* Браузер не всегда знает тип файла, тогда смотрим на расширение. */
+  const isVideoFile = (file) => file.type.startsWith('video/')
+    || (!file.type.startsWith('image/') && VIDEO_EXT.test(file.name));
 
   async function takePhoto() {
     const flip = Camera.mirrored;
@@ -225,7 +247,12 @@
     const blob = await recording.done;
     recording = null;
     $('shutter').classList.remove('rec');
-    const src = await videoSrc(blob);
+    let src;
+    try {
+      src = await videoSrc(blob);
+    } catch {
+      return toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+    }
     slots = [newSlot(src)];
     slots[0].flip = flip;
     goEdit();
@@ -275,7 +302,7 @@
         }
       } else {
         const file = list[0];
-        const src = file.type.startsWith('video/') ? await videoSrc(file) : await imageSrc(file);
+        const src = isVideoFile(file) ? await videoSrc(file) : await imageSrc(file);
         const i = phase === 'edit' ? activeSlot : 0;
         if (phase === 'edit') slots[i] = newSlot(src);
         else slots = [newSlot(src)];
