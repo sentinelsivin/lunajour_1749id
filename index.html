@@ -37,15 +37,19 @@
     <div class="floaters" id="floaters" aria-hidden="true"></div>
     <canvas id="card" aria-label="Карточка"></canvas>
     <span class="tag" id="sampleTag">пример</span>
+    <button class="expand" id="expandCard" type="button" aria-label="Карточка на весь экран" aria-pressed="false">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
+    </button>
     <div class="countdown" id="countdown" hidden></div>
     <div class="starter" id="starter">
-      <button class="btn primary" id="startCamera" type="button">Включить камеру</button>
-      <button class="btn" id="startUpload" type="button">Загрузить фото</button>
-      <button class="btn" id="startSample" type="button">Попробовать на примере</button>
+      <button class="btn primary" id="startCamera" type="button">Камера</button>
+      <button class="btn" id="startUpload" type="button">Загрузить</button>
+      <button class="btn" id="startSample" type="button">Пример</button>
     </div>
   </main>
 
   <aside class="dock">
+    <button class="grip" id="dockGrip" type="button" aria-label="Панель на весь экран" aria-expanded="false"><i></i></button>
     <div class="bar" id="shootBar">
       <div class="seg" id="modeSeg" role="radiogroup" aria-label="Режим съёмки">
         <button type="button" data-v="photo">Фото</button>

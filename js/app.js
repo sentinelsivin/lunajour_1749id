@@ -853,6 +853,54 @@
     }, { passive: false });
   }
 
+  /* ---------- весь экран ---------- */
+  function bindFullscreen() {
+    const app = document.querySelector('.app');
+    const grip = $('dockGrip');
+    const setView = (on) => {
+      app.classList.toggle('view', on);
+      $('expandCard').setAttribute('aria-pressed', on);
+    };
+    const setFull = (on) => {
+      app.classList.toggle('dock-full', on);
+      grip.setAttribute('aria-expanded', on);
+    };
+
+    /* Пока карточку двигают пальцем, нажатие на неё занято: открывает только кнопка в углу. */
+    $('stage').addEventListener('click', (e) => {
+      if (app.classList.contains('view')) return setView(false);
+      if (e.target.closest('#expandCard') || (e.target === card && !card.classList.contains('grab'))) setView(true);
+    });
+
+    let startY = 0;
+    let swiped = false;
+    grip.addEventListener('pointerdown', (e) => {
+      startY = e.clientY;
+      swiped = false;
+      grip.setPointerCapture(e.pointerId);
+    });
+    grip.addEventListener('pointerup', (e) => {
+      const dy = e.clientY - startY;
+      if (Math.abs(dy) < 24) return;
+      swiped = true;
+      setFull(dy < 0);
+    });
+    grip.addEventListener('click', () => {
+      if (!swiped) setFull(!app.classList.contains('dock-full'));
+      swiped = false;
+    });
+
+    /* На весь экран панель закрывает карточку, поэтому после выбора показываем результат. */
+    document.querySelector('.panels').addEventListener('click', (e) => {
+      if (e.target.closest('.thumb')) setFull(false);
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      setView(false);
+      setFull(false);
+    });
+  }
+
   /* ---------- экспорт ---------- */
   function exportButtons(disabled) {
     ['saveCard', 'saveStory', 'saveVideo', 'shareCard'].forEach((id) => { $(id).disabled = disabled; });
@@ -1008,6 +1056,7 @@
 
     bindDrag();
     bindPieces();
+    bindFullscreen();
     buildPalette();
   }
 

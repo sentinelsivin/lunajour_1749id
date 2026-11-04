@@ -4,9 +4,10 @@ window.I18n = (function () {
   const EN = {
     /* съёмка */
     'пример': 'sample',
-    'Включить камеру': 'Turn on camera',
-    'Загрузить фото': 'Upload photo',
-    'Попробовать на примере': 'Try the sample',
+    'Загрузить': 'Upload',
+    'Пример': 'Sample',
+    'Карточка на весь экран': 'Card full screen',
+    'Панель на весь экран': 'Panel full screen',
     'Режим съёмки': 'Capture mode',
     'Фото': 'Photo',
     'Видео 5 с': 'Video 5 s',
