@@ -14,6 +14,8 @@
   const PAPERS = [
     { id: 'smooth', name: 'Гладкая' },
     { id: 'lace', name: 'Кружево' },
+    { id: 'tablecloth', name: 'Скатерть' },
+    { id: 'tulle', name: 'Сетка' },
     { id: 'crumple', name: 'Мятая' },
     { id: 'gridfold', name: 'Мятая клетка' },
     { id: 'crochet', name: 'Вязание' },
@@ -178,6 +180,129 @@
     x.stroke();
   }
 
+  /* Гипюровая скатерть: белая сетка, цвет бумаги виден только в дырочках,
+     сверху плотные завитки, листья и розы с серым шнуром по краю, под всем мягкая тень. */
+  function tablecloth(x, w, h, u, rng, flowers = true) {
+    const L = canvas(w, h);
+    const l = L.getContext('2d');
+    l.lineCap = 'round';
+    l.lineJoin = 'round';
+
+    /* сетка из ромбиков */
+    const step = 12 * u;
+    const k = Math.tan(Math.PI / 3);
+    l.strokeStyle = '#fff';
+    l.lineWidth = Math.max(1, 2.8 * u);
+    l.beginPath();
+    for (let d = -h; d < w + h; d += step) {
+      l.moveTo(d, 0); l.lineTo(d + h / k, h);
+      l.moveTo(d, 0); l.lineTo(d - h / k, h);
+    }
+    l.stroke();
+
+    const cord = 'rgba(0,0,0,.2)';
+    /* линия со шнуром: сначала тёмная пошире, потом белая уже */
+    const corded = (path, width) => {
+      l.strokeStyle = cord;
+      l.lineWidth = width + 3 * u;
+      l.stroke(path);
+      l.strokeStyle = '#fff';
+      l.lineWidth = width;
+      l.stroke(path);
+    };
+    const shape = (path) => {
+      l.fillStyle = '#fff';
+      l.fill(path);
+      l.strokeStyle = cord;
+      l.lineWidth = 1.8 * u;
+      l.stroke(path);
+    };
+    const leaf = (cx, cy, len, a) => {
+      const p = new Path2D();
+      const ca = Math.cos(a);
+      const sa = Math.sin(a);
+      const pt = (fx, fy) => [cx + fx * len * ca - fy * len * sa, cy + fx * len * sa + fy * len * ca];
+      p.moveTo(...pt(0, 0));
+      p.quadraticCurveTo(...pt(0.45, -0.42), ...pt(1, 0));
+      p.quadraticCurveTo(...pt(0.45, 0.42), ...pt(0, 0));
+      shape(p);
+      const vein = new Path2D();
+      vein.moveTo(...pt(0.1, 0));
+      vein.lineTo(...pt(0.85, 0));
+      l.strokeStyle = cord;
+      l.lineWidth = 1.2 * u;
+      l.stroke(vein);
+    };
+    const rose = (cx, cy, r) => {
+      for (const [rr, n] of [[1, 9], [0.66, 7], [0.36, 5]]) {
+        const p = new Path2D();
+        for (let i = 0; i < n; i++) {
+          const a = (i / n) * 6.283 + rr;
+          const px = cx + Math.cos(a) * r * rr * 0.62;
+          const py = cy + Math.sin(a) * r * rr * 0.62;
+          p.moveTo(px + r * rr * 0.42, py);
+          p.arc(px, py, r * rr * 0.42, 0, 6.283);
+        }
+        shape(p);
+      }
+    };
+    const curl = (cx, cy, r, a0, dir) => {
+      const p = new Path2D();
+      for (let t = 0; t <= 1; t += 0.02) {
+        const a = a0 + dir * t * 6.283 * 1.15;
+        const rr = r * (1 - t * 0.75);
+        p[t ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr, cy + Math.sin(a) * rr);
+      }
+      corded(p, 9 * u);
+    };
+
+    /* узор по сетке ячеек со сдвигом, чтобы не выглядел штампом */
+    const cell = 230 * u;
+    if (flowers) for (let row = 0, cy = 0; cy < h + cell; row++, cy += cell * 0.75) {
+      for (let cx = row % 2 ? cell / 2 : 0; cx < w + cell; cx += cell) {
+        const ox = cx + rng.range(-0.15, 0.15) * cell;
+        const oy = cy + rng.range(-0.15, 0.15) * cell;
+        /* лоза: изогнутый стебель с листьями */
+        let px = ox - cell * 0.45;
+        let py = oy + rng.range(-0.2, 0.2) * cell;
+        let a = rng.range(-0.6, 0.6);
+        const stem = new Path2D();
+        stem.moveTo(px, py);
+        const knots = [];
+        for (let i = 0; i < 7; i++) {
+          a += rng.range(-0.7, 0.7);
+          const nx = px + Math.cos(a) * cell * 0.16;
+          const ny = py + Math.sin(a) * cell * 0.16;
+          stem.quadraticCurveTo(px + Math.cos(a - 0.5) * cell * 0.1, py + Math.sin(a - 0.5) * cell * 0.1, nx, ny);
+          knots.push([nx, ny, a]);
+          px = nx;
+          py = ny;
+        }
+        corded(stem, 9 * u);
+        knots.forEach(([kx, ky, ka], i) => leaf(kx, ky, cell * rng.range(0.17, 0.27), ka + (i % 2 ? 1 : -1) * rng.range(0.7, 1.2)));
+        curl(px, py, cell * 0.11, a + 1.6, rng() > 0.5 ? 1 : -1);
+        if (rng() > 0.2) rose(ox + rng.range(-0.25, 0.25) * cell, oy + rng.range(-0.3, 0.3) * cell, cell * rng.range(0.14, 0.21));
+      }
+    }
+
+    /* мелкие дырочки по всему кружеву, чтобы плотные места не были плоскими */
+    l.globalCompositeOperation = 'destination-out';
+    dotGrid(l, w, h, 6 * u, Math.max(0.4, 0.9 * u), 'rgba(0,0,0,.45)');
+    l.globalCompositeOperation = 'source-over';
+
+    /* тень под кружевом: та же картинка, только тёмная и чуть сдвинутая */
+    const S = canvas(w, h);
+    const s = S.getContext('2d');
+    s.drawImage(L, 0, 0);
+    s.globalCompositeOperation = 'source-in';
+    s.fillStyle = 'rgba(0,0,0,.22)';
+    s.fillRect(0, 0, w, h);
+    x.drawImage(S, 2.5 * u, 3 * u);
+    x.globalAlpha = 0.93;
+    x.drawImage(L, 0, 0);
+    x.globalAlpha = 1;
+  }
+
   function paintPaper(type, color, w, h) {
     {
       const c = canvas(w, h);
@@ -233,6 +358,10 @@
         for (let y = 0; y < h + tile; y += tile * 0.72, row++) {
           for (let v = row % 2 ? tile / 2 : 0; v < w + tile; v += tile) laceFlower(x, v, y, 88 * u, ink, u, rng);
         }
+      } else if (type === 'tablecloth') {
+        tablecloth(x, w, h, u, rng);
+      } else if (type === 'tulle') {
+        tablecloth(x, w, h, u, rng, false);
       } else if (type === 'crochet') {
         /* филейное вязание: столбики плотные там, где узор, и редкие в сетке вокруг */
         const cell = 16 * u;
