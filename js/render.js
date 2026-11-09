@@ -723,14 +723,106 @@
     ctx.drawImage(el, (W - sw * k) / 2, (H - sh * k) / 2, sw * k, sh * k);
   }
 
+  /* Коллаж: на бумаге лежат ячейки шаблона, в каждой свой снимок. Пустая ячейка показывает плюс. */
+  function renderCollage(ctx, s, slots, W, H, u, paper) {
+    const C = window.Collages;
+    const light = luminance(s.paperColor) > 0.45;
+    const ink = light ? '0,0,0' : '255,255,255';
+    const inkText = light ? '#1b2522' : '#f6f6ef';
+    const geo = C.geometry(s.collage, W, H, s, inkText);
+    /* выбранный цвет элемента шаблона или цвет по умолчанию */
+    const chosen = (s.tints && s.tints[s.collage]) || {};
+    const pick = (key, def) => (chosen[key] && chosen[key] !== 'auto' ? chosen[key] : def);
+    const opt = { title: s.note.title, ink: inkText, c: pick };
+    if (geo.tpl.deco) geo.tpl.deco(ctx, geo.box, u, geo, opt);
+    geo.cells.forEach((base, i) => {
+      const slot = slots[i];
+      const cell = { ...base };
+      if (base.tint) cell.color = pick(base.tint, base.color);
+      else if (C.COLORABLE.includes(base.frame)) cell.color = pick('frame', base.color);
+      if (base.tape) cell.tapeColor = pick('tape', undefined);
+      if (base.pin) cell.pinColor = pick('pins', undefined);
+      ctx.save();
+      C.clipBox(ctx, cell, geo.box);
+      ctx.translate(cell.x + cell.w / 2, cell.y + cell.h / 2);
+      ctx.rotate(cell.rot);
+      C.drawFrame(ctx, cell, u, buffer);
+      ctx.save();
+      C.clipCell(ctx, cell);
+      if (slot && slot.src) {
+        const photo = drawPhoto(s, [slot], cell.w, cell.h, `cell${i}`);
+        if (s.effect === 'shadow' && !cell.frame) {
+          ctx.shadowColor = 'rgba(0,0,0,.45)';
+          ctx.shadowBlur = 14 * u;
+          ctx.shadowOffsetY = 6 * u;
+        }
+        ctx.drawImage(photo, -cell.w / 2, -cell.h / 2, cell.w, cell.h);
+      } else {
+        /* цвет пустой ячейки зависит от того, что под ней: белая рамка, тёмная плёнка или бумага */
+        const tone = cell.frame || geo.tpl.under === 'light' ? '0,0,0' : geo.tpl.under === 'dark' ? '255,255,255' : ink;
+        ctx.fillStyle = `rgba(${tone},.1)`;
+        ctx.fillRect(-cell.w / 2, -cell.h / 2, cell.w, cell.h);
+        const r = Math.min(cell.w, cell.h) * 0.09;
+        ctx.strokeStyle = `rgba(${tone},.4)`;
+        ctx.lineWidth = Math.max(2, r * 0.18);
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(-r, 0); ctx.lineTo(r, 0);
+        ctx.moveTo(0, -r); ctx.lineTo(0, r);
+        ctx.stroke();
+      }
+      ctx.restore();
+      C.drawOver(ctx, cell, u, inkText);
+      ctx.restore();
+    });
+
+    /* вырезки: на фото на месте кусочка видна бумага, сам кусочек лежит в другом месте */
+    const base = geo.cells[0];
+    const source = slots[0] && slots[0].src ? drawPhoto(s, [slots[0]], base.w, base.h, 'cell0') : null;
+    geo.holes.forEach((r) => {
+      ctx.drawImage(paper, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
+    });
+    geo.pieces.forEach((p) => {
+      ctx.save();
+      if (p.border) {
+        ctx.fillStyle = p.border;
+        const b = Math.max(1.5, 2.5 * u);
+        ctx.fillRect(p.x - b, p.y - b, p.w + b * 2, p.h + b * 2);
+      }
+      if (source) {
+        const f = p.from;
+        ctx.drawImage(source, f.x, f.y, f.w, f.h, p.x, p.y, p.w, p.h);
+      }
+      ctx.restore();
+    });
+    /* текст фраз: слова, скобки и номера */
+    geo.items.forEach((it) => {
+      ctx.font = `${it.weight} ${it.size}px ${it.css}`;
+      ctx.fillStyle = it.color;
+      ctx.textAlign = it.align || 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(it.s, it.x, it.y);
+    });
+
+    const font = FONTS.find((f) => f.id === s.note.font) || FONTS[0];
+    if (geo.tpl.overlay) {
+      ctx.save();
+      geo.tpl.overlay(ctx, geo, u, { ...opt, font: font.css });
+      ctx.restore();
+    }
+    if (geo.note) drawNote(ctx, s, { note: geo.note }, W, H);
+  }
+
   function renderCard(ctx, s, slots, assets = {}) {
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
     const L = layout(s, W, H);
     const u = Math.min(W, H) / 1080;
 
-    ctx.drawImage(drawPaper(s.paper === 'own' ? 'smooth' : s.paper, s.paperColor, W, H), 0, 0);
+    const paper = drawPaper(s.paper === 'own' ? 'smooth' : s.paper, s.paperColor, W, H);
+    ctx.drawImage(paper, 0, 0);
     if (s.paper === 'own' && assets.bg) drawCover(ctx, assets.bg, assets.bg.naturalWidth, assets.bg.naturalHeight, W, H);
+    if (s.collage && window.Collages.byId(s.collage)) return renderCollage(ctx, s, slots, W, H, u, paper);
 
     const frame = L.photo || L.pieces;
     const dual = slots.length === 2 && L.photo && L.pieces;

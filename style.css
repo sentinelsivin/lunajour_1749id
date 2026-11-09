@@ -248,25 +248,24 @@ button { cursor: pointer; }
 .seg button:first-child { border-left: 0; }
 .seg button.on { background: rgba(49, 113, 198, .18); color: var(--bone); }
 
+/* Семь вкладок помещаются в один ряд; на совсем узком экране переносятся во вторую строку, а не обрезаются. */
 .tabs {
   display: flex;
-  gap: 2px;
-  padding: 0 8px;
-  overflow-x: auto;
-  scrollbar-width: none;
+  flex-wrap: wrap;
+  gap: 0 2px;
+  padding: 0 6px;
   border-bottom: 1px solid var(--hairline);
   flex: none;
 }
-.tabs::-webkit-scrollbar { display: none; }
 .tabs button {
   flex: 1 0 auto;
-  padding: 12px 7px;
+  padding: 12px 4px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: var(--muted);
   font: 10.5px var(--mono);
-  letter-spacing: .1em;
+  letter-spacing: .04em;
   text-transform: uppercase;
 }
 .tabs button.on { color: var(--bone); border-bottom-color: var(--accent-light); }
@@ -463,7 +462,7 @@ button { cursor: pointer; }
   }
   .seg button { padding: 6px 4px; }
   .shutter { width: 52px; height: 52px; }
-  .tabs button { padding: 8px 7px; }
+  .tabs button { padding: 8px 4px; }
   .panel { gap: 10px; padding: 10px 12px 16px; }
 
   /* В обычном виде ряды листаются вбок, чтобы над ними оставалось место для карточки. */

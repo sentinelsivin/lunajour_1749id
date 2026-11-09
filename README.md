@@ -20,6 +20,7 @@ node serve.mjs
 | Вид бумаги | Строка в `PAPERS` и ветка в `paintPaper` в `js/render.js` |
 | Фигура для ручной расстановки | `SYMBOLS` в `js/motifs.js`, контур в сетке 24 × 24 |
 | Пиксельный рисунок | Новый рисунок в `SPRITES` в `js/motifs.js` |
+| Шаблон коллажа | Строка в `COLLAGES` в `js/collages.js`: ячейки, рамки, подложка. Фразы и рамки вокруг людей раскладываются функцией `layout` |
 | Шаблон фона | Картинка в `templates/backgrounds` и строка в `js/templates.js` |
 | Перевод на английский | Словарь `EN` в `js/i18n.js`, ключ это русская строка |
 | Цвета бумаги и штампы настроения | `PAPER_COLORS` и `MOODS` в `js/app.js` |
@@ -43,6 +44,7 @@ node build.mjs
 
 - `js/motifs.js`: каталог фигур
 - `js/render.js`: сборка карточки
+- `js/collages.js`: шаблоны коллажей
 - `js/camera.js`: камера и запись клипа
 - `js/export.js`: сохранение картинок и видео
 - `js/store.js`: черновик на устройстве

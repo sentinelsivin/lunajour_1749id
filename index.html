@@ -70,6 +70,7 @@
 
     <nav class="tabs" id="tabs" role="tablist" aria-label="Настройки карточки">
       <button type="button" role="tab" data-tab="motif">Фигуры</button>
+      <button type="button" role="tab" data-tab="collage">Коллаж</button>
       <button type="button" role="tab" data-tab="paper">Бумага</button>
       <button type="button" role="tab" data-tab="photo">Кадр</button>
       <button type="button" role="tab" data-tab="color">Цвет</button>
@@ -82,7 +83,7 @@
         <div class="chips" id="motifCats"></div>
         <div class="thumbs" id="motifGrid"></div>
         <label class="field" id="wordField" hidden>Своё слово
-          <input id="word" type="text" maxlength="24" data-bind="word" placeholder="HOME">
+          <input id="word" type="text" maxlength="80" data-bind="word" placeholder="HOME">
         </label>
         <div class="chips" id="wordFonts" hidden></div>
         <p class="hint" id="fontHint" hidden></p>
@@ -115,6 +116,33 @@
         <label class="check"><input id="invert" type="checkbox" data-bind="invert">Наоборот: фигуры закрывают фото</label>
       </section>
 
+      <section class="panel" data-panel="collage" hidden>
+        <div class="thumbs" id="collageGrid"></div>
+        <div id="tintGroups"></div>
+        <div class="group" id="cellTools" hidden>
+          <div class="group" id="cellButtons">
+            <p class="hint">Нажми на ячейку на карточке, чтобы выбрать её. Несколько фото из галереи разложатся по пустым ячейкам. Текст и окошки фраз пишутся во вкладке «Подпись»: () ставит окошко.</p>
+            <div class="row">
+              <button class="btn" id="cellUpload" type="button">Фото в ячейку</button>
+              <button class="btn" id="cellShoot" type="button">Снять в ячейку</button>
+              <button class="btn" id="cellClear" type="button">Очистить</button>
+            </div>
+          </div>
+          <button class="btn" id="collageShuffle" type="button" hidden>Перемешать вырезки</button>
+          <div class="group" id="markTools" hidden>
+            <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть. Подписи берутся из вкладки «Подпись».</p>
+            <div class="row">
+              <button class="btn primary" id="markFind" type="button">Найти людей</button>
+              <button class="btn" id="markPhoto" type="button">Фото</button>
+            </div>
+            <div class="row">
+              <button class="btn" id="markDelete" type="button">Удалить рамку</button>
+              <button class="btn" id="markClear" type="button">Убрать все</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" data-panel="paper" hidden>
         <div class="thumbs papers" id="paperList"></div>
         <button class="btn" id="bgUpload" type="button">Загрузить свой фон</button>
@@ -126,6 +154,7 @@
 
       <section class="panel" data-panel="photo" hidden>
         <p class="hint">Двигай снимок прямо на карточке. На компьютере масштаб меняется колесом мыши.</p>
+        <p class="hint" id="cellHint" hidden>В коллаже сначала нажми на ячейку, потом двигай в ней снимок.</p>
         <div class="group" id="slotGroup" hidden><span class="label">Какой снимок</span>
           <div class="seg" id="slotSeg">
             <button type="button" data-v="0">Первый</button>
@@ -152,7 +181,7 @@
       </section>
 
       <section class="panel" data-panel="note" hidden>
-        <label class="field">Подпись<input id="noteTitle" type="text" maxlength="60" data-bind="note.title" placeholder="Golden hour with you"></label>
+        <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
         <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
         <label class="field">Дата<input id="noteDate" type="date" data-bind="note.date"></label>
         <label class="check"><input id="noteShowDate" type="checkbox" data-bind="note.showDate">Показывать дату</label>
@@ -170,7 +199,7 @@
       </section>
 
       <section class="panel" data-panel="format" hidden>
-        <div class="group"><span class="label">Где лежит бумага</span>
+        <div class="group" id="paperPosGroup"><span class="label">Где лежит бумага</span>
           <div class="seg layouts" data-seg="paperPos">
             <button type="button" data-v="bottom"><i class="lay col"><b class="f"></b><b class="p"></b></i>Снизу</button>
             <button type="button" data-v="top"><i class="lay col"><b class="p"></b><b class="f"></b></i>Сверху</button>
@@ -196,7 +225,7 @@
   <div class="sheet-list">
     <button class="btn primary" id="saveCard" type="button">Сохранить карточку</button>
     <button class="btn" id="saveStory" type="button">Сохранить для сторис 9:16</button>
-    <button class="btn" id="saveVideo" type="button">Сохранить видео 5 с</button>
+    <button class="btn" id="saveVideo" type="button">Сохранить видео</button>
     <button class="btn" id="shareCard" type="button" hidden>Поделиться</button>
   </div>
   <p class="hint" id="exportStatus" role="status"></p>
@@ -209,6 +238,7 @@
 
 <script src="js/i18n.js"></script>
 <script src="js/motifs.js"></script>
+<script src="js/collages.js"></script>
 <script src="js/render.js"></script>
 <script src="js/decor.js"></script>
 <script src="js/templates.js"></script>

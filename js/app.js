@@ -2,7 +2,7 @@
 (function () {
   const { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, makeRng, byId } = window.Motifs;
   const { RATIOS, PAPERS, FONTS, renderCard, sampleScene, layout, slotFrame, canvas, clearMasks, paintPaper, drawCover } = window.Render;
-  const { Camera, Export, Store, Templates, I18n } = window;
+  const { Camera, Export, Store, Templates, I18n, Collages } = window;
   const { t } = I18n;
 
   const $ = (id) => document.getElementById(id);
@@ -10,13 +10,14 @@
   const CLIP_MS = 5000;
   const PAPER_COLORS = ['#f0ede5', '#ffffff', '#efe2cb', '#b8c5d6', '#6c9fe0', '#a78bfa', '#f5a3c7', '#ffe27a', '#3171c6', '#3a1a5e', '#0d1a2e', '#0a0a0a'];
   const TEXT_COLORS = ['#0a0a0a', '#f0ede5', '#3171c6', '#a78bfa', '#d7263d'];
-  const MOODS = ['warm', 'calm', 'funny', 'miss you', 'yay', 'sleepy'];
+  const TINT_COLORS = ['#c0392b', '#f5a3c7', '#f4c6cf', '#e8913a', '#ffe27a', '#86c96b', '#7b8040', '#a9c1e6', '#6c9fe0', '#3171c6', '#a78bfa', '#fbfaf6', '#0a0a0a'];
+  const MOODS =['warm', 'calm', 'funny', 'miss you', 'yay', 'sleepy'];
 
   const today = () => new Date().toLocaleDateString('sv-SE');
   const defaults = () => ({
     motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, invert: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
-    paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5',
+    paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {},
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
     note: { title: SAMPLE_TITLE, place: '', date: today(), showDate: true, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
   });
@@ -34,10 +35,149 @@
   let busy = false;
   let dirty = true;
   let selected = -1;
+  let selectedMark = -1;
 
   const sample = sampleScene();
   const sampleSrc = { kind: 'sample', el: sample, sw: sample.width, sh: sample.height };
   const newSlot = (src) => ({ src, x: 0, y: 0, zoom: 1, flip: false, turn: 0 });
+
+  /* ---------- коллаж ---------- */
+  const collageTpl = () => (state.collage ? Collages.byId(state.collage) : null);
+  const collageGeo = () => Collages.geometry(state.collage, card.width, card.height, state);
+  /* Своё фото в ячейке есть, если это не пример и не живая камера. */
+  const hasPhoto = (s) => !!(s && s.src && s.src.kind !== 'sample' && s.src.kind !== 'live');
+  const nextEmpty = (from) => {
+    for (let k = 1; k <= slots.length; k++) {
+      const i = (from + k) % slots.length;
+      if (!hasPhoto(slots[i])) return i;
+    }
+    return -1;
+  };
+
+  /* Переход между карточкой и коллажами. Свои снимки переезжают по порядку, пустые места остаются пустыми.
+     Пока своих снимков нет, во всех ячейках пример, чтобы шаблон было видно. */
+  function setCollage(id) {
+    const own = slots.filter(hasPhoto);
+    state.collage = id;
+    selectedMark = -1;
+    const tpl = collageTpl();
+    const n = tpl ? Collages.count(id, state) : mode === 'booth' ? 2 : 1;
+    const filler = () => (own.length ? (tpl ? null : sampleSrc) : sampleSrc);
+    slots = Array.from({ length: n }, (_, i) => own[i] || newSlot(filler()));
+    activeSlot = Math.max(0, own.length < n ? own.length : 0);
+    if (Camera.active && phase === 'shoot' && liveSrc) {
+      slots[activeSlot] = newSlot(liveSrc);
+      slots[activeSlot].flip = Camera.mirrored;
+    }
+    syncKind();
+    syncSlotUI();
+    update();
+  }
+
+  /* В коллаже фигуры, раскладка бумаги и будка не нужны: прячем их. */
+  function syncKind() {
+    const on = !!collageTpl();
+    document.querySelector('[data-tab="motif"]').hidden = on;
+    $('paperPosGroup').hidden = on;
+    $('cellTools').hidden = !on;
+    $('cellHint').hidden = !on;
+    const booth = $('modeSeg').querySelector('[data-v="booth"]');
+    booth.hidden = on;
+    if (on && mode === 'booth') setMode('photo');
+    if (on && tab === 'motif') setTab('collage');
+    syncCollages();
+  }
+
+  /* Миниатюры шаблонов рисуются той же отрисовкой, что и карточка, с примером в ячейках. */
+  const collageThumbs = new Map();
+  function collageThumb(id) {
+    const key = `${id}|${I18n.lang}`;
+    if (collageThumbs.has(key)) return collageThumbs.get(key);
+    const c = canvas(120, 150);
+    const s = { ...defaults(), paper: 'smooth', collage: id, note: { ...defaults().note, title: '', showDate: false } };
+    const n = id ? Collages.count(id, s) : 1;
+    /* ошибка в одном шаблоне не должна ломать весь экран: такой просто останется без миниатюры */
+    try {
+      renderCard(c.getContext('2d'), s, Array.from({ length: n }, () => newSlot(sampleSrc)), {});
+    } catch (err) {
+      console.warn('collage thumb', id, err);
+    }
+    collageThumbs.set(key, c);
+    return c;
+  }
+
+  function syncCollages() {
+    const grid = $('collageGrid');
+    grid.replaceChildren();
+    [{ id: '', name: 'Обычная карточка' }, ...Collages.COLLAGES].forEach((tpl) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thumb';
+      b.classList.toggle('on', tpl.id === (state.collage || ''));
+      const c = canvas(120, 150);
+      c.getContext('2d').drawImage(collageThumb(tpl.id), 0, 0);
+      const label = document.createElement('span');
+      label.textContent = t(tpl.name);
+      b.append(c, label);
+      b.onclick = () => {
+        if (tpl.id !== (state.collage || '')) setCollage(tpl.id);
+      };
+      grid.append(b);
+    });
+    /* по ряду цветов на каждый элемент шаблона, который можно перекрасить; выбор помнится для каждого шаблона */
+    const groups = $('tintGroups');
+    groups.replaceChildren();
+    const id = state.collage;
+    Collages.paletteOf(id).forEach((item) => {
+      const group = document.createElement('div');
+      group.className = 'group';
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = t(item.name);
+      const row = document.createElement('div');
+      row.className = 'swatches';
+      group.append(label, row);
+      groups.append(group);
+      const current = (state.tints[id] && state.tints[id][item.key]) || 'auto';
+      swatches(row, TINT_COLORS, current, (c) => {
+        state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: c } };
+        syncCollages();
+        update();
+      }, t('Как в шаблоне'));
+    });
+    /* варианты шаблона: скобки, подписи, где фото */
+    const tpl = collageTpl();
+    ((tpl && tpl.choices) || []).forEach((item) => {
+      const group = document.createElement('div');
+      group.className = 'group';
+      const label = document.createElement('span');
+      label.className = 'label';
+      label.textContent = t(item.name);
+      const row = document.createElement('div');
+      row.className = 'chips';
+      group.append(label, row);
+      groups.append(group);
+      const current = (state.tints[id] && state.tints[id][item.key]) || item.def;
+      item.options.forEach(([value, name]) => chip(row, t(name), value === current, () => {
+        state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: value } };
+        syncCollages();
+        update();
+      }));
+    });
+    $('collageShuffle').hidden = !(tpl && tpl.shuffle);
+    $('markTools').hidden = !(tpl && tpl.marks);
+    $('cellButtons').hidden = !!(tpl && tpl.marks);
+  }
+
+  /* У фраз число окошек зависит от текста: добавляем пустые ячейки или убираем лишние, свои снимки не трогаем. */
+  function syncSlotCount() {
+    if (!collageTpl() || !collageTpl().layout) return;
+    const n = Collages.count(state.collage, state);
+    const anyOwn = slots.some(hasPhoto);
+    while (slots.length < n) slots.push(newSlot(anyOwn ? null : sampleSrc));
+    if (slots.length > n) slots = slots.slice(0, n);
+    activeSlot = Math.min(activeSlot, slots.length - 1);
+  }
 
   const card = $('card');
   const ctx = card.getContext('2d');
@@ -69,6 +209,34 @@
 
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
+    /* в коллаже обводим выбранную ячейку, пока открыт коллаж или кадр */
+    if (collageTpl() && collageTpl().marks && tab === 'collage') {
+      const b = collageGeo().marks[selectedMark];
+      if (!b) return;
+      ctx.save();
+      ctx.strokeStyle = '#6c9fe0';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(b.x - 5, b.y - 5, b.w + 10, b.h + 10);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#6c9fe0';
+      ctx.fillRect(b.x + b.w - 7, b.y + b.h - 7, 14, 14);
+      ctx.restore();
+      return;
+    }
+    if (collageTpl() && (tab === 'collage' || tab === 'photo')) {
+      const c = collageGeo().cells[activeSlot];
+      if (!c) return;
+      ctx.save();
+      ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
+      ctx.rotate(c.rot);
+      ctx.strokeStyle = '#6c9fe0';
+      ctx.lineWidth = 3;
+      ctx.setLineDash([10, 7]);
+      ctx.strokeRect(-c.w / 2 - 4, -c.h / 2 - 4, c.w + 8, c.h + 8);
+      ctx.restore();
+      return;
+    }
     const p = handMode() && state.pieces[selected];
     if (!p) return;
     const L = layout(state, card.width, card.height);
@@ -130,7 +298,9 @@
     boothIndex = 0;
     activeSlot = 0;
     const live = Camera.active ? liveSrc : sampleSrc;
-    slots = mode === 'booth' ? [newSlot(live), newSlot(Camera.active ? null : sampleSrc)] : [newSlot(live)];
+    const tpl = collageTpl();
+    if (tpl) slots = Array.from({ length: Collages.count(state.collage, state) }, (_, i) => newSlot(i === 0 ? live : Camera.active ? null : sampleSrc));
+    else slots = mode === 'booth' ? [newSlot(live), newSlot(Camera.active ? null : sampleSrc)] : [newSlot(live)];
     slots.forEach((s) => { s.flip = !!s.src && s.src.kind === 'live' && Camera.mirrored; });
     syncSlotUI();
     invalidate();
@@ -164,7 +334,14 @@
     $('torchBtn').hidden = !Camera.canTorch();
     $('zoomBtn').textContent = '1×';
     sizeCanvas();
-    if (boothIndex === 0) {
+    if (collageTpl()) {
+      /* в коллаже камера встаёт в выбранную ячейку, остальные снимки не трогаем */
+      if (!slots.some(hasPhoto)) resetSlots();
+      slots.forEach((s) => { if (s.src && s.src.kind === 'live') s.src = null; });
+      slots[activeSlot] = newSlot(liveSrc);
+      slots[activeSlot].flip = Camera.mirrored;
+      invalidate();
+    } else if (boothIndex === 0) {
       resetSlots();
     } else {
       slots[boothIndex].src = liveSrc;
@@ -236,10 +413,25 @@
   const isVideoFile = (file) => file.type.startsWith('video/')
     || (!file.type.startsWith('image/') && VIDEO_EXT.test(file.name));
 
+  /* Коллаж: снимок ложится в выбранную ячейку, камера переезжает в следующую пустую.
+     Когда пустых не осталось, переходим к настройке. */
+  function putIntoCell(src, flip, turn) {
+    slots[activeSlot] = newSlot(src);
+    Object.assign(slots[activeSlot], { flip, turn });
+    const next = nextEmpty(activeSlot);
+    if (next < 0) return goEdit();
+    activeSlot = next;
+    slots[next] = newSlot(liveSrc);
+    slots[next].flip = Camera.mirrored;
+    syncSlotUI();
+    invalidate();
+  }
+
   async function takePhoto() {
     const flip = Camera.mirrored;
-    const { turn } = slots[0];
+    const { turn } = slots[activeSlot] || slots[0];
     const src = await imageSrc(await Camera.snapshot());
+    if (collageTpl()) return putIntoCell(src, flip, turn);
     slots = [newSlot(src)];
     Object.assign(slots[0], { flip, turn });
     goEdit();
@@ -248,7 +440,7 @@
   async function takeClip() {
     if (recording) return recording.stop();
     const flip = Camera.mirrored;
-    const { turn } = slots[0];
+    const { turn } = slots[activeSlot] || slots[0];
     $('shutter').classList.add('rec');
     recording = Camera.record(CLIP_MS);
     const blob = await recording.done;
@@ -260,6 +452,7 @@
     } catch {
       return toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
     }
+    if (collageTpl()) return putIntoCell(src, flip, turn);
     slots = [newSlot(src)];
     Object.assign(slots[0], { flip, turn });
     goEdit();
@@ -286,6 +479,7 @@
     if (!Camera.active) return void openCamera(Camera.start);
     if (mode === 'photo') return takePhoto();
     if (mode === 'video') return takeClip();
+    if (collageTpl()) return takePhoto();
     return runBooth();
   }
 
@@ -295,6 +489,36 @@
     if (!list.length) return;
     clearSampleNote();
     try {
+      if (collageTpl()) {
+        /* первое фото в выбранную ячейку, остальные по пустым ячейкам дальше */
+        let i = activeSlot;
+        for (const file of list) {
+          const src = isVideoFile(file) ? await videoSrc(file) : await imageSrc(file);
+          slots[i] = newSlot(src);
+          activeSlot = i;
+          i = nextEmpty(i);
+          if (i < 0) break;
+        }
+        /* после примера остальные ячейки становятся пустыми, чтобы было видно, что ещё заполнить */
+        slots.forEach((s, k) => { if (s.src && s.src.kind === 'sample') slots[k] = newSlot(null); });
+        const left = slots.filter((s) => !hasPhoto(s)).length;
+        if (phase === 'shoot' && left) {
+          const next = nextEmpty(activeSlot);
+          activeSlot = next;
+          if (Camera.active) {
+            slots.forEach((s) => { if (s.src && s.src.kind === 'live') s.src = null; });
+            slots[next] = newSlot(liveSrc);
+            slots[next].flip = Camera.mirrored;
+          }
+          syncSlotUI();
+          syncStarter();
+          invalidate();
+          return toast(`${t('Осталось заполнить ячеек')}: ${left}`);
+        }
+        syncSlotUI();
+        if (phase === 'edit') return update();
+        return goEdit();
+      }
       if (mode === 'booth' && phase === 'shoot') {
         const images = list.filter((f) => f.type.startsWith('image/'));
         if (!images.length) return toast(t('Для будки нужны фотографии.'));
@@ -379,7 +603,9 @@
     markSeg($('modeSeg'), mode);
     const restored = [];
     for (const s of draft.slots) {
-      const src = !s.blob ? sampleSrc : s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
+      /* пустая ячейка коллажа так и остаётся пустой, а не превращается в пример */
+      const empty = draft.state.collage && s.kind !== 'sample';
+      const src = !s.blob ? (empty ? null : sampleSrc) : s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
       restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0 });
     }
     slots = restored;
@@ -394,6 +620,7 @@
       state.motif = motif;
     }
     category = byId(state.motif).cat;
+    activeSlot = 0;
     syncAll();
     goEdit();
   }
@@ -543,7 +770,7 @@
 
   /* ---------- ручная расстановка ---------- */
   const handMode = () => tab === 'motif' && !!byId(state.motif).usesPieces;
-  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || handMode());
+  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || handMode() || (tab === 'collage' && !!collageTpl()));
 
   function syncPieceTools() {
     const p = state.pieces[selected];
@@ -748,6 +975,7 @@
     FONTS.forEach((f) => {
       chip(fonts, t(f.name), f.id === state.note.font, () => {
         state.note.font = f.id;
+        syncSlotCount();
         syncNote();
         update();
       }).style.fontFamily = f.css;
@@ -782,7 +1010,11 @@
 
   /* ---------- кадрирование ---------- */
   function syncSlotUI() {
-    $('slotGroup').hidden = slots.length < 2;
+    $('slotGroup').hidden = slots.length < 2 || !!collageTpl();
+    if (collageTpl()) {
+      const s = slots[activeSlot];
+      $('cellClear').disabled = !hasPhoto(s);
+    }
     markSeg($('slotSeg'), activeSlot);
     const s = slots[activeSlot];
     if (!s) return;
@@ -793,6 +1025,7 @@
 
   /* Какой снимок под пальцем: в будке их два. */
   function slotAt(px, py) {
+    if (collageTpl()) return Collages.cellAt(collageGeo(), px, py);
     return slots.findIndex((s, i) => {
       const { area, rect } = slotFrame(state, i, slots.length, card.width, card.height);
       const x = px - area.x - rect.x;
@@ -802,6 +1035,15 @@
   }
 
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+
+  /* Размер окна снимка номер i: ячейка коллажа или половина карточки. */
+  function slotSize(i) {
+    if (collageTpl()) {
+      const c = collageGeo().cells[i];
+      return { w: c.w, h: c.h };
+    }
+    return slotFrame(state, i, slots.length, card.width, card.height).rect;
+  }
 
   function setZoom(value) {
     const s = slots[activeSlot];
@@ -816,15 +1058,27 @@
     let pinch = 0;
 
     card.addEventListener('pointerdown', (e) => {
-      if (tab !== 'photo' || !slots.length) return;
-      card.setPointerCapture(e.pointerId);
-      pointers.set(e.pointerId, e);
+      if (tab === 'collage' && collageTpl() && collageTpl().marks) return;
+      const picking = tab === 'collage' && !!collageTpl();
+      if ((tab !== 'photo' && !picking) || !slots.length) return;
       if (slots.length > 1) {
         const box = card.getBoundingClientRect();
         const i = slotAt(((e.clientX - box.left) / box.width) * card.width, ((e.clientY - box.top) / box.height) * card.height);
-        if (i >= 0) activeSlot = i;
+        if (i >= 0 && i !== activeSlot) {
+          activeSlot = i;
+          /* в съёмке камера переезжает в выбранную ячейку, если в ней ещё нет своего снимка */
+          if (picking && phase === 'shoot' && Camera.active && !hasPhoto(slots[i])) {
+            slots.forEach((s) => { if (s.src && s.src.kind === 'live') s.src = null; });
+            slots[i] = newSlot(liveSrc);
+            slots[i].flip = Camera.mirrored;
+          }
+          invalidate();
+        }
         syncSlotUI();
       }
+      if (picking) return;
+      pointers.set(e.pointerId, e);
+      card.setPointerCapture(e.pointerId);
     });
 
     card.addEventListener('pointermove', (e) => {
@@ -834,14 +1088,14 @@
       if (pointers.size === 2) {
         const [p, q] = [...pointers.values()];
         const dist = Math.hypot(p.clientX - q.clientX, p.clientY - q.clientY);
-        if (pinch) setZoom(slots[activeSlot].zoom * (dist / pinch));
+        if (pinch && slots[activeSlot]) setZoom(slots[activeSlot].zoom * (dist / pinch));
         pinch = dist;
         return;
       }
       const s = slots[activeSlot];
       if (!s.src) return;
       const k = card.width / card.getBoundingClientRect().width;
-      const { rect } = slotFrame(state, activeSlot, slots.length, card.width, card.height);
+      const rect = slotSize(activeSlot);
       s.x = clamp(s.x + ((e.clientX - prev.clientX) * k) / rect.w, -1, 1);
       s.y = clamp(s.y + ((e.clientY - prev.clientY) * k) / rect.h, -1, 1);
       syncSlotUI();
@@ -859,6 +1113,146 @@
       e.preventDefault();
       setZoom(slots[activeSlot].zoom * (e.deltaY < 0 ? 1.06 : 0.94));
     }, { passive: false });
+  }
+
+  /* ---------- рамки вокруг людей ---------- */
+  const marksMode = () => tab === 'collage' && !!collageTpl() && !!collageTpl().marks;
+  /* рамки хранятся долями фото для каждого шаблона; пока своих нет, показываем пример шаблона */
+  function marksOf() {
+    const id = state.collage;
+    if (!state.marks[id]) state.marks = { ...state.marks, [id]: (collageTpl().demoMarks || []).map((m) => ({ ...m })) };
+    return state.marks[id];
+  }
+  function syncMarkTools() {
+    $('markDelete').disabled = selectedMark < 0;
+  }
+
+  function bindMarks() {
+    let drag = null;
+    const toCard = (e) => {
+      const box = card.getBoundingClientRect();
+      return [((e.clientX - box.left) / box.width) * card.width, ((e.clientY - box.top) / box.height) * card.height];
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (!marksMode()) return;
+      const [px, py] = toCard(e);
+      const geo = collageGeo();
+      const cell = geo.cells[0];
+      if (px < cell.x || py < cell.y || px > cell.x + cell.w || py > cell.y + cell.h) return;
+      const list = marksOf();
+      const grab = Math.max(14, card.width * 0.025);
+      let hit = -1;
+      let mode = 'move';
+      for (let i = geo.marks.length - 1; i >= 0; i--) {
+        const b = geo.marks[i];
+        if (Math.abs(px - (b.x + b.w)) < grab && Math.abs(py - (b.y + b.h)) < grab) { hit = i; mode = 'size'; break; }
+        if (px >= b.x && px <= b.x + b.w && py >= b.y && py <= b.y + b.h) { hit = i; break; }
+      }
+      const fx = (px - cell.x) / cell.w;
+      const fy = (py - cell.y) / cell.h;
+      if (hit < 0) {
+        const w = 0.12 * (cell.h / cell.w) * 0.8;
+        list.push({ x: Math.min(1 - w, Math.max(0, fx - w / 2)), y: Math.min(0.8, Math.max(0, fy - 0.1)), w, h: 0.2 });
+        hit = list.length - 1;
+      }
+      selectedMark = hit;
+      const m = list[hit];
+      drag = { id: e.pointerId, mode, fx, fy, start: { ...m }, cw: cell.w, ch: cell.h };
+      try { card.setPointerCapture(e.pointerId); } catch {}
+      syncMarkTools();
+      update();
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id || !marksMode()) return;
+      const [px, py] = toCard(e);
+      const geo = collageGeo();
+      const cell = geo.cells[0];
+      const dx = (px - cell.x) / cell.w - drag.fx;
+      const dy = (py - cell.y) / cell.h - drag.fy;
+      const m = marksOf()[selectedMark];
+      if (!m) return;
+      if (drag.mode === 'size') {
+        m.w = clamp(drag.start.w + dx, 0.02, 1 - m.x);
+        m.h = clamp(drag.start.h + dy, 0.02, 1 - m.y);
+      } else {
+        m.x = clamp(drag.start.x + dx, 0, 1 - m.w);
+        m.y = clamp(drag.start.y + dy, 0, 1 - m.h);
+      }
+      update();
+    });
+    const end = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+
+    $('markDelete').onclick = () => {
+      if (selectedMark < 0) return;
+      marksOf().splice(selectedMark, 1);
+      selectedMark = -1;
+      syncMarkTools();
+      update();
+    };
+    $('markClear').onclick = () => {
+      state.marks = { ...state.marks, [state.collage]: [] };
+      selectedMark = -1;
+      syncMarkTools();
+      update();
+    };
+    $('markPhoto').onclick = () => {
+      activeSlot = 0;
+      $('filePhoto').click();
+    };
+    $('markFind').onclick = findPeople;
+    $('collageShuffle').onclick = () => {
+      state.seed = Math.floor(Math.random() * 1e6);
+      update();
+    };
+  }
+
+  /* Поиск людей прямо на телефоне: модель распознавания скачивается один раз при первом нажатии. */
+  let detector = null;
+  const loadScript = (src) => new Promise((resolve, reject) => {
+    if ([...document.scripts].some((s) => s.src === src)) return resolve();
+    const el = document.createElement('script');
+    el.src = src;
+    el.onload = resolve;
+    el.onerror = () => reject(new Error(`script ${src}`));
+    document.head.append(el);
+  });
+  async function findPeople() {
+    const slot = slots[0];
+    if (!slot || !slot.src || slot.src.kind === 'live') return toast(t('Сначала добавь фото.'));
+    const btn = $('markFind');
+    btn.disabled = true;
+    btn.textContent = t('Ищу…');
+    try {
+      if (!detector) {
+        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+        detector = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
+      }
+      const found = (await detector.detect(slot.src.el, 30, 0.35)).filter((p) => p.class === 'person');
+      if (!found.length) return toast(t('Людей на фото не нашлось. Поставь рамки пальцем.'));
+      /* из пикселей снимка в доли окна с фото: с учётом масштаба, сдвига и отражения */
+      const cell = collageGeo().cells[0];
+      const g = window.Render.coverGeom(slot, { x: 0, y: 0, w: cell.w, h: cell.h });
+      const k = g.dw / slot.src.sw;
+      const list = found.map(({ bbox: [bx, by, bw, bh] }) => {
+        let x = (g.cx - g.dw / 2 + bx * k) / cell.w;
+        const w = (bw * k) / cell.w;
+        if (slot.flip) x = 1 - x - w;
+        return { x, y: (g.cy - g.dh / 2 + by * k) / cell.h, w, h: (bh * k) / cell.h };
+      }).filter((m) => m.x + m.w > 0 && m.x < 1 && m.y + m.h > 0 && m.y < 1);
+      state.marks = { ...state.marks, [state.collage]: list };
+      selectedMark = -1;
+      update();
+      toast(`${t('Нашлось людей')}: ${list.length}`);
+    } catch (err) {
+      console.warn('find people', err);
+      toast(t('Не получилось найти людей. При первом запуске нужен интернет.'));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = t('Найти людей');
+    }
   }
 
   /* ---------- весь экран ---------- */
@@ -879,10 +1273,16 @@
       grip.setAttribute('aria-expanded', on);
     };
 
-    /* Пока карточку двигают пальцем, нажатие на неё занято: открывает только кнопка в углу. */
+    /* Полный экран открывает кнопка в углу или двойной тап по карточке. Одно нажатие оставляем для работы с фото.
+       Пока карточку двигают пальцем или ставят рамки, двойной тап тоже занят, тогда только кнопка. */
     $('stage').addEventListener('click', (e) => {
       if (app.classList.contains('view')) return setView(false);
-      if (e.target.closest('#expandCard') || (e.target === card && !card.classList.contains('grab'))) setView(true);
+      if (e.target.closest('#expandCard')) setView(true);
+    });
+    card.addEventListener('dblclick', (e) => {
+      if (app.classList.contains('view') || card.classList.contains('grab') || marksMode()) return;
+      e.preventDefault();
+      setView(true);
     });
 
     let startY = 0;
@@ -950,6 +1350,7 @@
         const value = el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value;
         setPath(el.dataset.bind, value);
         if (el.dataset.bind === 'note.mood') syncNote();
+        if (el.dataset.bind === 'note.title' || el.dataset.bind === 'note.font') syncSlotCount();
       });
     });
     document.querySelectorAll('[data-seg]').forEach((seg) => {
@@ -966,6 +1367,7 @@
       if (!b) return;
       I18n.set(b.dataset.v);
       markSeg($('langSeg'), I18n.lang);
+      collageThumbs.clear();
       buildPalette();
       syncAll();
     });
@@ -1036,6 +1438,18 @@
       e.target.value = '';
     };
 
+    $('cellUpload').onclick = () => $('filePhoto').click();
+    $('cellShoot').onclick = () => {
+      if (busy || recording) return;
+      setPhase('shoot');
+      openCamera(Camera.start).then((ok) => { if (!ok) syncStarter(); });
+    };
+    $('cellClear').onclick = () => {
+      slots[activeSlot] = newSlot(null);
+      syncSlotUI();
+      update();
+    };
+
     $('shuffle').onclick = () => {
       state.seed = Math.floor(Math.random() * 1e6);
       update();
@@ -1073,6 +1487,7 @@
 
     bindDrag();
     bindPieces();
+    bindMarks();
     bindFullscreen();
     buildPalette();
   }
@@ -1094,6 +1509,7 @@
     syncPaper();
     syncNote();
     syncRatios();
+    syncKind();
     syncSlotUI();
     sizeCanvas();
   }

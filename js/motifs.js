@@ -594,6 +594,94 @@
     });
   }
 
+  /* Бантик из точек, как на светодиодном табло. Сначала рисуем ленту бантика на маленьком холсте,
+     потом в каждую закрашенную клетку ставим точку. Петли плоские и полые, хвостики длинные, бантик чуть наклонён. */
+  const BOW_GRID = 34;
+  function bowRibbon(c, s) {
+    /* единица: ширина бантика; узелок в (0,0) */
+    const lobe = (k, wide) => {
+      c.moveTo(0, 0);
+      c.bezierCurveTo(k * 0.14 * s, -0.13 * s, k * wide * 0.9 * s, -0.16 * s, k * wide * s, -0.05 * s);
+      c.bezierCurveTo(k * wide * 1.03 * s, 0.05 * s, k * 0.22 * s, 0.07 * s, 0, 0);
+    };
+    c.beginPath();
+    lobe(-1, 0.48);
+    lobe(1, 0.52);
+    c.moveTo(-0.03 * s, 0.03 * s);
+    c.bezierCurveTo(-0.07 * s, 0.2 * s, -0.04 * s, 0.38 * s, -0.12 * s, 0.6 * s);
+    c.moveTo(0.04 * s, 0.03 * s);
+    c.bezierCurveTo(0.08 * s, 0.22 * s, 0.06 * s, 0.42 * s, 0.14 * s, 0.66 * s);
+    c.stroke();
+    c.beginPath();
+    c.ellipse(0, 0.01 * s, 0.045 * s, 0.035 * s, 0, 0, TAU);
+    c.fill();
+  }
+  function dotBow(ctx, x, y, s, rot) {
+    const cell = s / BOW_GRID;
+    const n = BOW_GRID + 8;
+    const low = document.createElement('canvas');
+    low.width = n;
+    low.height = n;
+    const c = low.getContext('2d');
+    c.translate(n / 2, n * 0.3);
+    c.rotate(rot);
+    c.strokeStyle = '#fff';
+    c.fillStyle = '#fff';
+    c.lineWidth = 1.7;
+    c.lineCap = 'round';
+    c.lineJoin = 'round';
+    bowRibbon(c, BOW_GRID);
+    const d = c.getImageData(0, 0, n, n).data;
+    const ox = x - (n / 2) * cell;
+    const oy = y - n * 0.3 * cell;
+    const r = cell * 0.4;
+    ctx.beginPath();
+    for (let gy = 0; gy < n; gy++) {
+      for (let gx = 0; gx < n; gx++) {
+        if (d[(gy * n + gx) * 4 + 3] < 110) continue;
+        const px = ox + (gx + 0.5) * cell;
+        const py = oy + (gy + 0.5) * cell;
+        ctx.moveTo(px + r, py);
+        ctx.arc(px, py, r, 0, TAU);
+      }
+    }
+    ctx.fill();
+  }
+  /* Два бантика из точек, вокруг искорки-звёздочки и ромбики. */
+  function dotBows(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const s = m * 0.44 * o.size;
+    dotBow(ctx, w / 2 - m * 0.17 * o.size, h / 2 - m * 0.16 * o.size, s, -0.18);
+    dotBow(ctx, w / 2 + m * 0.17 * o.size, h / 2 - m * 0.01 * o.size, s, -0.14);
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = Math.max(1, m * 0.004);
+    const n = Math.round(9 * o.density);
+    for (let i = 0; i < n; i++) {
+      const a = rng() * TAU;
+      const d = m * rng.range(0.3, 0.48);
+      const x = w / 2 + Math.cos(a) * d;
+      const y = h / 2 + Math.sin(a) * d * 0.85;
+      const r = m * rng.range(0.01, 0.02);
+      if (i % 2) {
+        /* ромбик контуром */
+        ctx.beginPath();
+        ctx.moveTo(x, y - r); ctx.lineTo(x + r * 0.7, y); ctx.lineTo(x, y + r); ctx.lineTo(x - r * 0.7, y);
+        ctx.closePath();
+        ctx.stroke();
+      } else {
+        /* тонкая четырёхлучевая искорка */
+        ctx.beginPath();
+        ctx.moveTo(x, y - r); ctx.quadraticCurveTo(x + r * 0.1, y - r * 0.1, x + r * 0.8, y);
+        ctx.quadraticCurveTo(x + r * 0.1, y + r * 0.1, x, y + r);
+        ctx.quadraticCurveTo(x - r * 0.1, y + r * 0.1, x - r * 0.8, y);
+        ctx.quadraticCurveTo(x - r * 0.1, y - r * 0.1, x, y - r);
+        ctx.fill();
+      }
+    }
+    ctx.restore();
+  }
+
   /* Симметричный пиксельный узор: рисуем четверть кривыми по клеткам и отражаем. */
   function pixelOrnament(ctx, w, h, rng, o) {
     const cells = new Set();
@@ -1346,6 +1434,290 @@
     ctx.stroke();
     ctx.restore();
     pts.forEach(([x, py]) => stamp(ctx, 'star', x, py, m * rng.range(0.022, 0.042) * o.size, rng.range(-0.3, 0.3)));
+    starWords(ctx, pts, o, m);
+  }
+
+  /* ---------- текст на созвездиях: слова из поля «Своё слово» встают рядом со звёздами ---------- */
+  function textWords(o) {
+    return (o.text || '').trim().split(/\s+/).filter(Boolean);
+  }
+  function label(ctx, text, x, y, size, o, align = 'left') {
+    const font = wordFont(o.font);
+    ctx.font = `${font.weight} ${size}px ${font.css}`;
+    ctx.textAlign = align;
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, x, y);
+  }
+  /* слова раскладываются по звёздам через равный шаг, справа сверху от звезды */
+  function starWords(ctx, pts, o, m) {
+    const list = textWords(o);
+    if (!list.length || !pts.length) return;
+    const step = Math.max(1, Math.floor(pts.length / list.length));
+    list.forEach((wd, i) => {
+      const [x, y] = pts[Math.min(pts.length - 1, i * step + Math.floor(step / 2))];
+      label(ctx, wd, x + m * 0.04, y - m * 0.035, m * 0.05 * o.size, o);
+    });
+  }
+
+  /* Несколько отдельных созвездий с ветками: каждая новая звезда цепляется к одной из прежних. */
+  function constellationWeb(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const groups = Math.max(2, Math.round(3 * o.density));
+    const all = [];
+    const lines = [];
+    const spots = [[0.25, 0.3], [0.72, 0.28], [0.3, 0.72], [0.72, 0.7], [0.5, 0.5]];
+    for (let g = 0; g < groups; g++) {
+      const [sx, sy] = spots[g % spots.length];
+      const pts = [[w * sx + rng.range(-0.05, 0.05) * w, h * sy + rng.range(-0.05, 0.05) * h]];
+      const n = 4 + Math.floor(rng() * 4);
+      for (let i = 1; i < n; i++) {
+        const from = pts[Math.floor(rng() * pts.length)];
+        const a = rng() * Math.PI * 2;
+        const d = m * rng.range(0.1, 0.2);
+        const p = [Math.min(w * 0.95, Math.max(w * 0.05, from[0] + Math.cos(a) * d)), Math.min(h * 0.95, Math.max(h * 0.05, from[1] + Math.sin(a) * d))];
+        pts.push(p);
+        lines.push([from, p]);
+      }
+      all.push(...pts);
+    }
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = Math.max(1, m * 0.003);
+    ctx.beginPath();
+    lines.forEach(([a, b]) => { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); });
+    ctx.stroke();
+    ctx.restore();
+    all.forEach(([x, y]) => stamp(ctx, 'star', x, y, m * o.size * (rng() < 0.25 ? rng.range(0.038, 0.05) : rng.range(0.018, 0.032)), rng.range(-0.3, 0.3)));
+    starWords(ctx, all, o, m);
+  }
+
+  /* Сеть: звёзды по всей карточке, каждая связана с двумя ближайшими и одной дальней, линии пересекаются.
+     Слова встают на середины линий. */
+  function starNetwork(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const n = Math.max(8, Math.round(15 * o.density));
+    const pts = [];
+    for (let tries = 0; pts.length < n && tries < n * 40; tries++) {
+      const p = [w * rng.range(0.07, 0.93), h * rng.range(0.07, 0.93)];
+      if (pts.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) > m * 0.13)) pts.push(p);
+    }
+    const edges = new Set();
+    pts.forEach((p, i) => {
+      const order = pts.map((q, j) => [Math.hypot(q[0] - p[0], q[1] - p[1]), j]).filter(([, j]) => j !== i).sort((a, b) => a[0] - b[0]);
+      [order[0], order[1], order[2 + Math.floor(rng() * 3)]].filter(Boolean).forEach(([, j]) => edges.add(i < j ? `${i}-${j}` : `${j}-${i}`));
+    });
+    const pairs = [...edges].map((k) => k.split('-').map(Number));
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = Math.max(1, m * 0.0028);
+    ctx.beginPath();
+    pairs.forEach(([a, b]) => { ctx.moveTo(pts[a][0], pts[a][1]); ctx.lineTo(pts[b][0], pts[b][1]); });
+    ctx.stroke();
+    ctx.restore();
+    pts.forEach(([x, y]) => stamp(ctx, 'star', x, y, m * rng.range(0.022, 0.032) * o.size, rng.range(-0.25, 0.25)));
+    const list = textWords(o);
+    if (!list.length) return;
+    const step = Math.max(1, Math.floor(pairs.length / list.length));
+    list.forEach((wd, i) => {
+      const [a, b] = pairs[(i * step) % pairs.length];
+      label(ctx, wd, (pts[a][0] + pts[b][0]) / 2, (pts[a][1] + pts[b][1]) / 2 - m * 0.02, m * 0.045 * o.size, o, 'center');
+    });
+  }
+
+  /* Слова-созвездие: каждое слово это точка, точки соединены по порядку, слово подписано рядом. */
+  const wordConstellation = (phrase) => (ctx, w, h, rng, o) => {
+    const m = Math.min(w, h);
+    const list = textWords(o).length ? textWords(o) : phrase.split(' ');
+    /* расстояние от точки до отрезка: новая точка не должна лечь на старую линию, а новая линия не должна пройти через старую точку */
+    const segDist = ([px, py], [ax, ay], [bx, by]) => {
+      const vx = bx - ax;
+      const vy = by - ay;
+      const t = Math.max(0, Math.min(1, ((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy || 1)));
+      return Math.hypot(px - ax - vx * t, py - ay - vy * t);
+    };
+    const pts = [];
+    for (let i = 0; i < list.length; i++) {
+      let p;
+      for (let tries = 0; tries < 120; tries++) {
+        p = [w * rng.range(0.12, 0.82), h * rng.range(0.15, 0.85)];
+        const prev = pts[pts.length - 1];
+        const near = prev ? Math.hypot(prev[0] - p[0], prev[1] - p[1]) : m * 0.3;
+        if (near > m * 0.42) continue;
+        if (!pts.every(([x, y]) => Math.hypot(x - p[0], y - p[1]) > m * 0.16)) continue;
+        const clearOfLines = pts.slice(0, -1).every((a, k) => segDist(p, a, pts[k + 1]) > m * 0.07);
+        const clearOfPoints = !prev || pts.slice(0, -1).every((q) => segDist(q, prev, p) > m * 0.07);
+        if (clearOfLines && clearOfPoints) break;
+      }
+      pts.push(p);
+    }
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = Math.max(1.5, m * 0.006 * o.size);
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](x, y));
+    ctx.stroke();
+    ctx.restore();
+    const size = m * 0.075 * o.size;
+    ctx.beginPath();
+    pts.forEach(([x, y]) => { ctx.moveTo(x + m * 0.014, y); ctx.arc(x, y, m * 0.014 * o.size, 0, Math.PI * 2); });
+    ctx.fill();
+    /* подпись встаёт с противоположной стороны от соседних точек, чтобы не лечь на линии */
+    pts.forEach(([x, y], i) => {
+      const near = [pts[i - 1], pts[i + 1]].filter(Boolean);
+      let dx = 0;
+      let dy = 0;
+      near.forEach(([nx, ny]) => {
+        const len = Math.hypot(nx - x, ny - y) || 1;
+        dx += (nx - x) / len;
+        dy += (ny - y) / len;
+      });
+      let len = Math.hypot(dx, dy);
+      if (len < 0.2) { dx = 0; dy = -1; len = 1; }
+      const ux = -dx / len;
+      const uy = -dy / len;
+      ctx.font = `${wordFont(o.font).weight} ${size}px ${wordFont(o.font).css}`;
+      const tw = ctx.measureText(list[i]).width;
+      const lx = Math.min(w - tw / 2 - size * 0.2, Math.max(tw / 2 + size * 0.2, x + ux * (tw / 2 + size * 0.35)));
+      const ly = Math.min(h - size * 0.6, Math.max(size * 0.6, y + uy * size * 0.75));
+      label(ctx, list[i], lx, ly, size, o, 'center');
+    });
+  };
+
+  /* Звезда как вырезанная руками: 4 или 5 лучей разной длины, вогнутые стороны, кончики чуть скошены. */
+  function cutStar(ctx, x, y, r, rot, rng) {
+    const k = rng() < 0.3 ? 5 : 4;
+    const tips = Array.from({ length: k }, (_, i) => {
+      const a = rot + (i / k) * Math.PI * 2 + rng.range(-0.18, 0.18);
+      return [a, r * rng.range(0.78, 1.15)];
+    });
+    const inner = r * rng.range(0.22, 0.3);
+    ctx.beginPath();
+    tips.forEach(([a, len], i) => {
+      const tx = x + Math.cos(a) * len;
+      const ty = y + Math.sin(a) * len;
+      const next = tips[(i + 1) % k];
+      const mid = (a + next[0] + (i === k - 1 ? Math.PI * 2 : 0)) / 2;
+      if (!i) ctx.moveTo(tx, ty);
+      /* вогнутая сторона: изгиб через точку у середины между лучами */
+      ctx.quadraticCurveTo(x + Math.cos(mid) * inner, y + Math.sin(mid) * inner, x + Math.cos(next[0]) * next[1], y + Math.sin(next[0]) * next[1]);
+    });
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  /* Гирлянда: неровные звёзды по кругу, нитка провисает дугой от звезды к звезде, сверху справа разрыв. */
+  function sparkGarland(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const r = m * 0.25 * o.size;
+    const n = Math.max(6, Math.round(12 * o.density));
+    const start = -Math.PI * 0.32;
+    const span = Math.PI * 2 - 0.55;
+    const stars = Array.from({ length: n }, (_, i) => {
+      const a = start + (i / (n - 1)) * span + rng.range(-0.06, 0.06);
+      const rr = r * rng.range(0.94, 1.06);
+      /* слева и снизу звёзды крупнее, как в оригинале */
+      const heavy = 0.5 + 0.5 * Math.cos(a - Math.PI * 0.75);
+      const size = m * o.size * (0.024 + 0.024 * heavy * rng.range(0.7, 1.2) + (rng() < 0.2 ? 0.008 : 0));
+      return { x: w / 2 + Math.cos(a) * rr, y: h / 2 + Math.sin(a) * rr, size, rot: rng.range(-0.6, 0.6) };
+    });
+    ctx.save();
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineWidth = Math.max(1, m * 0.0035);
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let i = 0; i < n - 1; i++) {
+      const p = stars[i];
+      const q = stars[i + 1];
+      const mx = (p.x + q.x) / 2;
+      const my = (p.y + q.y) / 2;
+      /* провис наружу от центра круга, у каждой дуги свой */
+      const ox = mx - w / 2;
+      const oy = my - h / 2;
+      const len = Math.hypot(ox, oy) || 1;
+      const sag = m * rng.range(0.01, 0.03);
+      if (!i) ctx.moveTo(p.x, p.y);
+      ctx.quadraticCurveTo(mx + (ox / len) * sag, my + (oy / len) * sag, q.x, q.y);
+    }
+    ctx.stroke();
+    ctx.restore();
+    stars.forEach((s) => cutStar(ctx, s.x, s.y, s.size, s.rot, rng));
+  }
+
+  /* Гибискус из точек: цветок рисуется на маленьком холсте, жилки и тычинки вырезаются,
+     потом каждая клетка становится вытянутой точкой с мягким свечением. */
+  function hibiscus(c, cx, cy, R, rot) {
+    c.save();
+    c.translate(cx, cy);
+    c.rotate(rot);
+    c.fillStyle = '#fff';
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2;
+      c.save();
+      c.rotate(a);
+      c.beginPath();
+      for (let t = 0; t <= 1; t += 0.02) {
+        const th = t * Math.PI * 2;
+        const frill = 1 + 0.07 * Math.sin(th * 9);
+        const x = R * 0.46 + Math.cos(th) * R * 0.54 * frill;
+        const y = Math.sin(th) * R * 0.47 * frill;
+        c[t ? 'lineTo' : 'moveTo'](x, y);
+      }
+      c.fill();
+      c.restore();
+    }
+    /* жилки: светлые лучи от середины к краям лепестков */
+    c.globalCompositeOperation = 'destination-out';
+    c.strokeStyle = '#000';
+    c.lineWidth = Math.max(1, R * 0.07);
+    c.lineCap = 'round';
+    c.beginPath();
+    for (let k = 0; k < 5; k++) {
+      const a = (k / 5) * Math.PI * 2 + Math.PI / 5;
+      c.moveTo(0, 0);
+      c.lineTo(Math.cos(a) * R * 0.75, Math.sin(a) * R * 0.75);
+    }
+    c.stroke();
+    c.globalCompositeOperation = 'source-over';
+    /* тычинка торчит из середины наружу, на конце крапинки */
+    c.strokeStyle = '#fff';
+    c.lineWidth = Math.max(1, R * 0.06);
+    c.beginPath();
+    c.moveTo(0, 0);
+    c.quadraticCurveTo(R * 0.4, -R * 0.5, R * 0.95, -R * 1.05);
+    c.stroke();
+    for (let i = 0; i < 7; i++) {
+      c.beginPath();
+      c.arc(R * (0.85 + Math.sin(i * 2.1) * 0.18), -R * (1.05 + Math.cos(i * 1.7) * 0.18), R * 0.045, 0, Math.PI * 2);
+      c.fill();
+    }
+    c.restore();
+  }
+  function hibiscusDots(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const cell = m * 0.011 * o.size;
+    const gw = Math.ceil(w / cell);
+    const gh = Math.ceil(h / cell);
+    const low = document.createElement('canvas');
+    low.width = gw;
+    low.height = gh;
+    const c = low.getContext('2d');
+    const R = (m * 0.2 * o.size) / cell;
+    hibiscus(c, gw * 0.38, gh * 0.42, R, -0.3);
+    hibiscus(c, gw * 0.63, gh * 0.6, R * 0.95, 0.5);
+    const d = c.getImageData(0, 0, gw, gh).data;
+    ctx.save();
+    ctx.shadowColor = ctx.fillStyle;
+    ctx.shadowBlur = cell * 2.5;
+    ctx.beginPath();
+    for (let gy = 0; gy < gh; gy++) {
+      for (let gx = 0; gx < gw; gx++) {
+        if (d[(gy * gw + gx) * 4 + 3] < 110) continue;
+        ctx.roundRect(gx * cell + cell * 0.2, gy * cell + cell * 0.06, cell * 0.6, cell * 0.88, cell * 0.3);
+      }
+    }
+    ctx.fill();
+    ctx.restore();
   }
 
   /* Нарисованные от руки звёзды, как карандашом по бумаге: чёткий контур и полупрозрачная заливка,
@@ -1511,7 +1883,10 @@
     { id: 'star-whirl', name: 'Звёздный вихрь', cat: 'stars', draw: scatterMotif('star', 'whirl') },
     { id: 'star-nebula', name: 'Туманность', cat: 'stars', draw: scatterMotif('star', 'nebula') },
     { id: 'star-crown', name: 'Хоровод звёзд', cat: 'stars', draw: scatterMotif('star', 'crown') },
-    { id: 'star-constellation', name: 'Созвездие', cat: 'stars', draw: constellation },
+    { id: 'star-constellation', name: 'Созвездие', cat: 'stars', usesText: true, draw: constellation },
+    { id: 'star-web', name: 'Созвездия', cat: 'stars', usesText: true, draw: constellationWeb },
+    { id: 'star-network', name: 'Сеть звёзд', cat: 'stars', usesText: true, draw: starNetwork },
+    { id: 'spark-garland', name: 'Гирлянда искр', cat: 'stars', draw: sparkGarland },
     { id: 'star-hand', name: 'Рисованные звёзды', cat: 'stars', draw: handStars },
     { id: 'moon-orbit', name: 'Лунный круг', cat: 'stars', draw: scatterMotif('moon', 'orbit') },
     { id: 'moon-solo', name: 'Полумесяц', cat: 'stars', draw: scatterMotif('moon', 'solo') },
@@ -1569,6 +1944,8 @@
     { id: 'px-glitch', name: 'Сбой', cat: 'pixels', draw: glitchSparks },
     { id: 'px-ornament', name: 'Узор', cat: 'pixels', draw: pixelOrnament },
     { id: 'px-hares', name: 'Зайцы', cat: 'pixels', draw: hares },
+    { id: 'px-dot-bows', name: 'Бантики из точек', cat: 'pixels', draw: dotBows },
+    { id: 'px-hibiscus', name: 'Гибискус из точек', cat: 'pixels', draw: hibiscusDots },
     { id: 'px-spiral-cross', name: 'Спираль с крестиками', cat: 'pixels', draw: pixelSpiralCross },
 
     { id: 'st-heart', name: 'Вышитое сердце', cat: 'stitch', draw: stitchMotif('bigheart') },
@@ -1593,6 +1970,7 @@
     { id: 'w-own', name: 'Своё слово', cat: 'words', usesText: true, draw: wordBig('YOUR WORD') },
     { id: 'w-keys', name: 'Клавиши', cat: 'words', usesText: true, draw: keycaps('WISH YOU WERE HERE') },
     { id: 'w-card', name: 'Туз', cat: 'words', usesText: true, draw: playingCard('you are / my lucky card') },
+    { id: 'w-constellation', name: 'Слова-созвездие', cat: 'words', usesText: true, draw: wordConstellation('I love you to the moon and back') },
     { id: 'w-own-repeat', name: 'Своё слово, лентой', cat: 'words', usesText: true, draw: wordRepeat('YOURS') },
 
     { id: 'own-mask', name: 'Своя фигура', cat: 'mine', usesImage: true, draw: ownImage },
