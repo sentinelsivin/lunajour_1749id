@@ -198,7 +198,8 @@
     return { kind: 'image', el, sw: el.naturalWidth, sh: el.naturalHeight, blob };
   }
 
-  const VIDEO_WAIT_MS = 15000;
+  /* Длинное видео на телефоне открывается не сразу, поэтому ждём первый кадр с запасом. */
+  const VIDEO_WAIT_MS = 60000;
   const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp)$/i;
 
   async function videoSrc(blob) {

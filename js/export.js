@@ -69,6 +69,14 @@
     const still = fullCard(s, slots, assets, 640);
     const back = backdrop(still, W, H);
 
+    /* Длина ролика: целиком самое длинное загруженное видео, но не меньше одного покачивания.
+       У клипа, снятого в браузере, длина бывает неизвестна (Infinity), такой не считаем. */
+    const longest = Math.max(0, ...slots
+      .filter((slot) => slot.src && slot.src.kind === 'video')
+      .map((slot) => slot.src.el.duration * 1000)
+      .filter(Number.isFinite));
+    const total = Math.max(CLIP_MS, longest);
+
     if (moving) {
       for (const slot of slots) {
         if (slot.src && slot.src.kind === 'video') {
@@ -102,9 +110,9 @@
     await new Promise((resolve) => {
       const tick = () => {
         const t = performance.now() - started;
-        if (t >= CLIP_MS) return resolve();
+        if (t >= total) return resolve();
         frame(t);
-        onProgress(t / CLIP_MS);
+        onProgress(t / total);
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
