@@ -2079,7 +2079,7 @@
       }
       return { ...c, ...r, rot: ((c.rot || 0) * Math.PI) / 180 };
     });
-    return { tpl, box, cells, W, H, note: tpl.noNote ? null : { x: m, y: H - t, w: W - m * 2, h: t } };
+    return { tpl, box, cells, W, H, items: [], pieces: [], holes: [], marks: [], note: tpl.noNote ? null : { x: m, y: H - t, w: W - m * 2, h: t } };
   }
 
   /* Какая ячейка под точкой: проверяем с учётом поворота, сверху вниз. */
