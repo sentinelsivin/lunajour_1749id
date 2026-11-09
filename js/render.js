@@ -822,7 +822,11 @@
     const paper = drawPaper(s.paper === 'own' ? 'smooth' : s.paper, s.paperColor, W, H);
     ctx.drawImage(paper, 0, 0);
     if (s.paper === 'own' && assets.bg) drawCover(ctx, assets.bg, assets.bg.naturalWidth, assets.bg.naturalHeight, W, H);
-    if (s.collage && window.Collages.byId(s.collage)) return renderCollage(ctx, s, slots, W, H, u, paper);
+    if (s.collage && window.Collages.byId(s.collage)) {
+      renderCollage(ctx, s, slots, W, H, u, paper);
+      drawLayers(ctx, s, assets, W, H);
+      return;
+    }
 
     const frame = L.photo || L.pieces;
     const dual = slots.length === 2 && L.photo && L.pieces;
@@ -867,6 +871,79 @@
     }
 
     drawNote(ctx, s, L, W, H);
+    drawLayers(ctx, s, assets, W, H);
+  }
+
+  /* ---------- стикеры и текст поверх всей карточки ---------- */
+  /* Слой хранит центр (x, y) в долях карточки, размер в долях короткой стороны и поворот в радианах.
+     Стикер: emoji или своя картинка (img — номер в assets.stickers). Текст: строки, шрифт, цвет и фон. */
+  const EMOJI_FONT = '"Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", sans-serif';
+  function layerFont(l) {
+    return FONTS.find((f) => f.id === l.font) || FONTS[0];
+  }
+  /* Размер слоя без поворота: нужен и для отрисовки, и чтобы попасть в него пальцем. */
+  function layerBox(ctx, l, assets, W, H) {
+    const m = Math.min(W, H);
+    const size = l.size * m;
+    if (l.type === 'text') {
+      const f = layerFont(l);
+      ctx.font = `${f.weight} ${size}px ${f.css}`;
+      const lines = String(l.text || '').split('\n');
+      const w = Math.max(...lines.map((ln) => ctx.measureText(ln).width), size * 0.5);
+      const pad = l.style === 'plaque' ? size * 0.35 : size * 0.1;
+      return { w: w + pad * 2, h: lines.length * size * 1.2 + pad * 1.2, size, lines, pad };
+    }
+    const img = l.img && assets.stickers && assets.stickers[l.img];
+    if (img) {
+      const k = size / Math.max(img.width, img.height);
+      return { w: img.width * k, h: img.height * k, size, img };
+    }
+    return { w: size, h: size, size };
+  }
+  function drawLayers(ctx, s, assets, W, H) {
+    (s.layers || []).forEach((l) => {
+      const b = layerBox(ctx, l, assets, W, H);
+      ctx.save();
+      ctx.translate(l.x * W, l.y * H);
+      ctx.rotate(l.rot || 0);
+      if (l.flip) ctx.scale(-1, 1);
+      if (l.type === 'text') {
+        const f = layerFont(l);
+        if (l.style === 'plaque') {
+          ctx.fillStyle = l.bg || '#ffffff';
+          ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        }
+        ctx.font = `${f.weight} ${b.size}px ${f.css}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.lineJoin = 'round';
+        b.lines.forEach((ln, i) => {
+          const y = (i - (b.lines.length - 1) / 2) * b.size * 1.2;
+          if (l.style === 'outline') {
+            ctx.strokeStyle = l.bg || '#ffffff';
+            ctx.lineWidth = b.size * 0.16;
+            ctx.strokeText(ln, 0, y);
+          }
+          ctx.fillStyle = l.color || '#111111';
+          ctx.fillText(ln, 0, y);
+        });
+      } else if (b.img) {
+        /* своя картинка: мягкая тень, как у наклейки */
+        ctx.shadowColor = 'rgba(0,0,0,.28)';
+        ctx.shadowBlur = b.size * 0.04;
+        ctx.shadowOffsetY = b.size * 0.02;
+        ctx.drawImage(b.img, -b.w / 2, -b.h / 2, b.w, b.h);
+      } else if (l.emoji) {
+        ctx.shadowColor = 'rgba(0,0,0,.22)';
+        ctx.shadowBlur = b.size * 0.05;
+        ctx.shadowOffsetY = b.size * 0.025;
+        ctx.font = `${b.size * 0.86}px ${EMOJI_FONT}`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(l.emoji, 0, b.size * 0.04);
+      }
+      ctx.restore();
+    });
   }
 
   /* Пример для первого экрана: ночной пейзаж, нарисованный кодом, чтобы эффект был виден до загрузки фото. */
@@ -899,7 +976,7 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, canvas, layout, slotFrame, coverGeom, paintPaper, renderCard, sampleScene, luminance, drawCover,
+    RATIOS, PAPERS, FONTS, canvas, layout, slotFrame, coverGeom, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
   };
 })();

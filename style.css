@@ -103,6 +103,13 @@ button { cursor: pointer; }
 .deco svg { display: block; fill: currentColor; }
 .top-side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex: none; }
 .seg.lang { width: 84px; }
+.history { display: flex; gap: 4px; }
+.history .btn { min-width: 36px; padding: 4px 8px; font-size: 15px; line-height: 1; }
+.history .btn:disabled { opacity: .35; }
+.stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
+.stickers button { aspect-ratio: 1; border: 1px solid var(--hairline); border-radius: 10px; background: rgba(255,255,255,.04); font-size: 24px; line-height: 1; padding: 0; display: grid; place-items: center; overflow: hidden; }
+.stickers button img { width: 80%; height: 80%; object-fit: contain; }
+.field textarea { resize: vertical; }
 .seg.lang button { padding: 4px; }
 .readout { font: 11px var(--mono); letter-spacing: .12em; color: var(--muted); font-variant-numeric: tabular-nums; }
 
@@ -308,7 +315,7 @@ button { cursor: pointer; }
 }
 .slider, .field { display: flex; flex-direction: column; gap: 6px; }
 .slider input { width: 100%; accent-color: var(--accent); }
-.field input {
+.field input, .field textarea {
   padding: 9px 10px;
   border: 1px solid var(--hairline);
   border-radius: 4px;

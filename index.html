@@ -25,6 +25,10 @@
       <div class="deco" id="deco"></div>
     </div>
     <div class="top-side">
+      <div class="history">
+        <button class="btn small" id="undoBtn" type="button" aria-label="Отменить" title="Отменить" disabled>↶</button>
+        <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть" disabled>↷</button>
+      </div>
       <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
         <button type="button" data-v="ru">RU</button>
         <button type="button" data-v="en">EN</button>
@@ -71,6 +75,7 @@
     <nav class="tabs" id="tabs" role="tablist" aria-label="Настройки карточки">
       <button type="button" role="tab" data-tab="motif">Фигуры</button>
       <button type="button" role="tab" data-tab="collage">Коллаж</button>
+      <button type="button" role="tab" data-tab="layers">Стикеры</button>
       <button type="button" role="tab" data-tab="paper">Бумага</button>
       <button type="button" role="tab" data-tab="photo">Кадр</button>
       <button type="button" role="tab" data-tab="color">Цвет</button>
@@ -139,6 +144,40 @@
               <button class="btn" id="markDelete" type="button">Удалить рамку</button>
               <button class="btn" id="markClear" type="button">Убрать все</button>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="layers" hidden>
+        <p class="hint">Нажми на стикер, чтобы добавить его. На карточке двигай одним пальцем, двумя меняй размер и поворачивай.</p>
+        <div class="stickers" id="stickerGrid"></div>
+        <div class="row">
+          <button class="btn" id="stickerUpload" type="button">Своя картинка</button>
+          <button class="btn" id="textAdd" type="button">Добавить текст</button>
+        </div>
+        <p class="hint">Для своей картинки лучше всего PNG с прозрачным фоном.</p>
+        <div class="group" id="layerTools" hidden>
+          <div class="group" id="textTools" hidden>
+            <label class="field">Текст<textarea id="layerText" rows="2" maxlength="200"></textarea></label>
+            <div class="group"><span class="label">Фон текста</span>
+              <div class="seg" id="layerStyle">
+                <button type="button" data-v="none">Без фона</button>
+                <button type="button" data-v="plaque">Плашка</button>
+                <button type="button" data-v="outline">Контур</button>
+              </div>
+            </div>
+            <div class="group"><span class="label">Шрифт</span><div class="chips" id="layerFonts"></div></div>
+            <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="layerColor"></div></div>
+            <div class="group"><span class="label">Цвет фона и контура</span><div class="swatches" id="layerBg"></div></div>
+          </div>
+          <label class="slider">Размер<input id="layerSize" type="range" min="0.03" max="1.2" step="0.005"></label>
+          <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1"></label>
+          <div class="row">
+            <button class="btn small" id="layerCopy" type="button">Копия</button>
+            <button class="btn small" id="layerFlip" type="button">Отразить</button>
+            <button class="btn small" id="layerUp" type="button">Выше</button>
+            <button class="btn small" id="layerDown" type="button">Ниже</button>
+            <button class="btn small" id="layerDelete" type="button">Удалить</button>
           </div>
         </div>
       </section>
@@ -235,6 +274,7 @@
 <input id="filePhoto" type="file" accept="image/*,video/*" multiple hidden>
 <input id="fileBg" type="file" accept="image/*" hidden>
 <input id="fileMask" type="file" accept="image/*" hidden>
+<input id="fileSticker" type="file" accept="image/*" multiple hidden>
 
 <script src="js/i18n.js"></script>
 <script src="js/motifs.js"></script>
