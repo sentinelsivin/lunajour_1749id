@@ -643,6 +643,13 @@
     state.fx = { ...defaults().fx, ...(draft.state.fx || {}) };
     state.fx2 = { ...defaults().fx2, ...(draft.state.fx2 || {}) };
     state.scan = { ...Scanner.defaults(), ...(draft.state.scan || {}) };
+    ['fx', 'fx2'].forEach((key) => {
+      const f = state[key];
+      const to = Scanner.fromEffect(f);
+      if (!to) return;
+      if (!state.scan.on) state.scan = to;
+      state[key] = { ...defaults()[key] };
+    });
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];
@@ -705,6 +712,24 @@
       else el.value = v;
     });
     document.querySelectorAll('[data-seg]').forEach((seg) => markSeg(seg, getPath(seg.dataset.seg)));
+  }
+
+  /* выпадающий список шрифтов: первая строка значит «шрифт по умолчанию» */
+  function fontSelect(el, first, current) {
+    if (el.dataset.lang !== I18n.lang || !el.options.length) {
+      el.replaceChildren();
+      [{ id: '', name: first, css: '' }, ...Effects.fonts()].forEach((f) => {
+        const o = document.createElement('option');
+        o.value = f.id;
+        o.textContent = f.id ? t(f.name) : first;
+        if (f.css) o.style.fontFamily = f.css;
+        el.append(o);
+      });
+      el.dataset.lang = I18n.lang;
+    }
+    el.value = current || '';
+    const f = Effects.fonts().find((x) => x.id === current);
+    el.style.fontFamily = f ? f.css : '';
   }
 
   function chip(parent, text, on, run) {
@@ -1348,13 +1373,15 @@
   let selectedBox = -1;
   /* какой из двух слоёв эффектов сейчас правится */
   let fxSlot = 'fx';
+  /* что открыто во вкладке «Эффекты»: сами эффекты или сканер */
+  let fxView = 'fx';
   const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
-  const fxBoxMode = () => tab === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
+  const fxBoxMode = () => tab === 'fx' && fxView === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
 
   function syncFx() {
     const grid = $('fxGrid');
     if (!grid.childElementCount) {
-      [{ id: '', name: 'Без эффекта' }, ...Effects.EFFECTS].forEach((e, i) => {
+      [{ id: '', name: 'Без эффекта' }, ...Effects.EFFECTS.filter((e) => !e.moved)].forEach((e, i) => {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'thumb';
@@ -1409,12 +1436,7 @@
       const on = state[fxSlot].style ? state[fxSlot].style === st.id : i === 0;
       chip(fxStyles, t(st.name), on, () => { state[fxSlot] = { ...state[fxSlot], style: st.id, color: '', text: st.text ? '' : state[fxSlot].text }; syncFx(); update(); });
     });
-    const fxFonts = $('fxFonts');
-    fxFonts.replaceChildren();
-    chip(fxFonts, t('Как в эффекте'), !state[fxSlot].font, () => { state[fxSlot] = { ...state[fxSlot], font: '' }; syncFx(); update(); });
-    Effects.fonts().forEach((f) => {
-      chip(fxFonts, t(f.name), f.id === state[fxSlot].font, () => { state[fxSlot] = { ...state[fxSlot], font: f.id }; syncFx(); update(); }).style.fontFamily = f.css;
-    });
+    fontSelect($('fxFont'), t('Как в эффекте'), state[fxSlot].font);
     swatches($('fxSwatches'), FX_COLORS, state[fxSlot].color, (v) => { state[fxSlot] = { ...state[fxSlot], color: v }; syncFx(); update(); }, t('Как в эффекте'));
     $('fxBoxTools').hidden = !def.boxes;
     $('fxCenterHint').hidden = !def.center;
@@ -1510,6 +1532,14 @@
       update();
     };
     $('fxFind').onclick = () => findThings();
+    $('fxFont').onchange = (e) => { state[fxSlot] = { ...state[fxSlot], font: e.target.value }; syncFx(); update(); };
+    $('fxView').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      fxView = b.dataset.v;
+      selectedBox = -1;
+      syncFxView();
+    });
   }
 
   /* Ищем людей и вещи на чистой карточке, без эффекта, сканера и стикеров сверху. */
@@ -1546,7 +1576,17 @@
 
   /* ---------- сканер: рамки, подписи, линза, лупа, связи, интерфейс камеры ---------- */
   let selectedScan = -1;
-  const scanMode = () => tab === 'scan' && !!state.scan.on;
+  const scanMode = () => tab === 'fx' && fxView === 'scan' && !!state.scan.on;
+  let scanSub = 'boxes';
+  function syncFxView() {
+    markSeg($('fxView'), fxView);
+    $('fxPane').hidden = fxView !== 'fx';
+    $('scanPane').hidden = fxView !== 'scan';
+    if (fxView === 'scan') syncScan();
+    else syncFx();
+    syncGrab();
+    invalidate();
+  }
   const setScan = (patch) => { state.scan = { ...state.scan, ...patch }; syncScan(); update(); };
 
   function syncScan() {
@@ -1608,10 +1648,11 @@
     vars.replaceChildren();
     Scanner.VARS.forEach((v) => chip(vars, v, false, () => setScan({ text: `${sc.text}${v}` })));
 
-    const fonts = $('scanFonts');
-    fonts.replaceChildren();
-    chip(fonts, t('Моноширинный'), !sc.font, () => setScan({ font: '' }));
-    Effects.fonts().forEach((f) => { chip(fonts, t(f.name), f.id === sc.font, () => setScan({ font: f.id })).style.fontFamily = f.css; });
+    fontSelect($('scanFont'), t('Моноширинный'), sc.font);
+    markSeg($('scanSub'), scanSub);
+    document.querySelectorAll('[data-sub]').forEach((el) => { el.hidden = el.dataset.sub !== scanSub; });
+    markSeg($('scanLensWhere'), sc.lensOut ? 'out' : 'in');
+    $('scanLensWhere').hidden = !sc.lens || sc.lens === 'none';
 
     const hud = $('scanHud');
     hud.replaceChildren();
@@ -1626,11 +1667,16 @@
       if (el.type === 'checkbox') el.checked = !!v;
       else if (document.activeElement !== el) el.value = v;
     });
+    /* рамки либо ставятся сами (тогда работает «Сколько рамок»), либо свои */
+    const ownCount = sc.boxes.length;
+    $('scanAmountField').hidden = !!ownCount;
+    $('scanOwn').hidden = !ownCount;
+    $('scanOwnText').textContent = `${t('Рамки расставлены вручную')}: ${ownCount}. ${t('Чтобы снова менять их число ползунком, верни автоматические.')}`;
     const own = sc.boxes[selectedScan];
-    $('scanBoxDelete').disabled = !own;
+    $('scanBoxDelete').hidden = !own;
     $('scanZoomPick').disabled = !own;
-    $('scanZoomPick').textContent = t(own && own.zoom ? 'Убрать лупу' : 'Лупа на эту рамку');
-    $('scanBoxAuto').disabled = !sc.boxes.length;
+    $('scanZoomPick').textContent = t(own && own.zoom ? 'Убрать лупу с рамки' : 'Лупа на выбранную рамку');
+    $('scanZoomHint').hidden = !!own;
   }
 
   function bindScan() {
@@ -1727,6 +1773,17 @@
       setScan({ zoom: flagged ? Math.min(3, Math.max(flagged, state.scan.zoom)) : state.scan.zoom });
     };
     $('scanFind').onclick = () => findThings('scanFind', (boxes) => { selectedScan = -1; setScan({ boxes }); });
+    $('scanFont').onchange = (e) => setScan({ font: e.target.value });
+    $('scanSub').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      scanSub = b.dataset.v;
+      syncScan();
+    });
+    $('scanLensWhere').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) setScan({ lensOut: b.dataset.v === 'out' });
+    });
   }
 
   /* ---------- стикеры и текст поверх карточки ---------- */
@@ -2582,8 +2639,7 @@
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== next; });
     syncGrab();
     if (next === 'layers') syncLayerTools();
-    if (next === 'fx') syncFx();
-    if (next === 'scan') syncScan();
+    if (next === 'fx') syncFxView();
     invalidate();
   }
 

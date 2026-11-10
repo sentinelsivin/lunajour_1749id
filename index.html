@@ -85,7 +85,6 @@
       <button type="button" role="tab" data-tab="photo" data-g="photo">Кадр</button>
       <button type="button" role="tab" data-tab="color" data-g="photo">Цвет</button>
       <button type="button" role="tab" data-tab="fx" data-g="photo">Эффекты</button>
-      <button type="button" role="tab" data-tab="scan" data-g="photo">Сканер</button>
       <button type="button" role="tab" data-tab="layers" data-g="over">Стикеры</button>
       <button type="button" role="tab" data-tab="note" data-g="over">Подпись</button>
       <button type="button" role="tab" data-tab="paper" data-g="bg">Бумага</button>
@@ -268,71 +267,105 @@
       </section>
 
       <section class="panel" data-panel="fx" hidden>
-        <div class="chips" id="fxSlots"></div>
-        <div class="thumbs" id="fxGrid"></div>
-        <div class="group" id="fxTools" hidden>
-          <div class="group" id="fxStyleGroup"><span class="label">Вид</span><div class="chips" id="fxStyles"></div></div>
-          <label class="field" id="fxTextField">Слова<input id="fxText" type="text" maxlength="200" data-bind="fx.text"></label>
-          <p class="hint" id="fxTextHint"></p>
-          <div class="group" id="fxFontGroup"><span class="label">Шрифт</span><div class="chips" id="fxFonts"></div></div>
-          <div class="group"><span class="label">Цвет</span><div class="swatches" id="fxSwatches"></div></div>
-          <label class="slider">Сколько<input id="fxAmount" type="range" min="0.4" max="2" step="0.05" data-bind="fx.amount"></label>
-          <button class="btn" id="fxShuffle" type="button">Перемешать</button>
-          <p class="hint" id="fxCenterHint" hidden>Нажми на фото, чтобы поставить центр лучей.</p>
-          <div class="group" id="fxBoxTools">
-            <span class="label">Рамки</span>
-            <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть.</p>
-            <div class="row">
-              <button class="btn small" id="fxFind" type="button">Найти людей и вещи</button>
-              <button class="btn small" id="fxBoxDelete" type="button">Удалить</button>
-              <button class="btn small" id="fxBoxAuto" type="button">Сами</button>
+        <div class="seg" id="fxView">
+          <button type="button" data-v="fx">Эффекты</button>
+          <button type="button" data-v="scan">Сканер</button>
+        </div>
+
+        <div class="group" id="fxPane">
+          <div class="chips" id="fxSlots"></div>
+          <div class="thumbs" id="fxGrid"></div>
+          <div class="group" id="fxTools" hidden>
+            <div class="group" id="fxStyleGroup"><span class="label">Вид</span><div class="chips" id="fxStyles"></div></div>
+            <label class="field" id="fxTextField">Слова<input id="fxText" type="text" maxlength="200" data-bind="fx.text"></label>
+            <p class="hint" id="fxTextHint"></p>
+            <label class="field" id="fxFontGroup">Шрифт<select id="fxFont"></select></label>
+            <div class="group"><span class="label">Цвет</span><div class="swatches" id="fxSwatches"></div></div>
+            <label class="slider">Сколько<input id="fxAmount" type="range" min="0.4" max="2" step="0.05" data-bind="fx.amount"></label>
+            <button class="btn" id="fxShuffle" type="button">Перемешать</button>
+            <p class="hint" id="fxCenterHint" hidden>Нажми на фото, чтобы поставить центр лучей.</p>
+            <div class="group" id="fxBoxTools">
+              <span class="label">Рамки</span>
+              <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть.</p>
+              <div class="row">
+                <button class="btn small" id="fxFind" type="button">Найти людей и вещи</button>
+                <button class="btn small" id="fxBoxDelete" type="button">Удалить</button>
+                <button class="btn small" id="fxBoxAuto" type="button">Сами</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group" id="scanPane" hidden>
+          <p class="hint">Рамки, подписи и интерфейс камеры поверх фото. Выбери набор, а потом настрой любую деталь.</p>
+          <div class="thumbs" id="scanGrid"></div>
+          <div class="group" id="scanTools" hidden>
+            <div class="group"><span class="label">Цвет</span><div class="swatches" id="scanSwatches"></div></div>
+            <div class="seg subtabs" id="scanSub">
+              <button type="button" data-v="boxes">Рамки</button>
+              <button type="button" data-v="labels">Подписи</button>
+              <button type="button" data-v="lens">Линза</button>
+              <button type="button" data-v="zoom">Лупа</button>
+              <button type="button" data-v="hud">Камера</button>
+            </div>
+
+            <div class="group" data-sub="boxes">
+              <p class="hint">Нажми на фото, чтобы добавить рамку. Рамку можно двигать, а за правый нижний угол тянуть.</p>
+              <div class="group"><span class="label">Вид рамок</span><div class="chips" id="scanShapes"></div></div>
+              <label class="slider" id="scanAmountField">Сколько рамок<input id="scanAmount" type="range" min="0.2" max="2.5" step="0.05" data-bind="scan.amount"></label>
+              <div class="group" id="scanOwn" hidden>
+                <p class="hint" id="scanOwnText"></p>
+                <button class="btn small" id="scanBoxAuto" type="button">Вернуть автоматические</button>
+              </div>
+              <div class="row">
+                <button class="btn small" id="scanFind" type="button">Найти людей и вещи</button>
+                <button class="btn small" id="scanShuffle" type="button">Перемешать</button>
+              </div>
+              <button class="btn small" id="scanBoxDelete" type="button" hidden>Удалить выбранную рамку</button>
+              <label class="slider">Толщина линий<input type="range" min="0.4" max="3" step="0.05" data-bind="scan.line"></label>
+              <label class="check"><input type="checkbox" data-bind="scan.glow">Свечение</label>
+              <div class="group"><span class="label">Связи между рамками</span><div class="chips" id="scanLinks"></div></div>
+            </div>
+
+            <div class="group" data-sub="labels" hidden>
+              <div class="group"><span class="label">Где подпись</span><div class="chips" id="scanLabels"></div></div>
+              <label class="field">Текст подписей<input id="scanText" type="text" maxlength="300" data-bind="scan.text" placeholder="person {%}, eye.{n}, #{hex}"></label>
+              <p class="hint">Через запятую: подписи пойдут по очереди. Нажми на подстановку, чтобы добавить её в текст.</p>
+              <div class="chips" id="scanVars"></div>
+              <label class="field">Шрифт<select id="scanFont"></select></label>
+            </div>
+
+            <div class="group" data-sub="lens" hidden>
+              <p class="hint">Линза обрабатывает фото по-другому: внутри рамок или вокруг них.</p>
+              <div class="chips" id="scanLenses"></div>
+              <div class="seg" id="scanLensWhere">
+                <button type="button" data-v="in">Внутри рамок</button>
+                <button type="button" data-v="out">Вокруг рамок</button>
+              </div>
+            </div>
+
+            <div class="group" data-sub="zoom" hidden>
+              <p class="hint">Лупа показывает кусок из рамки крупно в свободном месте. Его можно перетащить пальцем.</p>
+              <div class="group"><span class="label">Сколько</span><div class="chips" id="scanZoom"></div></div>
+              <div class="group" id="scanZoomTools">
+                <div class="group"><span class="label">Вид</span><div class="chips" id="scanLooks"></div></div>
+                <div class="group"><span class="label">Линия к рамке</span><div class="chips" id="scanZoomLines"></div></div>
+                <label class="field">Подпись лупы<input type="text" maxlength="60" data-bind="scan.zoomText" placeholder="#{hex}"></label>
+              </div>
+              <button class="btn small" id="scanZoomPick" type="button">Лупа на выбранную рамку</button>
+              <p class="hint" id="scanZoomHint">Нажми на рамку на фото, чтобы выбрать, что увеличить.</p>
+            </div>
+
+            <div class="group" data-sub="hud" hidden>
+              <p class="hint">Детали по краям кадра, как у камеры наблюдения.</p>
+              <div class="chips" id="scanHud"></div>
+              <label class="field" id="scanCamField">Название камеры<input type="text" maxlength="30" data-bind="scan.cam" placeholder="CAM#3"></label>
+              <label class="field" id="scanStatusField">Статусы внизу<input type="text" maxlength="200" data-bind="scan.status" placeholder="Biometric identification ON"></label>
             </div>
           </div>
         </div>
       </section>
 
-      <section class="panel" data-panel="scan" hidden>
-        <div class="thumbs" id="scanGrid"></div>
-        <div class="group" id="scanTools" hidden>
-          <div class="group"><span class="label">Цвет</span><div class="swatches" id="scanSwatches"></div></div>
-          <div class="group"><span class="label">Рамки</span><div class="chips" id="scanShapes"></div></div>
-          <label class="slider">Сколько рамок<input id="scanAmount" type="range" min="0.2" max="2.5" step="0.05" data-bind="scan.amount"></label>
-          <label class="slider">Толщина линий<input type="range" min="0.4" max="3" step="0.05" data-bind="scan.line"></label>
-          <label class="check"><input type="checkbox" data-bind="scan.glow">Свечение</label>
-          <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть. Увеличенный кусок тоже можно перетащить.</p>
-          <div class="row">
-            <button class="btn small" id="scanFind" type="button">Найти людей и вещи</button>
-            <button class="btn small" id="scanShuffle" type="button">Перемешать</button>
-          </div>
-          <div class="row">
-            <button class="btn small" id="scanZoomPick" type="button">Лупа на эту рамку</button>
-            <button class="btn small" id="scanBoxDelete" type="button">Удалить</button>
-            <button class="btn small" id="scanBoxAuto" type="button">Сами</button>
-          </div>
-
-          <div class="group"><span class="label">Подписи</span><div class="chips" id="scanLabels"></div></div>
-          <label class="field">Текст подписей<input id="scanText" type="text" maxlength="300" data-bind="scan.text" placeholder="person {%}, eye.{n}, #{hex}"></label>
-          <p class="hint">Через запятую: подписи пойдут по очереди. Нажми на подстановку, чтобы добавить её в текст.</p>
-          <div class="chips" id="scanVars"></div>
-          <div class="group"><span class="label">Шрифт</span><div class="chips" id="scanFonts"></div></div>
-
-          <div class="group"><span class="label">Линза</span><div class="chips" id="scanLenses"></div></div>
-          <label class="check"><input type="checkbox" data-bind="scan.lensOut">Линза снаружи рамок, а внутри фото как есть</label>
-
-          <div class="group"><span class="label">Лупа</span><div class="chips" id="scanZoom"></div></div>
-          <div class="group" id="scanZoomTools">
-            <span class="label">Вид</span><div class="chips" id="scanLooks"></div>
-            <span class="label">Линия к рамке</span><div class="chips" id="scanZoomLines"></div>
-            <label class="field">Подпись лупы<input type="text" maxlength="60" data-bind="scan.zoomText" placeholder="#{hex}"></label>
-          </div>
-
-          <div class="group"><span class="label">Связи между рамками</span><div class="chips" id="scanLinks"></div></div>
-
-          <div class="group"><span class="label">Интерфейс камеры</span><div class="chips" id="scanHud"></div></div>
-          <label class="field" id="scanCamField">Название камеры<input type="text" maxlength="30" data-bind="scan.cam" placeholder="CAM#3"></label>
-          <label class="field" id="scanStatusField">Статусы внизу<input type="text" maxlength="200" data-bind="scan.status" placeholder="Biometric identification ON"></label>
-        </div>
-      </section>
       <section class="panel" data-panel="note" hidden>
         <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
         <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>

@@ -12,13 +12,13 @@ window.Effects = (function () {
   const fonts = () => [{ id: 'times', name: 'Газета', css: SERIF, weight: 400 }, ...((window.Render && window.Render.FONTS) || [])];
 
   const EFFECTS = [
-    { id: 'detect', name: 'Распознавание', color: '#f5c518', boxes: true, text: 'Person',
+    { id: 'detect', name: 'Распознавание', color: '#f5c518', boxes: true, moved: true, text: 'Person',
       styles: [{ id: 'plate', name: 'Плашки' }, { id: 'tab', name: 'Флажки', color: '#ff2020' }] },
-    { id: 'objects', name: 'Объекты', color: '#ffffff', boxes: true, text: 'Object',
+    { id: 'objects', name: 'Объекты', color: '#ffffff', boxes: true, moved: true, text: 'Object',
       styles: [{ id: 'boxes', name: 'Рамки' }, { id: 'rings', name: 'Кружки' }] },
-    { id: 'hud', name: 'Координаты', color: '#ffffff', boxes: true, text: '',
+    { id: 'hud', name: 'Координаты', color: '#ffffff', boxes: true, moved: true, text: '',
       styles: [{ id: 'lines', name: 'Лучи' }, { id: 'arcs', name: 'Дуги', color: '#ff3b3b' }] },
-    { id: 'tags', name: 'Метки', color: '#39ff6a', boxes: true, text: 'online, AFK, searching…, online, where am i, a way out ???, online' },
+    { id: 'tags', name: 'Метки', color: '#39ff6a', boxes: true, moved: true, text: 'online, AFK, searching…, online, where am i, a way out ???, online' },
     { id: 'points', name: 'Точки', color: '#ff5a1f', text: '' },
     { id: 'frameLetters', name: 'Буквы рамкой', color: '#ffffff', text: '' },
     { id: 'colLetters', name: 'Буквы столбцами', color: '#ffffff', text: '' },

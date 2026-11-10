@@ -27,18 +27,40 @@ window.Scanner = (function () {
     { id: 'objects', name: 'Объекты', set: { color: '#ffffff', shape: 'full', label: 'plate', text: 'Object {n}', lens: 'none', zoom: 0, links: 'net', glow: false, hud: ['noise'], amount: 1.4 } },
     { id: 'dossier', name: 'Досье', set: { color: '#2bd94a', shape: 'cross', label: 'corner', text: 'person 0.{nn}', zoom: 1, zoomLook: 'bw', zoomLine: 'elbow', zoomText: 'OFFLINE ACTIVITY DETECTED', lens: 'none', links: 'none', glow: false, hud: ['frame', 'ruler', 'status'], status: 'signal strength: 92%, noise level: internal, output filter: active', amount: 0.5 } },
     { id: 'surf', name: 'Флажки', set: { color: '#ff2020', shape: 'full', label: 'flag', text: '', line: 0.8, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1 } },
+    /* бывшие эффекты с рамками из вкладки «Эффекты» */
+    { id: 'detect', name: 'Плашки', set: { color: '#f5c518', shape: 'full', label: 'plate', text: 'Person {%}', line: 1.1, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1.4 } },
+    { id: 'rings', name: 'Кружки', set: { color: '#ffffff', shape: 'oval', label: 'corner', text: '{nn}', line: 0.7, lens: 'none', zoom: 0, links: 'chain', glow: false, hud: [], amount: 1.2 } },
+    { id: 'coords', name: 'Координаты', set: { color: '#ffffff', shape: 'target', label: 'corner', text: 'x: {x} y: {y}', line: 0.75, lens: 'none', zoom: 0, links: 'center', glow: false, hud: ['digits'], amount: 1.4 } },
+    { id: 'coordArcs', name: 'Координаты с дугами', set: { color: '#ff3b3b', shape: 'target', label: 'corner', text: 'x: {x}  y: {y}', line: 0.7, lens: 'none', zoom: 0, links: 'arcs', glow: false, hud: [], amount: 2.2 } },
   ];
 
-  const SHAPES = [['full', 'Рамка'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
+  const SHAPES = [['full', 'Рамка'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['target', 'Мишень'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
   const LABELS = [['plate', 'Плашка'], ['flag', 'Флажок'], ['below', 'Снизу'], ['corner', 'Мелко сверху'], ['none', 'Без подписи']];
   const LENSES = [['none', 'Нет'], ['thermal', 'Тепловизор'], ['invert', 'Негатив'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['tint', 'Заливка'], ['duo', 'Два цвета'], ['xray', 'Рентген']];
   const LOOKS = [['same', 'Как есть'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['invert', 'Негатив'], ['thermal', 'Тепловизор'], ['duo', 'Два цвета']];
   const ZOOM_LINES = [['one', 'Линия'], ['funnel', 'Воронка'], ['elbow', 'Уголком']];
-  const LINKS = [['none', 'Нет'], ['net', 'Сеть'], ['hub', 'К одной точке'], ['chain', 'Цепочка'], ['arcs', 'Дуги']];
-  const HUD = [['corners', 'Уголки кадра'], ['frame', 'Тонкая рамка'], ['cam', 'Камера'], ['rec', 'REC'], ['time', 'Время'], ['ruler', 'Линейка'], ['status', 'Статусы'], ['scan', 'Линия скана'], ['noise', 'Зерно']];
+  const LINKS = [['none', 'Нет'], ['net', 'Сеть'], ['hub', 'К одной точке'], ['center', 'К центру'], ['chain', 'Цепочка'], ['arcs', 'Дуги']];
+  const HUD = [['corners', 'Уголки кадра'], ['frame', 'Тонкая рамка'], ['cam', 'Камера'], ['rec', 'REC'], ['time', 'Время'], ['ruler', 'Линейка'], ['status', 'Статусы'], ['scan', 'Линия скана'], ['digits', 'Столбики цифр'], ['noise', 'Зерно']];
   const VARS = ['{n}', '{nn}', '{%}', '{0.}', '{hex}', '{id}', '{x}', '{y}', '{t}', '{label}', '{date}', '{place}', '{mood}'];
 
   const presetById = (id) => PRESETS.find((p) => p.id === id) || null;
+
+  /* Старые эффекты с рамками («Распознавание», «Объекты», «Координаты», «Метки») теперь наборы сканера.
+     Черновик с таким эффектом открывается сканером с теми же рамками, цветом и словами. */
+  const MOVED = {
+    detect: (f) => (f.style === 'tab' ? 'surf' : 'detect'),
+    objects: (f) => (f.style === 'rings' ? 'rings' : 'objects'),
+    hud: (f) => (f.style === 'arcs' ? 'coordArcs' : 'coords'),
+    tags: () => 'windows',
+  };
+  function fromEffect(f) {
+    if (!f || !MOVED[f.id]) return null;
+    const p = presetById(MOVED[f.id](f));
+    const out = { ...defaults(), ...p.set, on: true, preset: p.id, seed: f.seed || 5, boxes: (f.boxes || []).map((b) => ({ ...b })) };
+    if (f.color) out.color = f.color;
+    if (f.text) out.text = f.id === 'detect' ? f.text.split(',').map((w) => w.trim()).filter(Boolean).map((w) => `${w} {%}`).join(', ') : f.text;
+    return out;
+  }
 
   /* ---------- холсты для работы ---------- */
   const pool = new Map();
@@ -198,6 +220,10 @@ window.Scanner = (function () {
       return;
     }
     ctx.strokeRect(x, y, w, h);
+    if (kind === 'target') {
+      const d = Math.max(5 * u, lw * 2.2);
+      ctx.fillRect(x + w / 2 - d / 2, y + h / 2 - d / 2, d, d);
+    }
     if (kind === 'double') {
       const o = Math.max(5 * u, k * 0.06);
       ctx.save();
@@ -353,7 +379,7 @@ window.Scanner = (function () {
 
   /* ---------- связи между рамками ---------- */
   function links(ctx, kind, px, W, H, u, rng, lw) {
-    if (kind === 'none' || px.length < 2 && kind !== 'hub') return;
+    if (kind === 'none' || (px.length < 2 && kind !== 'hub' && kind !== 'center')) return;
     const c = px.map((b) => [b.x + b.w / 2, b.y + b.h / 2]);
     ctx.save();
     ctx.lineWidth = lw * 0.7;
@@ -377,6 +403,13 @@ window.Scanner = (function () {
         ctx.rect(p[0] - s / 2, p[1] - s / 2, s, s);
       });
       ctx.stroke();
+    } else if (kind === 'center') {
+      const cx = W / 2, cy = H * 0.42, hub = 46 * u;
+      ctx.beginPath();
+      c.forEach((p) => { ctx.moveTo(cx, cy); ctx.lineTo(p[0], p[1]); });
+      ctx.stroke();
+      ctx.lineWidth = lw;
+      ctx.strokeRect(cx - hub / 2, cy - hub * 0.35, hub, hub * 0.7);
     } else if (kind === 'chain') {
       const order = c.slice().sort((a, b) => a[1] - b[1]);
       ctx.beginPath();
@@ -427,6 +460,24 @@ window.Scanner = (function () {
       ctx.fillStyle = col;
       ctx.fillRect(0, y, W, 2 * u);
       ctx.fillStyle = ink;
+    }
+    if (on('digits')) {
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.font = `400 ${12 * u}px ${MONO}`;
+      ctx.textBaseline = 'top';
+      const strips = 3 + Math.floor(rng() * 3);
+      for (let s = 0; s < strips; s++) {
+        const sx = (0.08 + rng() * 0.84) * W;
+        const sy = rng() * H * 0.5;
+        const len = 10 + Math.floor(rng() * 30);
+        for (let k = 0; k < len; k++) {
+          if (rng() < 0.25) continue;
+          const v = rng() < 0.5 ? '0' : rng() < 0.5 ? '00' : rng() < 0.5 ? '0 0' : '1';
+          ctx.fillText(v, sx + (rng() < 0.2 ? 12 * u : 0), sy + k * 16 * u);
+        }
+      }
+      ctx.restore();
     }
     if (on('frame')) {
       ctx.lineWidth = 1.2 * u;
@@ -517,7 +568,7 @@ window.Scanner = (function () {
   }
 
   /* ---------- сборка ---------- */
-  const api = { PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, defaults, presetById, lastBoxes: [], lastInsets: [] };
+  const api = { fromEffect, PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, defaults, presetById, lastBoxes: [], lastInsets: [] };
 
   /* rect: где лежит фото на карточке. Всё рисуется только внутри него. */
   api.draw = function (ctx, state, CW, CH, rect) {
