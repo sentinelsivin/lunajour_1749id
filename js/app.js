@@ -200,6 +200,11 @@
     invalidate();
   }
 
+  /* текущее время первого видео в карточке: по нему рамки сканера следят и вспыхивают */
+  const videoClock = () => {
+    const v = slots.find((s) => s.src && s.src.kind === 'video');
+    return v ? v.src.el.currentTime : null;
+  };
   const isMoving = () => slots.some((s) => s.src && (s.src.kind === 'live' || s.src.kind === 'video'));
 
   let lastFrame = 0;
@@ -217,11 +222,22 @@
         return;
       }
     }
+    /* у фото рамки, которые вспыхивают или роятся, тоже живут, пока открыт сканер */
+    if (scanMode() && ['flash', 'swarm'].includes(state.scan.motion) && !isMoving() && now - lastFrame > 33) {
+      lastFrame = now;
+      Scanner.clock = now / 1000;
+      renderCard(ctx, state, slots, assets);
+      Scanner.clock = null;
+      drawSelection();
+      return;
+    }
     const due = isMoving() && now - lastFrame > 33;
     if (!dirty && !due) return;
     dirty = false;
     lastFrame = now;
+    Scanner.clock = videoClock();
     renderCard(ctx, state, slots, assets);
+    Scanner.clock = null;
     drawSelection();
   }
 
@@ -240,7 +256,9 @@
       return;
     }
     if (scanMode()) {
-      const b = state.scan.boxes[selectedScan];
+      /* в режиме слежения обводим рамку там, где она сейчас */
+      const moved = Scanner.lastMotion === 'track' && Scanner.lastBoxes.length === state.scan.boxes.length;
+      const b = (moved ? Scanner.lastBoxes : state.scan.boxes)[selectedScan];
       if (!b) return;
       const r = window.Render.fxRect(state, card.width, card.height);
       const x = r.x + b.x * r.w, y = r.y + b.y * r.h, w = b.w * r.w, h = b.h * r.h;
@@ -1667,6 +1685,15 @@
     };
     swatches($('scanSwatches'), FX_COLORS, sc.color, (v) => setScan({ color: v }));
     choose('scanShapes', Scanner.SHAPES, 'shape');
+    choose('scanMotion', Scanner.MOTIONS, 'motion');
+    $('scanMotionHint').textContent = t({
+      still: 'Рамки стоят на месте.',
+      track: 'Рамка запоминает, что у неё внутри, и едет за этим по кадрам. Поставь рамку на человека или вещь.',
+      flash: 'Рамки вспыхивают и гаснут в местах с деталями. Свои рамки мигают на своих местах.',
+      swarm: 'Много тонких рамок перестраиваются несколько раз в секунду.',
+    }[sc.motion || 'still']);
+    const free = !['flash', 'swarm'].includes(sc.motion);
+    $('scanAmountField').hidden = free ? !!sc.boxes.length : sc.motion === 'flash' && !!sc.boxes.length;
     choose('scanLabels', Scanner.LABELS, 'label');
     choose('scanLenses', Scanner.LENSES, 'lens');
     choose('scanLooks', Scanner.LOOKS, 'zoomLook');
@@ -1739,7 +1766,7 @@
     });
     /* рамки либо ставятся сами (тогда работает «Сколько рамок»), либо свои */
     const ownCount = sc.boxes.length;
-    $('scanAmountField').hidden = !!ownCount;
+    if (free) $('scanAmountField').hidden = !!ownCount;
     $('scanOwn').hidden = !ownCount;
     $('scanOwnText').textContent = `${t('Рамки расставлены вручную')}: ${ownCount}. ${t('Чтобы снова менять их число ползунком, верни автоматические.')}`;
     const own = sc.boxes[selectedScan];
@@ -1789,6 +1816,12 @@
         syncScan();
         invalidate();
         return;
+      }
+      const motion = state.scan.motion || 'still';
+      if (motion === 'flash' || motion === 'swarm') { syncScan(); invalidate(); return; }
+      /* рамки уехали за объектом: правим их там, где они сейчас, и следим дальше оттуда */
+      if (motion === 'track' && state.scan.boxes.length && Scanner.lastBoxes.length === state.scan.boxes.length) {
+        state.scan.boxes = Scanner.lastBoxes.map((b) => ({ ...b }));
       }
       const inset = [...(Scanner.lastInsets || [])].reverse().find(inside);
       /* на вкладках досье и значков пустое место не ставит новую рамку */

@@ -14,7 +14,7 @@ window.Scanner = (function () {
     zoom: 0, zoomLook: 'same', zoomLine: 'one', zoomText: '#{hex}',
     links: 'none',
     hud: [], cam: 'CAM#3', status: 'Biometric identification ON, Behavior analysis ON, Style analysis ON',
-    anim: true, icons: [], dossier: dossierDefaults(),
+    anim: true, motion: 'still', icons: [], dossier: dossierDefaults(),
   });
   function dossierDefaults() {
     return { on: false, style: 'plates', title: 'OFFLINE ACTIVITY DETECTED', rows: 'ID: {id}\nSOCIAL SYNC RATE: {%}\nINTERACTION FREQUENCY: RARE\nEMOTIONAL OUTPUT: CONTROLLED', x: null, y: null };
@@ -38,6 +38,9 @@ window.Scanner = (function () {
     { id: 'feelings', name: 'Детектор чувств', set: { color: '#f472b6', shape: 'corners', label: 'plate', text: 'longing {0.}, nostalgia {%}, tenderness {%}, quiet joy {0.}, butterflies {%}', lens: 'none', zoom: 1, zoomLook: 'duo', zoomLine: 'one', zoomText: 'SUBJECT #{hex}', links: 'none', glow: true, hud: ['corners', 'rec', 'time'], amount: 0.6,
       dossier: D({ style: 'card', title: 'EMOTION SCAN', rows: 'SUBJECT: {id}\nMOOD: {mood}\nTENDERNESS: {%}\nUntil the weekend [62%]' }) } },
     { id: 'surf', name: 'Флажки', set: { color: '#ff2020', shape: 'full', label: 'flag', text: '', line: 0.8, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1 } },
+    /* для видео: как в роликах с цветами */
+    { id: 'glassFlash', name: 'Стекло', set: { color: '#ffffff', shape: 'full', label: 'center', text: '{.4}', line: 0.6, lens: 'glass', lensOut: false, zoom: 0, links: 'chain', glow: false, hud: [], amount: 1, motion: 'flash' } },
+    { id: 'swarm', name: 'Рой', set: { color: '#a8324e', shape: 'xbox', label: 'corner', text: '{nn}{n}, 0.{nn}, {x}, #{hex}', line: 0.5, lens: 'none', zoom: 0, links: 'net', glow: false, hud: [], amount: 1, motion: 'swarm' } },
     /* бывшие эффекты с рамками из вкладки «Эффекты» */
     { id: 'detect', name: 'Плашки', set: { color: '#f5c518', shape: 'full', label: 'plate', text: 'Person {%}', line: 1.1, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1.4 } },
     { id: 'rings', name: 'Кружки', set: { color: '#ffffff', shape: 'oval', label: 'corner', text: '{nn}', line: 0.7, lens: 'none', zoom: 0, links: 'chain', glow: false, hud: [], amount: 1.2 } },
@@ -45,14 +48,14 @@ window.Scanner = (function () {
     { id: 'coordArcs', name: 'Координаты с дугами', set: { color: '#ff3b3b', shape: 'target', label: 'corner', text: 'x: {x}  y: {y}', line: 0.7, lens: 'none', zoom: 0, links: 'arcs', glow: false, hud: [], amount: 2.2 } },
   ];
 
-  const SHAPES = [['full', 'Рамка'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['target', 'Мишень'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
-  const LABELS = [['plate', 'Плашка'], ['flag', 'Флажок'], ['below', 'Снизу'], ['corner', 'Мелко сверху'], ['none', 'Без подписи']];
-  const LENSES = [['none', 'Нет'], ['thermal', 'Тепловизор'], ['invert', 'Негатив'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['tint', 'Заливка'], ['duo', 'Два цвета'], ['xray', 'Рентген']];
+  const SHAPES = [['full', 'Рамка'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['target', 'Мишень'], ['xbox', 'С крестом'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
+  const LABELS = [['plate', 'Плашка'], ['flag', 'Флажок'], ['below', 'Снизу'], ['corner', 'Мелко сверху'], ['center', 'В центре'], ['none', 'Без подписи']];
+  const LENSES = [['none', 'Нет'], ['thermal', 'Тепловизор'], ['invert', 'Негатив'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['tint', 'Заливка'], ['duo', 'Два цвета'], ['xray', 'Рентген'], ['glass', 'Стекло']];
   const LOOKS = [['same', 'Как есть'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['invert', 'Негатив'], ['thermal', 'Тепловизор'], ['duo', 'Два цвета']];
   const ZOOM_LINES = [['one', 'Линия'], ['funnel', 'Воронка'], ['elbow', 'Уголком']];
   const LINKS = [['none', 'Нет'], ['net', 'Сеть'], ['hub', 'К одной точке'], ['center', 'К центру'], ['chain', 'Цепочка'], ['arcs', 'Дуги']];
   const HUD = [['corners', 'Уголки кадра'], ['frame', 'Тонкая рамка'], ['cam', 'Камера'], ['rec', 'REC'], ['time', 'Время'], ['ruler', 'Линейка'], ['status', 'Статусы'], ['scan', 'Линия скана'], ['digits', 'Столбики цифр'], ['noise', 'Зерно']];
-  const VARS = ['{n}', '{nn}', '{%}', '{0.}', '{hex}', '{id}', '{x}', '{y}', '{t}', '{label}', '{date}', '{place}', '{mood}'];
+  const VARS = ['{n}', '{nn}', '{%}', '{0.}', '{.4}', '{hex}', '{id}', '{x}', '{y}', '{t}', '{label}', '{date}', '{place}', '{mood}'];
 
   const presetById = (id) => PRESETS.find((p) => p.id === id) || null;
 
@@ -149,6 +152,8 @@ window.Scanner = (function () {
       } else if (kind === 'duo') {
         const f = Math.max(0, Math.min(1, (l - 40) / 170));
         d[i] = 14 + (cr - 14) * f; d[i + 1] = 14 + (cg - 14) * f; d[i + 2] = 18 + (cb - 18) * f;
+      } else if (kind === 'glass') {
+        d[i] = d[i] * 0.42 + 18; d[i + 1] = d[i + 1] * 0.45 + 24; d[i + 2] = d[i + 2] * 0.5 + 32;
       } else if (kind === 'noise') {
         const n = noise() * 40;
         d[i] += n; d[i + 1] += n; d[i + 2] += n;
@@ -177,6 +182,7 @@ window.Scanner = (function () {
       '{nn}': () => String(i + 1).padStart(2, '0'),
       '{%}': () => `${Math.round(score * 100)}%`,
       '{0.}': () => score.toFixed(8),
+      '{.4}': () => score.toFixed(4),
       '{hex}': () => digit() + digit() + letter() + letter() + digit() + digit(),
       '{id}': () => `P-${digit()}${digit()}${digit()}${digit()}-${digit()}${digit()}`,
       '{x}': () => String(Math.round((b.x + b.w / 2) * W)),
@@ -187,11 +193,11 @@ window.Scanner = (function () {
       '{place}': () => (note && note.place) || '',
       '{mood}': () => (note && note.mood) || '',
     };
-    return tpl.replace(/\{(nn|n|%|0\.|hex|id|x|y|t|label|date|place|mood)\}/g, (m) => map[m]());
+    return tpl.replace(/\{(nn|n|%|0\.|\.4|hex|id|x|y|t|label|date|place|mood)\}/g, (m) => map[m]());
   }
 
   /* ---------- рамки ---------- */
-  function shapePath(ctx, kind, x, y, w, h, u, lw) {
+  function shapePath(ctx, kind, x, y, w, h, u, lw, i = 0) {
     const k = Math.min(w, h);
     if (kind === 'oval') {
       ctx.beginPath();
@@ -232,6 +238,16 @@ window.Scanner = (function () {
       return;
     }
     ctx.strokeRect(x, y, w, h);
+    if (kind === 'xbox' && i % 2 === 0) {
+      /* крест по диагоналям у каждой второй рамки */
+      ctx.save();
+      ctx.lineWidth = lw * 0.7;
+      ctx.beginPath();
+      ctx.moveTo(x, y); ctx.lineTo(x + w, y + h);
+      ctx.moveTo(x + w, y); ctx.lineTo(x, y + h);
+      ctx.stroke();
+      ctx.restore();
+    }
     if (kind === 'target') {
       const d = Math.max(5 * u, lw * 2.2);
       ctx.fillRect(x + w / 2 - d / 2, y + h / 2 - d / 2, d, d);
@@ -295,6 +311,14 @@ window.Scanner = (function () {
       return;
     }
     if (!text) return;
+    if (sc.label === 'center') {
+      const size = Math.max(10 * u, Math.min(17 * u, h * 0.16));
+      ctx.font = `${f.weight === 600 ? 500 : f.weight} ${size}px ${f.css}`;
+      ctx.fillStyle = col;
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, x + (w - ctx.measureText(text).width) / 2, y + h / 2);
+      return;
+    }
     if (sc.label === 'below') {
       const size = 34 * u;
       ctx.font = `${f.weight === 600 ? 300 : f.weight} ${size}px ${f.css === MONO ? SANS : f.css}`;
@@ -853,10 +877,147 @@ window.Scanner = (function () {
   };
   const moodPack = (mood) => MOOD_PACKS[String(mood || '').toLowerCase()] || (mood ? `${mood} {%} MATCH, ${mood} detected, ${mood}.exe` : MOOD_PACKS.warm);
 
+  /* ---------- рамки в видео: стоят, следят, вспыхивают, рой ---------- */
+  const MOTIONS = [['still', 'Стоят'], ['track', 'Следят'], ['flash', 'Вспыхивают'], ['swarm', 'Рой']];
+
+  /* места с деталями: центры клеток, где больше всего краёв, от сильных к слабым. Доли кадра. */
+  function spots(A) {
+    const cols = 16;
+    const rows = Math.max(8, Math.round((cols * A.gh) / A.gw));
+    const cw = A.gw / cols, ch = A.gh / rows;
+    const out = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        let e = 0;
+        const y0 = Math.floor(r * ch), y1 = Math.floor((r + 1) * ch), x0 = Math.floor(c * cw), x1 = Math.floor((c + 1) * cw);
+        for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) e += A.edge[y * A.gw + x];
+        out.push({ x: (c + 0.5) / cols, y: (r + 0.5) / rows, e: e / ((y1 - y0) * (x1 - x0) || 1) });
+      }
+    }
+    return out.sort((a, b) => b.e - a.e);
+  }
+
+  /* Вспыхивают: у каждой рамки своя короткая жизнь, потом она гаснет и встаёт в другое место с деталями.
+     Свои рамки при этом остаются на местах, но мигают. */
+  function flashBoxes(A, sc, W, H, clock, own) {
+    const seed = sc.seed || 1;
+    const c = clock || 0;
+    const n = own ? own.length : Math.max(1, Math.round(5 * (sc.amount || 1)));
+    const S = own ? null : spots(A);
+    const top = S ? S.slice(0, Math.max(n * 3, Math.floor(S.length * 0.35))) : null;
+    const side = 0.13 * Math.min(W, H);
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const rk = rngFor(seed, 7000 + k);
+      const life = 0.35 + rk() * 0.6;
+      const e = Math.floor((c + rk() * life) / life);
+      const re = rngFor(seed + e * 31, k);
+      if (re() < (own ? 0.3 : 0.25)) continue;
+      if (own) { out.push({ ...own[k], epoch: e, slot: k }); continue; }
+      const sp = top[Math.floor(re() * top.length)];
+      const s = side * (0.8 + re() * 0.45);
+      const w = s / W, h = s / H;
+      out.push({ x: Math.max(0, Math.min(1 - w, sp.x - w / 2 + (re() - 0.5) * 0.03)), y: Math.max(0, Math.min(1 - h, sp.y - h / 2 + (re() - 0.5) * 0.03)), w, h, epoch: e, slot: k });
+    }
+    return out;
+  }
+
+  /* Рой: много тонких рамок разного размера, перестраиваются несколько раз в секунду. */
+  function swarmBoxes(A, sc, W, H, clock) {
+    const seed = sc.seed || 1;
+    const n = Math.max(4, Math.round(26 * (sc.amount || 1)));
+    const bucket = Math.floor((clock || 0) * 8);
+    const re = rngFor(seed + bucket * 17, 3);
+    const S = spots(A);
+    const top = S.slice(0, Math.max(n, Math.floor(S.length * 0.5)));
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const sp = top[Math.floor(re() * top.length)];
+      const big = re();
+      const w = 0.025 + big * big * big * 0.32;
+      const h = (w * (0.55 + re() * 0.9) * W) / H;
+      out.push({
+        x: Math.max(0, Math.min(1 - w, sp.x - w / 2 + (re() - 0.5) * 0.06)),
+        y: Math.max(0, Math.min(1 - h, sp.y - h / 2 + (re() - 0.5) * 0.06)),
+        w, h, epoch: bucket, slot: k,
+      });
+    }
+    return out;
+  }
+
+  /* Следят: рамка запоминает, что у неё внутри, и на каждом кадре ищет этот кусок рядом.
+     Сравниваем яркость на сетке 10 × 10 точек, без среднего, чтобы свет и тень меньше мешали. */
+  const trackers = new WeakMap();
+  const G = 10;
+  function patch(A, cx, cy, tw, th) {
+    const p = new Float32Array(G * G);
+    let m = 0;
+    for (let gy = 0; gy < G; gy++) {
+      for (let gx = 0; gx < G; gx++) {
+        const x = Math.max(0, Math.min(A.gw - 1, Math.round(cx - tw / 2 + ((gx + 0.5) * tw) / G)));
+        const y = Math.max(0, Math.min(A.gh - 1, Math.round(cy - th / 2 + ((gy + 0.5) * th) / G)));
+        const v = A.lum[y * A.gw + x];
+        p[gy * G + gx] = v;
+        m += v;
+      }
+    }
+    m /= G * G;
+    for (let i = 0; i < p.length; i++) p[i] -= m;
+    return p;
+  }
+  function track(canvasKey, A, boxes, clock) {
+    const key = JSON.stringify(boxes.map((b) => [b.x, b.y, b.w, b.h])) + `|${A.gw}x${A.gh}`;
+    let t = trackers.get(canvasKey);
+    /* начинаем заново: рамки поменялись, ролик пошёл сначала или времени нет */
+    if (!t || t.key !== key || clock == null || clock < t.last - 0.05) {
+      t = {
+        key,
+        last: clock == null ? -1 : clock,
+        items: boxes.map((b) => {
+          const cx = (b.x + b.w / 2) * A.gw, cy = (b.y + b.h / 2) * A.gh;
+          const tw = Math.max(3, b.w * A.gw), th = Math.max(3, b.h * A.gh);
+          return { cx, cy, tw, th, tpl: patch(A, cx, cy, tw, th) };
+        }),
+      };
+      trackers.set(canvasKey, t);
+    } else if (clock !== t.last) {
+      t.last = clock;
+      t.items.forEach((it) => {
+        let best = Infinity, bx = 0, by = 0;
+        const tryAt = (dx, dy) => {
+          const p = patch(A, it.cx + dx, it.cy + dy, it.tw, it.th);
+          let s = 0;
+          for (let i = 0; i < p.length; i++) s += Math.abs(p[i] - it.tpl[i]);
+          /* лёгкий штраф за дальний прыжок, чтобы рамка не скакала по похожим местам */
+          s += (Math.abs(dx) + Math.abs(dy)) * 0.15;
+          if (s < best) { best = s; bx = dx; by = dy; }
+        };
+        /* сначала грубо через клетку, потом уточняем вокруг лучшего места */
+        for (let dy = -8; dy <= 8; dy += 2) for (let dx = -8; dx <= 8; dx += 2) tryAt(dx, dy);
+        const cx0 = bx, cy0 = by;
+        for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (dx || dy) tryAt(cx0 + dx, cy0 + dy);
+        it.cx = Math.max(it.tw / 2, Math.min(A.gw - it.tw / 2, it.cx + bx * 0.8));
+        it.cy = Math.max(it.th / 2, Math.min(A.gh - it.th / 2, it.cy + by * 0.8));
+        /* образец понемногу обновляется: объект поворачивается и меняется */
+        const now = patch(A, it.cx, it.cy, it.tw, it.th);
+        for (let i = 0; i < now.length; i++) it.tpl[i] = it.tpl[i] * 0.85 + now[i] * 0.15;
+      });
+    }
+    return boxes.map((b, i) => {
+      const it = t.items[i];
+      return { ...b, x: it.cx / A.gw - b.w / 2, y: it.cy / A.gh - b.h / 2 };
+    });
+  }
+
+  /* рамки «сами» в видео не прыгают каждый кадр: считаем один раз и держим */
+  const autoCache = new WeakMap();
+
   /* ---------- сборка ---------- */
   const api = { fromEffect, PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, ICONS, PACKS, moodPack, drawIcon, defaults, presetById, time: null, lastBoxes: [], lastInsets: [], lastIcons: [], lastDossier: null };
   /* анимация нужна, только если сканер включён и живое сканирование не выключено */
-  api.animates = (s) => !!(s && s.scan && s.scan.on && s.scan.anim !== false);
+  api.animates = (s) => !!(s && s.scan && s.scan.on && (s.scan.anim !== false || ['flash', 'swarm'].includes(s.scan.motion)));
+  api.MOTIONS = MOTIONS;
+  api.clock = null;
   api.DURATION = 5;
 
   const clamp01 = (v) => Math.max(0, Math.min(1, v));
@@ -876,12 +1037,30 @@ window.Scanner = (function () {
     const T = sc.anim === false ? null : api.time;
     const seed = sc.seed || 1;
 
-    let boxes = sc.boxes && sc.boxes.length ? sc.boxes : null;
-    if (!boxes) {
-      const A = E.analyze(ctx, W, H, r);
-      boxes = E.autoBoxes(A, Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' ? 0.05 : 0.02);
+    /* часы ролика: время анимации или текущий кадр видео, null у фото */
+    const clock = api.time != null ? api.time : api.clock;
+    const motion = sc.motion || 'still';
+    let A = null;
+    const look = () => A || (A = E.analyze(ctx, W, H, r));
+    const own = sc.boxes && sc.boxes.length ? sc.boxes : null;
+    let boxes;
+    if (motion === 'swarm') boxes = swarmBoxes(look(), sc, W, H, clock);
+    else if (motion === 'flash') boxes = flashBoxes(look(), sc, W, H, clock, own);
+    else {
+      boxes = own;
+      if (!boxes) {
+        const key = `${seed}|${sc.amount}|${sc.label}|${W}x${H}`;
+        const kept = clock != null && autoCache.get(ctx.canvas);
+        if (kept && kept.key === key && clock >= kept.at) boxes = kept.boxes;
+        else {
+          boxes = E.autoBoxes(look(), Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' ? 0.05 : 0.02);
+          autoCache.set(ctx.canvas, { key, boxes, at: clock == null ? Infinity : clock });
+        }
+      }
+      if (motion === 'track') boxes = track(ctx.canvas, look(), boxes, clock);
     }
     api.lastBoxes = boxes;
+    api.lastMotion = motion;
     const px = boxes.map((b) => ({ x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H }));
 
     /* время появления рамок: по одной, сверху вниз по списку */
@@ -1027,12 +1206,13 @@ window.Scanner = (function () {
       }
       ctx.strokeStyle = col;
       ctx.lineWidth = lw;
-      shapePath(ctx, sc.shape, b.x, b.y, b.w, b.h, u, lw);
+      shapePath(ctx, sc.shape, b.x, b.y, b.w, b.h, u, lw, i);
       ctx.restore();
       const tpl = list.length ? list[i % list.length] : '';
       /* пока рамка «думает», проценты перебираются, потом застывают */
       const settled = T == null || T > appear(i) + 1.3;
-      let text = fill(tpl, boxes[i], i, W, H, seed, state.note, settled ? null : Math.floor(T * 12));
+      const tick = boxes[i].epoch != null ? boxes[i].epoch * 7 + 1 : settled ? null : Math.floor(T * 12);
+      let text = fill(tpl, boxes[i], boxes[i].slot != null ? boxes[i].slot : i, W, H, seed, state.note, tick);
       if (T != null) text = text.slice(0, Math.max(0, Math.floor((T - appear(i) - 0.15) * 32)));
       drawLabel(ctx, sc, text, b.x, b.y, b.w, b.h, W, H, u, col, f);
     });

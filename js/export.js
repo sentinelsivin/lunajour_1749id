@@ -99,9 +99,12 @@
       /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
       const live = window.Scanner && window.Scanner.animates(s);
       if (moving || live) {
-        if (live) window.Scanner.time = t / 1000;
+        if (window.Scanner) {
+          if (live) window.Scanner.time = t / 1000;
+          window.Scanner.clock = t / 1000;
+        }
         renderCard(still.getContext('2d'), s, slots, assets);
-        if (live) window.Scanner.time = null;
+        if (window.Scanner) { window.Scanner.time = null; window.Scanner.clock = null; }
       }
       placeCard(x, still, W, H, {
         squeeze: Math.cos(Math.sin(a) * 0.42),
