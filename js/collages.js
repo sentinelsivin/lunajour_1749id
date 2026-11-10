@@ -2193,5 +2193,117 @@
     const cells = geometry(id, 1080, 1350, s).cells;
     return cells.reduce((n, c, k) => Math.max(n, (c.slot ?? k) + 1), 0);
   };
+
+  /* ---------- лента снимков поверх лица, красные блоки ---------- */
+  const Q = (o) => ({ page: true, ...o });
+  COLLAGES.push(
+    {
+      /* фото на весь лист, на уровне глаз лента из разных снимков */
+      id: 'eyeStrip', name: 'Лента снимков', noNote: true,
+      cells: [
+        Q({ x: 0, y: 0, w: 1, h: 1 }),
+        Q({ x: 0, y: 0.235, w: 0.12, h: 0.225 }),
+        Q({ x: 0.12, y: 0.235, w: 0.24, h: 0.265 }),
+        Q({ x: 0.36, y: 0.235, w: 0.16, h: 0.225 }),
+        Q({ x: 0.52, y: 0.235, w: 0.24, h: 0.225 }),
+        Q({ x: 0.76, y: 0.235, w: 0.14, h: 0.265 }),
+        Q({ x: 0.9, y: 0.235, w: 0.1, h: 0.32 }),
+      ],
+    },
+    {
+      /* фото на весь лист и одна широкая полоса другого снимка поперёк */
+      id: 'eyeBand', name: 'Полоса поперёк', noNote: true,
+      cells: [Q({ x: 0, y: 0, w: 1, h: 1 }), Q({ x: 0, y: 0.14, w: 1, h: 0.24 })],
+    },
+    {
+      /* ряд из четырёх снимков, в середине просвет на основное фото */
+      id: 'gallery', name: 'Галерея', noNote: true,
+      deco(ctx, box, u, geo, opt) {
+        ctx.fillStyle = opt.c('bg', '#151210');
+        ctx.fillRect(0, 0, geo.W, geo.H);
+      },
+      palette: [{ key: 'bg', name: 'Фон', def: '#151210' }],
+      cells: [
+        Q({ x: 0.4, y: 0.27, w: 0.2, h: 0.4 }),
+        Q({ x: 0.02, y: 0.28, w: 0.18, h: 0.38 }),
+        Q({ x: 0.21, y: 0.28, w: 0.18, h: 0.38 }),
+        Q({ x: 0.61, y: 0.28, w: 0.18, h: 0.38 }),
+        Q({ x: 0.8, y: 0.28, w: 0.18, h: 0.38 }),
+      ],
+    },
+    {
+      /* девять чёрно-белых квадратиков на цветном листе */
+      id: 'nineBits', name: 'Девять кусочков', noNote: true,
+      palette: [{ key: 'bg', name: 'Фон', def: '#e3241f' }],
+      choices: [{ key: 'tone', name: 'Снимки', def: 'mono', options: [['mono', 'Чёрно-белые'], ['color', 'Цветные']] }],
+      deco(ctx, box, u, geo, opt) {
+        ctx.fillStyle = opt.c('bg', '#e3241f');
+        ctx.fillRect(0, 0, geo.W, geo.H);
+        /* потёртости бумаги */
+        ctx.save();
+        ctx.strokeStyle = 'rgba(255,255,255,.12)';
+        ctx.lineWidth = 1.2 * u;
+        let a = 7;
+        const rnd = () => ((a = (a * 16807) % 2147483647) / 2147483647);
+        for (let i = 0; i < 26; i++) {
+          const x = rnd() * geo.W, y = rnd() * geo.H;
+          ctx.beginPath();
+          ctx.moveTo(x, y);
+          ctx.lineTo(x + (rnd() - 0.5) * geo.W * 0.3, y + (rnd() - 0.5) * geo.H * 0.06);
+          ctx.stroke();
+        }
+        ctx.restore();
+      },
+      layout(W, H, env) {
+        const s = Math.min(W, H) * 0.155;
+        const gap = s * 0.38;
+        const x0 = W / 2 - s * 1.5 - gap, y0 = H / 2 - s * 1.5 - gap;
+        const mono = env.pick('tone', 'mono') === 'mono';
+        const tilt = [-1.5, 1, 0.5, 1.5, -0.5, -1, 1, 0, -1.5];
+        const cells = [];
+        for (let r = 0; r < 3; r++) {
+          for (let c = 0; c < 3; c++) {
+            const k = r * 3 + c;
+            cells.push({ x: x0 + c * (s + gap), y: y0 + r * (s + gap), w: s, h: s, rot: (tilt[k] * Math.PI) / 180, mono });
+          }
+        }
+        return { cells };
+      },
+    },
+    {
+      /* три снимка рядом, поверх красные плашки; открыта только полоса глаз */
+      id: 'redBlocks', name: 'Красные плашки', noNote: true,
+      palette: [{ key: 'red', name: 'Цвет плашек', def: '#d42027' }],
+      choices: [{ key: 'tone', name: 'Снимки', def: 'mono', options: [['mono', 'Чёрно-белые'], ['color', 'Цветные']] }],
+      layout(W, H, env) {
+        const mono = env.pick('tone', 'mono') === 'mono';
+        return {
+          cells: [
+            { x: 0, y: 0, w: W * 0.3, h: H, rot: 0, mono },
+            { x: W * 0.3, y: 0, w: W * 0.41, h: H, rot: 0, mono },
+            { x: W * 0.71, y: 0, w: W * 0.29, h: H, rot: 0, mono },
+          ],
+        };
+      },
+      overlay(ctx, geo, u, opt) {
+        const { W, H } = geo;
+        ctx.save();
+        ctx.fillStyle = opt.c('red', '#d42027');
+        ctx.fillRect(W * 0.3, 0, W * 0.41, H * 0.33);
+        ctx.fillRect(W * 0.3, H * 0.52, W * 0.41, H * 0.48);
+        ctx.fillRect(0, H * 0.33, W * 0.3, H * 0.19);
+        /* сгибы старой бумаги */
+        ctx.strokeStyle = 'rgba(255,255,255,.35)';
+        ctx.lineWidth = 1.5 * u;
+        ctx.beginPath();
+        [0.33, 0.52, 0.7].forEach((y) => { ctx.moveTo(0, H * y); ctx.lineTo(W, H * y); });
+        ctx.moveTo(W * 0.3, 0); ctx.lineTo(W * 0.3, H);
+        ctx.moveTo(W * 0.71, 0); ctx.lineTo(W * 0.71, H);
+        ctx.stroke();
+        ctx.restore();
+      },
+    },
+  );
+
   window.Collages = { COLLAGES, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
 })();

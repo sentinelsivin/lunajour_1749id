@@ -1,6 +1,7 @@
 /* Экран приложения: связывает настройки, камеру, отрисовку и экспорт. */
 (function () {
   const { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, makeRng, byId } = window.Motifs;
+  const Render = window.Render;
   const { RATIOS, PAPERS, FONTS, renderCard, sampleScene, layout, slotFrame, canvas, clearMasks, paintPaper, drawCover, luminance } = window.Render;
   const { Camera, Export, Store, Templates, I18n, Collages } = window;
   const { t } = I18n;
@@ -18,8 +19,9 @@
     motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
+    fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [] },
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
-    note: { title: SAMPLE_TITLE, place: '', date: today(), showDate: true, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
+    note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
   });
 
   let state = defaults();
@@ -212,17 +214,21 @@
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
     if (tab === 'layers') {
-      const l = state.layers[selectedLayer];
-      if (!l) return;
-      const b = window.Render.layerBox(ctx, l, assets, card.width, card.height);
-      ctx.save();
-      ctx.translate(l.x * card.width, l.y * card.height);
-      ctx.rotate(l.rot || 0);
-      ctx.strokeStyle = '#6c9fe0';
-      ctx.lineWidth = 2.5;
-      ctx.setLineDash([8, 6]);
-      ctx.strokeRect(-b.w / 2 - 6, -b.h / 2 - 6, b.w + 12, b.h + 12);
-      ctx.restore();
+      /* в режиме выбора нескольких обводим все отмеченные, иначе один выбранный */
+      const list = multiMode ? [...multi] : [selectedLayer];
+      list.forEach((i) => {
+        const l = state.layers[i];
+        if (!l) return;
+        const b = window.Render.layerBox(ctx, l, assets, card.width, card.height);
+        ctx.save();
+        ctx.translate(l.x * card.width, l.y * card.height);
+        ctx.rotate(l.rot || 0);
+        ctx.strokeStyle = multiMode ? '#f5c518' : '#6c9fe0';
+        ctx.lineWidth = 2.5;
+        ctx.setLineDash([8, 6]);
+        ctx.strokeRect(-b.w / 2 - 6, -b.h / 2 - 6, b.w + 12, b.h + 12);
+        ctx.restore();
+      });
       return;
     }
     /* в коллаже обводим выбранную ячейку, пока открыт коллаж или кадр */
@@ -616,6 +622,7 @@
   async function restoreDraft(draft) {
     state = { ...defaults(), ...draft.state };
     state.note = { ...defaults().note, ...draft.state.note };
+    state.fx = { ...defaults().fx, ...(draft.state.fx || {}) };
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];
@@ -724,6 +731,17 @@
   /* ---------- панель фигур ---------- */
   function drawThumb(c, motif) {
     const x = c.getContext('2d');
+    if (motif.id === 'none') {
+      /* значок «ничего»: перечёркнутый круг */
+      x.strokeStyle = '#8a93a6';
+      x.lineWidth = 4;
+      x.beginPath();
+      x.arc(c.width / 2, c.height / 2, 26, 0, Math.PI * 2);
+      x.moveTo(c.width / 2 - 18, c.height / 2 + 18);
+      x.lineTo(c.width / 2 + 18, c.height / 2 - 18);
+      x.stroke();
+      return;
+    }
     x.fillStyle = '#f0ede5';
     motif.draw(x, c.width, c.height, makeRng(7), {
       size: 1, density: 0.8, text: '', font: state.wordFont, image: motif.usesImage ? assets.mask : null, pieces: DEMO_PIECES,
@@ -750,7 +768,7 @@
     const grid = $('motifGrid');
     grid.replaceChildren();
     thumbQueue = [];
-    MOTIFS.filter((m) => category === 'all' || m.cat === category).forEach((m) => {
+    MOTIFS.filter((m) => m.id === 'none' || category === 'all' || m.cat === category).forEach((m) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'thumb';
@@ -775,7 +793,11 @@
     $('maskUpload').hidden = !motif.usesImage;
     $('maskHint').hidden = !motif.usesImage;
     $('handTools').hidden = !motif.usesPieces;
-    $('genTools').hidden = !!motif.usesPieces;
+    const none = motif.id === 'none';
+    $('genTools').hidden = !!motif.usesPieces || none;
+    /* без фигуры настройки вырезов ни к чему */
+    [$('ghost').closest('label'), document.querySelector('[data-seg="effect"]').closest('.group'), document.querySelector('[data-bind="scatter"]')?.closest('label')]
+      .forEach((el) => { if (el) el.hidden = none; });
     const fonts = $('wordFonts');
     fonts.replaceChildren();
     fonts.hidden = !motif.usesText || WORD_FONTS.length < 2;
@@ -795,7 +817,7 @@
 
   /* ---------- ручная расстановка ---------- */
   const handMode = () => tab === 'motif' && !!byId(state.motif).usesPieces;
-  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || handMode() || (tab === 'collage' && !!collageTpl()));
+  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || fxBoxMode() || handMode() || (tab === 'collage' && !!collageTpl()));
 
   function syncPieceTools() {
     const p = state.pieces[selected];
@@ -1243,6 +1265,12 @@
     el.onerror = () => reject(new Error(`script ${src}`));
     document.head.append(el);
   });
+  async function loadDetector() {
+    if (detector) return;
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
+    await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
+    detector = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
+  }
   async function findPeople() {
     const slot = slots[0];
     if (!slot || !slot.src || slot.src.kind === 'live') return toast(t('Сначала добавь фото.'));
@@ -1250,11 +1278,7 @@
     btn.disabled = true;
     btn.textContent = t('Ищу…');
     try {
-      if (!detector) {
-        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js');
-        await loadScript('https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd@2.2.3/dist/coco-ssd.min.js');
-        detector = await window.cocoSsd.load({ base: 'lite_mobilenet_v2' });
-      }
+      await loadDetector();
       const found = (await detector.detect(slot.src.el, 30, 0.35)).filter((p) => p.class === 'person');
       if (!found.length) return toast(t('Людей на фото не нашлось. Поставь рамки пальцем.'));
       /* из пикселей снимка в доли окна с фото: с учётом масштаба, сдвига и отражения */
@@ -1280,17 +1304,216 @@
     }
   }
 
+  /* ---------- эффекты поверх фото ---------- */
+  const FX_COLORS = ['#ffffff', '#111111', '#f5c518', '#39ff6a', '#ff5a1f', '#e01b1b', '#6c9fe0', '#f472b6', '#a78bfa'];
+  const FX_HINTS = {
+    detect: 'Подпись у рамок. Пусто: Person или то, что нашлось.',
+    objects: 'Слово перед номером рамки.',
+    tags: 'Слова через запятую, по одному на рамку.',
+    frameLetters: 'Своё слово спрячется среди случайных букв.',
+    colLetters: 'Своё слово спрячется среди случайных букв.',
+    pixels: 'Буквы этого слова встанут в квадраты.',
+    morse: 'Текст станет точками и тире.',
+    threads: 'Слова через пробел, у каждого своя нить.',
+    graph: 'Подписи по оси внизу: буквы подряд или через запятую.',
+    circle: 'Подписи по краям через запятую.',
+    chart: 'Заголовок блока обозначений.',
+    vwords: 'Каждое слово встанет своим столбиком.',
+    formula: 'Например: x^2 [-3, 3], sin(x)/x, abs(x). Для кривой: x = cos(t); y = sin(t).',
+  };
+  let selectedBox = -1;
+  const fxDef = () => (state.fx.id ? Effects.byId(state.fx.id) : null);
+  const fxBoxMode = () => tab === 'fx' && Effects.usesBoxes(state.fx.id);
+
+  function syncFx() {
+    const grid = $('fxGrid');
+    if (!grid.childElementCount) {
+      [{ id: '', name: 'Без эффекта' }, ...Effects.EFFECTS].forEach((e, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'thumb';
+        b.dataset.fx = e.id;
+        const c = canvas(120, 150);
+        const label = document.createElement('span');
+        b.append(c, label);
+        b.onclick = () => {
+          if (state.fx.id !== e.id) state.fx = { ...state.fx, id: e.id, text: '', color: '', style: '', boxes: [] };
+          selectedBox = -1;
+          syncFx();
+          syncGrab();
+          update();
+        };
+        grid.append(b);
+        /* превью рисуются по одной за кадр, чтобы вкладка открывалась сразу */
+        setTimeout(() => {
+          const x = c.getContext('2d');
+          drawCover(x, sample, sample.width, sample.height, c.width, c.height);
+          if (e.id) Effects.draw(x, { fx: { id: e.id, color: '', text: '', amount: 0.8, seed: 3, boxes: [] } }, c.width, c.height);
+        }, 30 * i);
+      });
+    }
+    grid.querySelectorAll('[data-fx]').forEach((b) => {
+      b.classList.toggle('on', b.dataset.fx === (state.fx.id || ''));
+      const e = Effects.byId(b.dataset.fx);
+      b.querySelector('span').textContent = t(e ? e.name : 'Без эффекта');
+    });
+    const def = fxDef();
+    $('fxTools').hidden = !def;
+    if (!def) return;
+    const hint = FX_HINTS[def.id];
+    $('fxTextField').hidden = !hint;
+    $('fxTextHint').hidden = !hint;
+    $('fxTextHint').textContent = hint ? t(hint) : '';
+    const st = Effects.styleOf(def, state.fx);
+    $('fxText').placeholder = (st && st.text) || def.text || '';
+    $('fxText').value = state.fx.text;
+    $('fxAmount').value = state.fx.amount;
+    $('fxFontGroup').hidden = def.id === 'points';
+    $('fxStyleGroup').hidden = !def.styles;
+    const fxStyles = $('fxStyles');
+    fxStyles.replaceChildren();
+    (def.styles || []).forEach((st, i) => {
+      const on = state.fx.style ? state.fx.style === st.id : i === 0;
+      chip(fxStyles, t(st.name), on, () => { state.fx = { ...state.fx, style: st.id, color: '', text: st.text ? '' : state.fx.text }; syncFx(); update(); });
+    });
+    const fxFonts = $('fxFonts');
+    fxFonts.replaceChildren();
+    chip(fxFonts, t('Как в эффекте'), !state.fx.font, () => { state.fx = { ...state.fx, font: '' }; syncFx(); update(); });
+    Effects.fonts().forEach((f) => {
+      chip(fxFonts, t(f.name), f.id === state.fx.font, () => { state.fx = { ...state.fx, font: f.id }; syncFx(); update(); }).style.fontFamily = f.css;
+    });
+    swatches($('fxSwatches'), FX_COLORS, state.fx.color, (v) => { state.fx = { ...state.fx, color: v }; syncFx(); update(); }, t('Как в эффекте'));
+    $('fxBoxTools').hidden = !def.boxes;
+    $('fxBoxDelete').disabled = selectedBox < 0;
+    $('fxBoxAuto').disabled = !state.fx.boxes.length;
+  }
+
+  function bindFx() {
+    let drag = null;
+    /* в доли области фото, где лежит эффект */
+    const toCard = (e) => {
+      const box = card.getBoundingClientRect();
+      const r = window.Render.fxRect(state, card.width, card.height);
+      const px = ((e.clientX - box.left) / box.width) * card.width;
+      const py = ((e.clientY - box.top) / box.height) * card.height;
+      return [(px - r.x) / r.w, (py - r.y) / r.h, r.w / r.h];
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (!fxBoxMode()) return;
+      const [fx, fy, aspect] = toCard(e);
+      if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+      /* первая правка превращает рамки «сами» в свои, чтобы их можно было двигать */
+      if (!state.fx.boxes.length) state.fx.boxes = Effects.lastBoxes.map((b) => ({ ...b }));
+      const list = state.fx.boxes;
+      const gx = 0.03;
+      const gy = gx * aspect;
+      let hit = -1;
+      let mode = 'move';
+      for (let i = list.length - 1; i >= 0; i--) {
+        const b = list[i];
+        if (Math.abs(fx - (b.x + b.w)) < gx && Math.abs(fy - (b.y + b.h)) < gy) { hit = i; mode = 'size'; break; }
+        if (fx >= b.x && fx <= b.x + b.w && fy >= b.y && fy <= b.y + b.h) { hit = i; break; }
+      }
+      if (hit < 0) {
+        const w = 0.16;
+        const h = 0.16 * aspect * 1.2;
+        list.push({ x: clamp(fx - w / 2, 0, 1 - w), y: clamp(fy - h / 2, 0, 1 - h), w, h });
+        hit = list.length - 1;
+      }
+      selectedBox = hit;
+      drag = { id: e.pointerId, mode, fx, fy, start: { ...list[hit] } };
+      try { card.setPointerCapture(e.pointerId); } catch {}
+      syncFx();
+      update();
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id || !fxBoxMode()) return;
+      const [fx, fy] = toCard(e);
+      const m = state.fx.boxes[selectedBox];
+      if (!m) return;
+      const dx = fx - drag.fx;
+      const dy = fy - drag.fy;
+      if (drag.mode === 'size') {
+        m.w = clamp(drag.start.w + dx, 0.02, 1 - m.x);
+        m.h = clamp(drag.start.h + dy, 0.02, 1 - m.y);
+      } else {
+        m.x = clamp(drag.start.x + dx, 0, 1 - m.w);
+        m.y = clamp(drag.start.y + dy, 0, 1 - m.h);
+      }
+      update();
+    });
+    const end = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+
+    $('fxShuffle').onclick = () => {
+      state.fx = { ...state.fx, seed: Math.floor(Math.random() * 1e6) };
+      update();
+    };
+    $('fxBoxDelete').onclick = () => {
+      if (selectedBox < 0) return;
+      state.fx.boxes.splice(selectedBox, 1);
+      selectedBox = -1;
+      syncFx();
+      update();
+    };
+    $('fxBoxAuto').onclick = () => {
+      state.fx = { ...state.fx, boxes: [] };
+      selectedBox = -1;
+      syncFx();
+      update();
+    };
+    $('fxFind').onclick = findThings;
+  }
+
+  /* Ищем людей и вещи на чистой карточке, без эффекта и стикеров сверху. */
+  async function findThings() {
+    const btn = $('fxFind');
+    btn.disabled = true;
+    btn.textContent = t('Ищу…');
+    try {
+      await loadDetector();
+      const c = canvas(card.width, card.height);
+      renderCard(c.getContext('2d'), { ...state, fx: { ...state.fx, id: '' }, layers: [] }, slots, assets);
+      const found = await detector.detect(c, 40, 0.3);
+      const r = window.Render.fxRect(state, c.width, c.height);
+      if (!found.length) return toast(t('Ничего не нашлось. Поставь рамки пальцем.'));
+      const name = (k) => k.charAt(0).toUpperCase() + k.slice(1);
+      state.fx = {
+        ...state.fx,
+        boxes: found.map(({ bbox: [x, y, w, h], class: k, score }) => ({ x: (x - r.x) / r.w, y: (y - r.y) / r.h, w: w / r.w, h: h / r.h, label: name(k), score }))
+          .filter((b) => b.x < 1 && b.y < 1 && b.x + b.w > 0 && b.y + b.h > 0),
+      };
+      selectedBox = -1;
+      syncFx();
+      update();
+      toast(`${t('Нашлось')}: ${found.length}`);
+    } catch (err) {
+      console.warn('find things', err);
+      toast(t('Не получилось найти. При первом запуске нужен интернет.'));
+    } finally {
+      btn.disabled = false;
+      btn.textContent = t('Найти людей и вещи');
+    }
+  }
+
   /* ---------- стикеры и текст поверх карточки ---------- */
   const EMOJIS = ['🌸', '🌷', '🌹', '🌼', '🌻', '💐', '🍀', '🌿', '🍒', '🍓', '🍰', '🧁', '🍩', '☕', '🎀', '💌', '💖', '💗', '💕', '💘', '🤍', '🦋', '🐚', '⭐', '🌟', '✨', '🌙', '☁️', '🌈', '🔮', '💿', '📷', '📼', '🎧', '🔒', '🗝️', '🕯️', '🪞', '🧸', '🐱', '🐰', '🫧', '💎', '👑', '🍓', '🎞️', '📌', '✂️'].filter((e, i, a) => a.indexOf(e) === i);
   const LAYER_COLORS = ['#111111', '#ffffff', '#f472b6', '#d64545', '#e8913a', '#ffe27a', '#86c96b', '#6c9fe0', '#1f3a8a', '#a78bfa'];
   let selectedLayer = -1;
+  /* выбор нескольких стикеров сразу: номера слоёв */
+  let multiMode = false;
+  let multi = new Set();
   let stickerCount = 0;
+  let stickerSet = 'emoji';
   const layersMode = () => tab === 'layers';
   const layerAt = (i) => state.layers[i];
 
   function addLayer(layer) {
     state.layers = [...state.layers, { x: 0.5, y: 0.45, rot: 0, ...layer }];
     selectedLayer = state.layers.length - 1;
+    multiMode = false;
+    multi = new Set();
     syncLayerTools();
     update();
   }
@@ -1325,6 +1548,24 @@
       b.onclick = () => addLayer({ type: 'sticker', img: id, size: 0.4 });
       grid.append(b);
     });
+    /* вкладки набора: эмодзи или готовые рисованные значки */
+    const tabs = $('stickerTabs');
+    tabs.replaceChildren();
+    [['emoji', 'Эмодзи'], ['ready', 'Готовые']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    if (stickerSet === 'ready') {
+      Render.VECTORS.forEach((v) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', t(v.name));
+        b.title = t(v.name);
+        const c = canvas(80, 80);
+        Render.drawVector(c.getContext('2d'), v.id, 40, 40, 64, v.color);
+        b.append(c);
+        b.onclick = () => addLayer({ type: 'sticker', vec: v.id, color: v.color, size: 0.4 });
+        grid.append(b);
+      });
+      return;
+    }
     EMOJIS.forEach((e) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -1503,8 +1744,19 @@
     });
   }
 
+  function syncMulti() {
+    multi = new Set([...multi].filter((i) => i < state.layers.length));
+    $('multiToggle').textContent = t(multiMode ? 'Готово с выбором' : 'Выбрать несколько');
+    $('multiToggle').classList.toggle('primary', multiMode);
+    $('multiTools').hidden = !multiMode;
+    $('multiCount').textContent = `${t('Выбрано')}: ${multi.size}`;
+    ['multiCopy', 'multiDelete', 'multiNone', 'multiSize', 'multiUp', 'multiDown'].forEach((id) => { $(id).disabled = !multi.size; });
+    $('multiToggle').hidden = state.layers.length < 2 && !multiMode;
+  }
+
   function syncLayerTools() {
-    const l = layerAt(selectedLayer);
+    syncMulti();
+    const l = !multiMode && layerAt(selectedLayer);
     $('layerTools').hidden = !l;
     if (!l) return;
     const isText = l.type === 'text';
@@ -1530,6 +1782,9 @@
       $('bgEdge').value = l.cut ? l.cut.edge ?? 1 : 1;
       markSeg($('bgMode'), l.cut ? l.cut.mode : 'edge');
     }
+    /* у готовых значков меняется цвет */
+    $('vecTools').hidden = !l.vec;
+    if (l.vec) swatches($('vecColor'), ['#ff1a1a', '#ffffff', '#111111', '#39ff6a', '#f5c518', '#ff5a1f', '#6c9fe0', '#f472b6', '#a78bfa'], l.color, (c) => editLayer({ color: c }));
     $('layerSize').value = l.size;
     $('layerRot').value = Math.round(((l.rot || 0) * 180) / Math.PI);
     $('layerUp').disabled = selectedLayer >= state.layers.length - 1;
@@ -1591,6 +1846,21 @@
       }
       const [px, py] = toCard(e);
       const hit = hitLayer(px, py);
+      /* Shift на компьютере тоже включает выбор нескольких */
+      if (e.shiftKey && !multiMode && hit >= 0) {
+        multiMode = true;
+        multi = new Set(selectedLayer >= 0 ? [selectedLayer] : []);
+      }
+      if (multiMode) {
+        if (hit < 0) return;
+        /* тап по невыбранному добавляет его; по выбранному можно сразу тянуть всю группу */
+        const fresh = !multi.has(hit);
+        if (fresh) multi.add(hit);
+        drag = { group: true, px, py, start: [...multi].map((i) => [i, state.layers[i].x, state.layers[i].y]), moved: false, fresh, hit };
+        syncLayerTools();
+        invalidate();
+        return;
+      }
       selectedLayer = hit;
       syncLayerTools();
       invalidate();
@@ -1611,9 +1881,25 @@
       }
       if (!drag) return;
       const [px, py] = toCard(e);
+      if (drag.group) {
+        const dx = (px - drag.px) / card.width;
+        const dy = (py - drag.py) / card.height;
+        if (Math.abs(dx) + Math.abs(dy) > 0.004) drag.moved = true;
+        const list = [...state.layers];
+        drag.start.forEach(([i, x, y]) => { list[i] = { ...list[i], x: clamp(x + dx, 0, 1), y: clamp(y + dy, 0, 1) }; });
+        state.layers = list;
+        update();
+        return;
+      }
       editLayer({ x: clamp(px / card.width + drag.dx, 0, 1), y: clamp(py / card.height + drag.dy, 0, 1) }, true);
     });
     const end = (e) => {
+      /* короткий тап по уже выбранному стикеру снимает с него выбор */
+      if (drag && drag.group && !drag.moved && !drag.fresh) {
+        multi.delete(drag.hit);
+        syncLayerTools();
+        invalidate();
+      }
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinch = null;
       if (!pointers.size) drag = null;
@@ -1669,6 +1955,58 @@
     };
     $('layerUp').onclick = () => move(1);
     $('layerDown').onclick = () => move(-1);
+
+    /* ---------- несколько стикеров сразу ---------- */
+    const done = () => { syncLayerTools(); update(); };
+    $('multiToggle').onclick = () => {
+      multiMode = !multiMode;
+      multi = new Set(multiMode && selectedLayer >= 0 ? [selectedLayer] : []);
+      selectedLayer = -1;
+      syncLayerTools();
+      invalidate();
+    };
+    $('multiAll').onclick = () => { multi = new Set(state.layers.map((_, i) => i)); syncLayerTools(); invalidate(); };
+    $('multiNone').onclick = () => { multi = new Set(); syncLayerTools(); invalidate(); };
+    $('multiDelete').onclick = () => {
+      state.layers = state.layers.filter((_, i) => !multi.has(i));
+      multi = new Set();
+      done();
+    };
+    $('multiCopy').onclick = () => {
+      const copies = [...multi].sort((a, b) => a - b).map((i) => ({ ...state.layers[i], x: clamp(state.layers[i].x + 0.05, 0, 1), y: clamp(state.layers[i].y + 0.05, 0, 1) }));
+      const from = state.layers.length;
+      state.layers = [...state.layers, ...copies];
+      multi = new Set(copies.map((_, k) => from + k));
+      done();
+    };
+    /* размер группы: стикеры растут вместе и расходятся от общего центра */
+    let sizeStart = null;
+    $('multiSize').oninput = (e) => {
+      const k = Number(e.target.value);
+      if (!sizeStart) {
+        const ids = [...multi];
+        const cx = ids.reduce((a, i) => a + state.layers[i].x, 0) / ids.length;
+        const cy = ids.reduce((a, i) => a + state.layers[i].y, 0) / ids.length;
+        sizeStart = { cx, cy, list: ids.map((i) => [i, { ...state.layers[i] }]) };
+      }
+      const list = [...state.layers];
+      sizeStart.list.forEach(([i, l0]) => {
+        list[i] = { ...list[i], size: clamp(l0.size * k, 0.03, 1.5), x: clamp(sizeStart.cx + (l0.x - sizeStart.cx) * k, 0, 1), y: clamp(sizeStart.cy + (l0.y - sizeStart.cy) * k, 0, 1) };
+      });
+      state.layers = list;
+      update();
+    };
+    $('multiSize').onchange = (e) => { sizeStart = null; e.target.value = 1; };
+    /* выше и ниже: вся группа целиком поверх остальных или под ними */
+    const restack = (top) => {
+      const picked = state.layers.filter((_, i) => multi.has(i));
+      const rest = state.layers.filter((_, i) => !multi.has(i));
+      state.layers = top ? [...rest, ...picked] : [...picked, ...rest];
+      multi = new Set(picked.map((_, k) => (top ? rest.length + k : k)));
+      done();
+    };
+    $('multiUp').onclick = () => restack(true);
+    $('multiDown').onclick = () => restack(false);
   }
 
   /* ---------- отмена и повтор ---------- */
@@ -1864,6 +2202,15 @@
       const b = e.target.closest('[data-tab]');
       if (b) setTab(b.dataset.tab);
     });
+    /* Разделы: открывается вкладка, на которой ты была в этом разделе в прошлый раз. */
+    $('groups').addEventListener('click', (e) => {
+      const b = e.target.closest('[data-group]');
+      if (!b) return;
+      const g = b.dataset.group;
+      const visible = [...document.querySelectorAll(`[data-tab][data-g="${g}"]`)].filter((x) => !x.hidden);
+      const last = visible.find((x) => x.dataset.tab === lastTab[g]) || visible[0];
+      if (last) setTab(last.dataset.tab);
+    });
     $('modeSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (b && !busy && !recording) setMode(b.dataset.v);
@@ -1976,25 +2323,38 @@
     bindDrag();
     bindPieces();
     bindMarks();
+    bindFx();
     bindLayers();
     bindHistory();
     bindFullscreen();
     buildPalette();
   }
 
+  const lastTab = {};
   function setTab(next) {
     tab = next;
+    const btn = document.querySelector(`[data-tab="${next}"]`);
+    const group = btn ? btn.dataset.g : 'shape';
+    lastTab[group] = next;
+    document.querySelectorAll('[data-group]').forEach((b) => b.classList.toggle('on', b.dataset.group === group));
+    let shown = 0;
     document.querySelectorAll('[data-tab]').forEach((b) => {
       b.classList.toggle('on', b.dataset.tab === next);
       b.setAttribute('aria-selected', b.dataset.tab === next);
+      b.classList.toggle('away', b.dataset.g !== group);
+      if (b.dataset.g === group && !b.hidden) shown++;
     });
+    /* в разделе с одной вкладкой второй ряд не нужен */
+    $('tabs').hidden = shown < 2;
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== next; });
     syncGrab();
     if (next === 'layers') syncLayerTools();
+    if (next === 'fx') syncFx();
     invalidate();
   }
 
   function syncAll() {
+    syncFx();
     syncStickers();
     syncInputs();
     syncMotifs();

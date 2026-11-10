@@ -72,15 +72,22 @@
       <button class="btn primary" id="finish" type="button">Готово</button>
     </div>
 
+    <nav class="groups" id="groups" aria-label="Разделы">
+      <button type="button" data-group="shape">Форма</button>
+      <button type="button" data-group="photo">Фото</button>
+      <button type="button" data-group="over">Поверх</button>
+      <button type="button" data-group="bg">Фон</button>
+    </nav>
     <nav class="tabs" id="tabs" role="tablist" aria-label="Настройки карточки">
-      <button type="button" role="tab" data-tab="motif">Фигуры</button>
-      <button type="button" role="tab" data-tab="collage">Коллаж</button>
-      <button type="button" role="tab" data-tab="layers">Стикеры</button>
-      <button type="button" role="tab" data-tab="paper">Бумага</button>
-      <button type="button" role="tab" data-tab="photo">Кадр</button>
-      <button type="button" role="tab" data-tab="color">Цвет</button>
-      <button type="button" role="tab" data-tab="note">Подпись</button>
-      <button type="button" role="tab" data-tab="format">Формат</button>
+      <button type="button" role="tab" data-tab="motif" data-g="shape">Фигуры</button>
+      <button type="button" role="tab" data-tab="collage" data-g="shape">Коллаж</button>
+      <button type="button" role="tab" data-tab="format" data-g="shape">Формат</button>
+      <button type="button" role="tab" data-tab="photo" data-g="photo">Кадр</button>
+      <button type="button" role="tab" data-tab="color" data-g="photo">Цвет</button>
+      <button type="button" role="tab" data-tab="fx" data-g="photo">Эффекты</button>
+      <button type="button" role="tab" data-tab="layers" data-g="over">Стикеры</button>
+      <button type="button" role="tab" data-tab="note" data-g="over">Подпись</button>
+      <button type="button" role="tab" data-tab="paper" data-g="bg">Бумага</button>
     </nav>
 
     <div class="panels">
@@ -150,12 +157,27 @@
 
       <section class="panel" data-panel="layers" hidden>
         <p class="hint">Нажми на стикер, чтобы добавить его. На карточке двигай одним пальцем, двумя меняй размер и поворачивай.</p>
+        <div class="chips" id="stickerTabs"></div>
         <div class="stickers" id="stickerGrid"></div>
         <div class="row">
           <button class="btn" id="stickerUpload" type="button">Своя картинка</button>
           <button class="btn" id="textAdd" type="button">Добавить текст</button>
         </div>
         <p class="hint">Для своей картинки лучше всего PNG с прозрачным фоном.</p>
+        <button class="btn" id="multiToggle" type="button" hidden>Выбрать несколько</button>
+        <div class="group" id="multiTools" hidden>
+          <p class="hint">Нажимай на стикеры, чтобы отметить их. Тяни любой отмеченный, и поедут все. Повторное нажатие снимает отметку.</p>
+          <span class="label" id="multiCount"></span>
+          <div class="row">
+            <button class="btn small" id="multiAll" type="button">Все</button>
+            <button class="btn small" id="multiNone" type="button">Снять</button>
+            <button class="btn small" id="multiCopy" type="button">Копия</button>
+            <button class="btn small" id="multiUp" type="button">Выше</button>
+            <button class="btn small" id="multiDown" type="button">Ниже</button>
+            <button class="btn small" id="multiDelete" type="button">Удалить</button>
+          </div>
+          <label class="slider">Размер вместе<input id="multiSize" type="range" min="0.4" max="2" step="0.01" value="1"></label>
+        </div>
         <div class="group" id="layerTools" hidden>
           <div class="group" id="textTools" hidden>
             <label class="field">Текст<textarea id="layerText" rows="2" maxlength="200"></textarea></label>
@@ -170,6 +192,7 @@
             <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="layerColor"></div></div>
             <div class="group"><span class="label">Цвет фона и контура</span><div class="swatches" id="layerBg"></div></div>
           </div>
+          <div class="group" id="vecTools" hidden><span class="label">Цвет значка</span><div class="swatches" id="vecColor"></div></div>
           <div class="group" id="dieTools" hidden>
             <span class="label">Эффект наклейки</span>
             <div class="seg" id="dieSeg">
@@ -243,6 +266,28 @@
         <button class="btn" id="adjReset" type="button">Сбросить цвет</button>
       </section>
 
+      <section class="panel" data-panel="fx" hidden>
+        <div class="thumbs" id="fxGrid"></div>
+        <div class="group" id="fxTools" hidden>
+          <div class="group" id="fxStyleGroup"><span class="label">Вид</span><div class="chips" id="fxStyles"></div></div>
+          <label class="field" id="fxTextField">Слова<input id="fxText" type="text" maxlength="200" data-bind="fx.text"></label>
+          <p class="hint" id="fxTextHint"></p>
+          <div class="group" id="fxFontGroup"><span class="label">Шрифт</span><div class="chips" id="fxFonts"></div></div>
+          <div class="group"><span class="label">Цвет</span><div class="swatches" id="fxSwatches"></div></div>
+          <label class="slider">Сколько<input id="fxAmount" type="range" min="0.4" max="2" step="0.05" data-bind="fx.amount"></label>
+          <button class="btn" id="fxShuffle" type="button">Перемешать</button>
+          <div class="group" id="fxBoxTools">
+            <span class="label">Рамки</span>
+            <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть.</p>
+            <div class="row">
+              <button class="btn small" id="fxFind" type="button">Найти людей и вещи</button>
+              <button class="btn small" id="fxBoxDelete" type="button">Удалить</button>
+              <button class="btn small" id="fxBoxAuto" type="button">Сами</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="panel" data-panel="note" hidden>
         <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
         <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
@@ -303,6 +348,7 @@
 <script src="js/i18n.js"></script>
 <script src="js/motifs.js"></script>
 <script src="js/collages.js"></script>
+<script src="js/effects.js"></script>
 <script src="js/render.js"></script>
 <script src="js/decor.js"></script>
 <script src="js/templates.js"></script>

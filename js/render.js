@@ -884,7 +884,9 @@
           ctx.shadowBlur = 14 * u;
           ctx.shadowOffsetY = 6 * u;
         }
+        if (cell.mono) ctx.filter = 'grayscale(1) contrast(1.2)';
         ctx.drawImage(photo, -cell.w / 2, -cell.h / 2, cell.w, cell.h);
+        ctx.filter = 'none';
       } else {
         /* цвет пустой ячейки зависит от того, что под ней: белая рамка, тёмная плёнка или бумага */
         const tone = cell.frame || geo.tpl.under === 'light' ? '0,0,0' : geo.tpl.under === 'dark' ? '255,255,255' : ink;
@@ -941,6 +943,14 @@
     if (geo.note) drawNote(ctx, s, { note: geo.note }, W, H);
   }
 
+  /* Область фото, на которую ложится эффект: у коллажа вся карточка. */
+  function fxRect(s, W, H) {
+    if (s.collage && window.Collages.byId(s.collage)) return { x: 0, y: 0, w: W, h: H };
+    const L = layout(s, W, H);
+    const a = L.photo || L.pieces;
+    return { x: a.x, y: a.y, w: a.w, h: a.h };
+  }
+
   function renderCard(ctx, s, slots, assets = {}) {
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
@@ -952,6 +962,7 @@
     if (s.paper === 'own' && assets.bg) drawCover(ctx, assets.bg, assets.bg.naturalWidth, assets.bg.naturalHeight, W, H);
     if (s.collage && window.Collages.byId(s.collage)) {
       renderCollage(ctx, s, slots, W, H, u, paper);
+      if (window.Effects) window.Effects.draw(ctx, s, W, H);
       drawLayers(ctx, s, assets, W, H);
       return;
     }
@@ -999,6 +1010,7 @@
       withShadow(() => ctx.drawImage(holed, a.x, a.y, a.w, a.h));
     }
 
+    if (window.Effects) window.Effects.draw(ctx, s, W, H, fxRect(s, W, H));
     drawNote(ctx, s, L, W, H);
     drawLayers(ctx, s, assets, W, H);
   }
@@ -1070,6 +1082,149 @@
     });
   }
 
+  /* ---------- готовые значки-стикеры: рисуются кодом, цвет меняется ---------- */
+  const VECTORS = [
+    { id: 'scope', name: 'Прицел', color: '#ff1a1a' },
+    { id: 'target', name: 'Мишень', color: '#ff1a1a' },
+    { id: 'focus', name: 'Фокус', color: '#ffffff' },
+    { id: 'frameTicks', name: 'Видоискатель', color: '#ffffff' },
+    { id: 'cross', name: 'Крестик', color: '#ff1a1a' },
+    { id: 'plus', name: 'Плюс', color: '#ffffff' },
+    { id: 'arrow', name: 'Стрелка', color: '#39ff6a' },
+    { id: 'ring', name: 'Обвести', color: '#ff1a1a' },
+    { id: 'burst', name: 'Вспышка', color: '#f5c518' },
+    { id: 'rec', name: 'Запись', color: '#ff1a1a' },
+    { id: 'warn', name: 'Внимание', color: '#39ff6a' },
+    { id: 'heartLine', name: 'Сердце контуром', color: '#ff1a1a' },
+  ];
+  /* значок в квадрате size с центром cx, cy */
+  function drawVector(ctx, id, cx, cy, size, color) {
+    const s = size / 2;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'butt';
+    const line = (w, pts) => { ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); ctx.lineTo(pts[2], pts[3]); ctx.stroke(); };
+    const ring = (r, w) => { ctx.lineWidth = w; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke(); };
+    switch (id) {
+      case 'scope': {
+        ring(s * 0.8, s * 0.05);
+        ring(s * 0.59, s * 0.012);
+        /* толстые концы снаружи, тонкие линии внутри и штрихи у центра */
+        [[0, -1], [0, 1], [-1, 0], [1, 0]].forEach(([dx, dy]) => {
+          line(s * 0.04, [dx * s * 0.98, dy * s * 0.98, dx * s * 0.47, dy * s * 0.47]);
+          line(s * 0.012, [dx * s * 0.47, dy * s * 0.47, 0, 0]);
+          line(s * 0.04, [dx * s * 0.08, dy * s * 0.08, dx * s * 0.18, dy * s * 0.18]);
+        });
+        break;
+      }
+      case 'target':
+        ring(s * 0.85, s * 0.06);
+        ring(s * 0.55, s * 0.06);
+        ring(s * 0.25, s * 0.06);
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.08, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'focus':
+        ctx.lineWidth = s * 0.05;
+        [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([dx, dy]) => {
+          ctx.beginPath();
+          ctx.moveTo(dx * s * 0.9, dy * s * 0.5);
+          ctx.lineTo(dx * s * 0.9, dy * s * 0.9);
+          ctx.lineTo(dx * s * 0.5, dy * s * 0.9);
+          ctx.stroke();
+        });
+        ctx.beginPath(); ctx.arc(0, 0, s * 0.05, 0, Math.PI * 2); ctx.fill();
+        break;
+      case 'frameTicks':
+        ctx.lineWidth = s * 0.025;
+        ctx.strokeRect(-s * 0.9, -s * 0.65, s * 1.8, s * 1.3);
+        line(s * 0.025, [-s * 0.15, 0, s * 0.15, 0]);
+        line(s * 0.025, [0, -s * 0.15, 0, s * 0.15]);
+        for (let k = -3; k <= 3; k++) line(s * 0.02, [k * s * 0.22, s * 0.65, k * s * 0.22, s * 0.55]);
+        break;
+      case 'cross':
+        ctx.lineCap = 'round';
+        line(s * 0.16, [-s * 0.6, -s * 0.6, s * 0.6, s * 0.6]);
+        line(s * 0.16, [s * 0.6, -s * 0.6, -s * 0.6, s * 0.6]);
+        break;
+      case 'plus':
+        line(s * 0.06, [-s * 0.7, 0, s * 0.7, 0]);
+        line(s * 0.06, [0, -s * 0.7, 0, s * 0.7]);
+        break;
+      case 'arrow':
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.9);
+        ctx.lineTo(s * 0.5, -s * 0.3);
+        ctx.lineTo(s * 0.17, -s * 0.3);
+        ctx.lineTo(s * 0.17, s * 0.9);
+        ctx.lineTo(-s * 0.17, s * 0.9);
+        ctx.lineTo(-s * 0.17, -s * 0.3);
+        ctx.lineTo(-s * 0.5, -s * 0.3);
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'ring': {
+        /* обводка от руки: чуть больше оборота, неровная */
+        ctx.lineWidth = s * 0.07;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let a = 0; a <= Math.PI * 2.15; a += 0.05) {
+          const r = s * (0.78 + 0.06 * Math.sin(a * 3) + a * 0.012);
+          const x = Math.cos(a - 0.6) * r * 1.1, y = Math.sin(a - 0.6) * r * 0.8;
+          if (a === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+        break;
+      }
+      case 'burst':
+        ctx.beginPath();
+        for (let k = 0; k < 32; k++) {
+          const a = (k * Math.PI) / 16;
+          const r = k % 2 ? s * 0.55 : s * 0.95;
+          ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r);
+        }
+        ctx.closePath();
+        ctx.fill();
+        break;
+      case 'rec':
+        ctx.beginPath(); ctx.arc(-s * 0.55, 0, s * 0.2, 0, Math.PI * 2); ctx.fill();
+        ctx.font = `700 ${s * 0.5}px "JetBrains Mono", monospace`;
+        ctx.textBaseline = 'middle';
+        ctx.fillText('REC', -s * 0.25, s * 0.03);
+        break;
+      case 'warn':
+        ctx.lineWidth = s * 0.08;
+        ctx.lineJoin = 'round';
+        ctx.beginPath();
+        ctx.moveTo(0, -s * 0.8);
+        ctx.lineTo(s * 0.85, s * 0.7);
+        ctx.lineTo(-s * 0.85, s * 0.7);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.font = `700 ${s * 0.75}px "Golos Text", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('?', 0, s * 0.25);
+        break;
+      case 'heartLine':
+        ctx.lineWidth = s * 0.07;
+        ctx.beginPath();
+        ctx.moveTo(0, s * 0.75);
+        ctx.bezierCurveTo(-s * 1.1, -s * 0.05, -s * 0.55, -s * 0.95, 0, -s * 0.4);
+        ctx.bezierCurveTo(s * 0.55, -s * 0.95, s * 1.1, -s * 0.05, 0, s * 0.75);
+        ctx.stroke();
+        break;
+      default: break;
+    }
+    ctx.restore();
+  }
+  function vectorBitmap(id, color, size) {
+    const c = canvas(size, size);
+    drawVector(c.getContext('2d'), id, size / 2, size / 2, size * 0.94, color);
+    return c;
+  }
+
   function drawLayers(ctx, s, assets, W, H) {
     (s.layers || []).forEach((l) => {
       const b = layerBox(ctx, l, assets, W, H);
@@ -1099,8 +1254,8 @@
         });
       } else if (l.die) {
         /* эффект наклейки: белая обводка по контуру, блик сверху и тень под всей наклейкой */
-        const art = b.img || emojiBitmap(l.emoji, b.size);
-        const bmp = dieCut(art, b.w, b.h, (l.dieW ?? 0.05) * b.size, `${l.img || l.emoji}|${Math.round(b.w)}|${Math.round(b.h)}|${l.dieW ?? 0.05}`);
+        const art = b.img || (l.vec ? vectorBitmap(l.vec, l.color || '#ff1a1a', Math.round(b.size)) : emojiBitmap(l.emoji, b.size));
+        const bmp = dieCut(art, b.w, b.h, (l.dieW ?? 0.05) * b.size, `${l.img || l.emoji || l.vec + l.color}|${Math.round(b.w)}|${Math.round(b.h)}|${l.dieW ?? 0.05}`);
         ctx.shadowColor = 'rgba(0,0,0,.32)';
         ctx.shadowBlur = b.size * 0.05;
         ctx.shadowOffsetY = b.size * 0.03;
@@ -1111,6 +1266,8 @@
         ctx.shadowBlur = b.size * 0.04;
         ctx.shadowOffsetY = b.size * 0.02;
         ctx.drawImage(b.img, -b.w / 2, -b.h / 2, b.w, b.h);
+      } else if (l.vec) {
+        drawVector(ctx, l.vec, 0, 0, b.size, l.color || '#ff1a1a');
       } else if (l.emoji) {
         ctx.shadowColor = 'rgba(0,0,0,.22)';
         ctx.shadowBlur = b.size * 0.05;
@@ -1154,7 +1311,7 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, canvas, layout, slotFrame, coverGeom, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
+    RATIOS, PAPERS, FONTS, VECTORS, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
   };
 })();

@@ -1865,7 +1865,74 @@
     ctx.drawImage(o.image, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
 
+  /* ---------- плитки, полоски, пазл ---------- */
+  /* пятна для «кучности»: клетки рядом с центрами пятен выбираются чаще */
+  function blobs(rng, n) {
+    return Array.from({ length: n }, () => [rng(), rng(), 0.12 + rng() * 0.2]);
+  }
+  const near = (bl, x, y) => bl.reduce((m, [bx, by, r]) => Math.max(m, 1 - Math.hypot(x - bx, y - by) / r), 0);
+
+  function tiles(ctx, w, h, rng, o) {
+    const cols = Math.max(4, Math.round(10 / o.size));
+    const s = w / cols;
+    const rows = Math.ceil(h / s);
+    const gap = s * 0.05;
+    const bl = blobs(rng, 5);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const p = 0.25 * o.density + near(bl, (c + 0.5) / cols, (r + 0.5) / rows) * 0.9;
+        if (rng() < p) ctx.fillRect(c * s + gap / 2, r * s + gap / 2, s - gap, s - gap);
+      }
+    }
+  }
+
+  /* полоски на всю высоту с тонкими щелями; с «кусочками вразброс» каждая берёт свой кусок снимка */
+  function strips(ctx, w, h, rng, o) {
+    const gap = Math.max(1, w * 0.004);
+    let x = 0;
+    while (x < w) {
+      const sw = w * (0.025 + rng() * 0.05) * o.size;
+      if (rng() < 0.55 * o.density + 0.35) ctx.fillRect(x, 0, Math.max(1, sw - gap), h);
+      x += sw;
+    }
+  }
+
+  /* пазл: выпавшие детали; язычки соседних деталей совпадают */
+  function puzzle(ctx, w, h, rng, o) {
+    const cols = Math.max(4, Math.round(12 / o.size));
+    const s = w / cols;
+    const rows = Math.ceil(h / s);
+    const hs = Array.from({ length: rows + 1 }, () => Array.from({ length: cols }, () => (rng() < 0.5 ? 1 : -1)));
+    const vs = Array.from({ length: rows }, () => Array.from({ length: cols + 1 }, () => (rng() < 0.5 ? 1 : -1)));
+    const edge = (ax, ay, bx, by, sg) => {
+      const dx = bx - ax, dy = by - ay;
+      const P = (t, n) => [ax + dx * t - dy * n * sg, ay + dy * t + dx * n * sg];
+      if (!sg) { ctx.lineTo(bx, by); return; }
+      ctx.lineTo(...P(0.37, 0));
+      ctx.bezierCurveTo(...P(0.3, 0.2), ...P(0.36, 0.32), ...P(0.5, 0.32));
+      ctx.bezierCurveTo(...P(0.64, 0.32), ...P(0.7, 0.2), ...P(0.63, 0));
+      ctx.lineTo(bx, by);
+    };
+    const bl = blobs(rng, 6);
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const p = 0.08 * o.density + near(bl, (c + 0.5) / cols, (r + 0.5) / rows) * 0.75;
+        if (rng() >= p) continue;
+        const x = c * s, y = r * s;
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        edge(x, y, x + s, y, r ? hs[r][c] : 0);
+        edge(x + s, y, x + s, y + s, c < cols - 1 ? vs[r][c + 1] : 0);
+        edge(x + s, y + s, x, y + s, r < rows - 1 ? -hs[r + 1][c] : 0);
+        edge(x, y + s, x, y, c ? -vs[r][c] : 0);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+  }
+
   const MOTIFS = [
+    { id: 'none', name: 'Без фигуры', cat: 'none', draw: () => {} },
     { id: 'hand-place', name: 'Своя раскладка', cat: 'hand', usesPieces: true, draw: placed },
 
     { id: 'star-flock', name: 'Стайка', cat: 'stars', draw: scatterMotif('star', 'flock') },
@@ -1929,6 +1996,9 @@
     { id: 'win-checker', name: 'Шахматы', cat: 'windows', draw: WINDOWS.checker },
     { id: 'win-trio', name: 'Три иллюминатора', cat: 'windows', draw: WINDOWS.trio },
     { id: 'win-shards', name: 'Осколки', cat: 'windows', draw: WINDOWS.shards },
+    { id: 'win-tiles', name: 'Плитки', cat: 'windows', draw: tiles },
+    { id: 'win-strips', name: 'Полоски', cat: 'windows', draw: strips },
+    { id: 'win-puzzle', name: 'Пазл', cat: 'windows', draw: puzzle },
 
     { id: 'px-heart', name: 'Пиксель-сердце', cat: 'pixels', draw: pixelMotif('heart') },
     { id: 'px-cat', name: 'Кот', cat: 'pixels', draw: pixelMotif('cat') },

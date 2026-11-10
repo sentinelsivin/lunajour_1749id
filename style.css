@@ -108,7 +108,7 @@ button { cursor: pointer; }
 .history .btn:disabled { opacity: .35; }
 .stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 6px; }
 .stickers button { aspect-ratio: 1; border: 1px solid var(--hairline); border-radius: 10px; background: rgba(255,255,255,.04); font-size: 24px; line-height: 1; padding: 0; display: grid; place-items: center; overflow: hidden; }
-.stickers button img { width: 80%; height: 80%; object-fit: contain; }
+.stickers button img, .stickers button canvas { width: 80%; height: 80%; object-fit: contain; }
 .field textarea { resize: vertical; }
 .seg.lang button { padding: 4px; }
 .readout { font: 11px var(--mono); letter-spacing: .12em; color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -276,6 +276,27 @@ button { cursor: pointer; }
   text-transform: uppercase;
 }
 .tabs button.on { color: var(--bone); border-bottom-color: var(--accent-light); }
+.tabs button.away { display: none; }
+.tabs[hidden] { display: none; }
+
+/* Четыре раздела сверху, под ними вкладки раздела. */
+.groups {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  padding: 8px 10px 6px;
+  flex: none;
+}
+.groups button {
+  padding: 9px 4px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: 600 12px var(--body);
+  letter-spacing: .02em;
+}
+.groups button.on { background: rgba(49, 113, 198, .2); border-color: var(--accent-light); color: var(--bone); }
 
 .panels { flex: 1; min-height: 0; overflow-y: auto; }
 .panel { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 24px; }
@@ -469,7 +490,9 @@ button { cursor: pointer; }
   }
   .seg button { padding: 6px 4px; }
   .shutter { width: 52px; height: 52px; }
-  .tabs button { padding: 8px 4px; }
+  .tabs button { padding: 7px 4px; }
+  .groups { padding: 4px 10px 4px; }
+  .groups button { padding: 7px 4px; }
   .panel { gap: 10px; padding: 10px 12px 16px; }
 
   /* В обычном виде ряды листаются вбок, чтобы над ними оставалось место для карточки. */
