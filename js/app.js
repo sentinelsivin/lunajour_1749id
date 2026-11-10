@@ -1417,7 +1417,7 @@
   /* какой из двух слоёв эффектов сейчас правится */
   let fxSlot = 'fx';
   const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
-  const fxBoxMode = () => tab === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
+  const fxBoxMode = () => tab === 'fx' && fxCat !== 'scan' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
 
   function syncFx() {
     const grid = $('fxGrid');
@@ -1446,6 +1446,28 @@
         }, 30 * i);
       });
     }
+    /* разделы, как у фигур: сканер открывает свои настройки вместо сетки эффектов */
+    const cats = $('fxCats');
+    cats.replaceChildren();
+    Effects.CATS.forEach((c) => chip(cats, t(c.name), c.id === fxCat, () => {
+      fxCat = c.id;
+      document.querySelector('.panels').scrollTop = 0;
+      if (fxCat !== 'scan') unselect();
+      else showHint('scan');
+      syncFx();
+      syncGrab();
+      syncCtx();
+      invalidate();
+    }));
+    const scan = fxCat === 'scan';
+    $('scanPane').hidden = !scan;
+    $('fxPane').hidden = scan;
+    $('scanSub').hidden = !(scanOpen() && state.scan.on);
+    if (scan) { syncScan(); return; }
+    grid.querySelectorAll('[data-fx]').forEach((b) => {
+      const e = Effects.byId(b.dataset.fx);
+      b.hidden = !!e && fxCat !== 'all' && e.cat !== fxCat;
+    });
     /* переключатель слоёв: у каждого свой эффект, второй ложится поверх первого */
     const slotsBar = $('fxSlots');
     slotsBar.replaceChildren();
@@ -1617,7 +1639,10 @@
   let scanPlay = null;
   /* свои наборы сканера, лежат на устройстве */
   let userPresets = [];
-  const scanMode = () => tab === 'scan' && !!state.scan.on;
+  /* раздел вкладки «Эффекты»: все, сканер, буквы, графики… */
+  let fxCat = 'all';
+  const scanOpen = () => tab === 'fx' && fxCat === 'scan';
+  const scanMode = () => scanOpen() && !!state.scan.on;
   let scanSub = 'boxes';
   const setScan = (patch) => { state.scan = { ...state.scan, ...patch }; syncScan(); update(); };
   const presetLookup = (id) => userPresets.find((p) => p.id === id) || Scanner.presetById(id);
@@ -1718,7 +1743,7 @@
       const c = canvas(120, 150);
       b.append(c, document.createElement('span'));
       b.onclick = () => {
-        if (p.id === '') { unselect(); setScan({ on: false, preset: '' }); setTab('scan'); return; }
+        if (p.id === '') { unselect(); setScan({ on: false, preset: '' }); syncGrab(); return; }
         if (p.id === '@save') return saveUserPreset();
         if (p.id === '@dice') return diceScan();
         applyPreset(p);
@@ -1772,7 +1797,7 @@
     });
     $('scanMineTools').hidden = !(sc.on && userPresets.some((p) => p.id === sc.preset));
     $('scanTools').hidden = !sc.on;
-    $('scanSub').hidden = !(tab === 'scan' && sc.on);
+    $('scanSub').hidden = !(scanOpen() && sc.on);
     if (!sc.on) { syncCtx(); return; }
 
     const choose = (id, items, key) => {
@@ -3023,12 +3048,11 @@
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
     const btn = document.querySelector(`#tools [data-tab="${tab}"]`);
     $('toolTitle').textContent = btn ? btn.querySelector('span').textContent : '';
-    $('scanSub').hidden = !(tab === 'scan' && state.scan.on);
-    if (tab !== 'scan') unselect();
+    $('scanSub').hidden = !(scanOpen() && state.scan.on);
+    if (!scanOpen()) unselect();
     syncGrab();
     if (tab === 'layers') syncLayerTools();
     if (tab === 'fx') syncFx();
-    if (tab === 'scan') syncScan();
     syncCtx();
     invalidate();
   }

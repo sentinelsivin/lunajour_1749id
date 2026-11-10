@@ -19,30 +19,30 @@ window.Effects = (function () {
     { id: 'hud', name: 'Координаты', color: '#ffffff', boxes: true, moved: true, text: '',
       styles: [{ id: 'lines', name: 'Лучи' }, { id: 'arcs', name: 'Дуги', color: '#ff3b3b' }] },
     { id: 'tags', name: 'Метки', color: '#39ff6a', boxes: true, moved: true, text: 'online, AFK, searching…, online, where am i, a way out ???, online' },
-    { id: 'points', name: 'Точки', color: '#ff5a1f', text: '' },
-    { id: 'frameLetters', name: 'Буквы рамкой', color: '#ffffff', text: '' },
-    { id: 'colLetters', name: 'Буквы столбцами', color: '#ffffff', text: '' },
-    { id: 'pixels', name: 'Пиксели', color: '#e01b1b', text: 'SUNBURN' },
-    { id: 'ascii', name: 'ASCII', color: '#c4161c', text: '' },
-    { id: 'morse', name: 'Морзе', color: '#ffffff', text: 'STAY' },
-    { id: 'threads', name: 'Слова на нитях', color: '#ffffff', text: 'One step at a time' },
-    { id: 'graph', name: 'График', color: '#ffffff', text: 'JFMAMJJASOND' },
-    { id: 'circle', name: 'Круг', color: '#ffffff', text: 'Body, Bees, Plants, Space, Water, Soil, Poop, Babies' },
-    { id: 'chart', name: 'Диаграмма', color: '#ffffff', text: '' },
-    { id: 'rays', name: 'Лучи', color: '#ffffff', center: true, text: '',
+    { id: 'points', cat: 'light', name: 'Точки', color: '#ff5a1f', text: '' },
+    { id: 'frameLetters', cat: 'letters', name: 'Буквы рамкой', color: '#ffffff', text: '' },
+    { id: 'colLetters', cat: 'letters', name: 'Буквы столбцами', color: '#ffffff', text: '' },
+    { id: 'pixels', cat: 'glitch', name: 'Пиксели', color: '#e01b1b', text: 'SUNBURN' },
+    { id: 'ascii', cat: 'glitch', name: 'ASCII', color: '#c4161c', text: '' },
+    { id: 'morse', cat: 'letters', name: 'Морзе', color: '#ffffff', text: 'STAY' },
+    { id: 'threads', cat: 'letters', name: 'Слова на нитях', color: '#ffffff', text: 'One step at a time' },
+    { id: 'graph', cat: 'charts', name: 'График', color: '#ffffff', text: 'JFMAMJJASOND' },
+    { id: 'circle', cat: 'charts', name: 'Круг', color: '#ffffff', text: 'Body, Bees, Plants, Space, Water, Soil, Poop, Babies' },
+    { id: 'chart', cat: 'charts', name: 'Диаграмма', color: '#ffffff', text: '' },
+    { id: 'rays', cat: 'light', name: 'Лучи', color: '#ffffff', center: true, text: '',
       styles: [{ id: 'pulsar', name: 'С засечками' }, { id: 'lines', name: 'Прямые' }, { id: 'orbits', name: 'Орбиты' }] },
-    { id: 'rain', name: 'Дождь', color: '#e8352b', text: 'rain on the lake, circles on the water, time slows down, a quiet nook, by the lake, softer now' },
-    { id: 'split', name: 'Плашка с кругом', color: '#2f62c9', text: 'ereignis',
+    { id: 'rain', cat: 'letters', name: 'Дождь', color: '#e8352b', text: 'rain on the lake, circles on the water, time slows down, a quiet nook, by the lake, softer now' },
+    { id: 'split', cat: 'charts', name: 'Плашка с кругом', color: '#2f62c9', text: 'ereignis',
       styles: [{ id: 'bottom', name: 'Снизу' }, { id: 'left', name: 'Слева' }, { id: 'right', name: 'Справа' }, { id: 'top', name: 'Сверху' }] },
-    { id: 'glass', name: 'Стекло', color: '#2b5fd9', text: '',
+    { id: 'glass', cat: 'light', name: 'Стекло', color: '#2b5fd9', text: '',
       styles: [{ id: 'squares', name: 'Квадраты' }, { id: 'circles', name: 'Круги' },
         { id: 'labels', name: 'С подписями', color: '#9fb3c2', text: 'Eastern plateau -94°C, Vostok station -89.2°C, South pole -82.8°C, Denali -73°C, North ice -66.1°C' }] },
-    { id: 'glitch', name: 'Глитч', color: '#ff5a1f', text: '',
+    { id: 'glitch', cat: 'glitch', name: 'Глитч', color: '#ff5a1f', text: '',
       styles: [{ id: 'smear', name: 'Потёки' }, { id: 'shift', name: 'Сдвиг' }] },
-    { id: 'curve', name: 'Линия с подписями', color: '#ffffff', text: '+17°C, +19°C, +28°C, +25°C',
+    { id: 'curve', cat: 'charts', name: 'Линия с подписями', color: '#ffffff', text: '+17°C, +19°C, +28°C, +25°C',
       styles: [{ id: 'wiggle', name: 'Дрожит' }, { id: 'smooth', name: 'Плавная' }] },
-    { id: 'vwords', name: 'Слова столбиками', color: '#ffffff', text: 'where the tall trees keep the quiet of everything we never said out loud and the light comes down slowly to find us' },
-    { id: 'formula', name: 'Формула', color: '#ffffff', text: 'e^(-x^2) [-2.5, 2.5]',
+    { id: 'vwords', cat: 'letters', name: 'Слова столбиками', color: '#ffffff', text: 'where the tall trees keep the quiet of everything we never said out loud and the light comes down slowly to find us' },
+    { id: 'formula', cat: 'charts', name: 'Формула', color: '#ffffff', text: 'e^(-x^2) [-2.5, 2.5]',
       styles: [
         { id: 'bell', name: 'Колокол', text: 'e^(-x^2) [-2.5, 2.5]' },
         { id: 'peak', name: 'Вершина', text: '-4/5*abs(x) [-5, 5]' },
@@ -50,6 +50,15 @@ window.Effects = (function () {
         { id: 'wave', name: 'Волна', text: 'sin(x)/x [-12, 12]' },
         { id: 'heart', name: 'Сердце', text: 'x = 16*sin(t)^3; y = 13*cos(t) - 5*cos(2*t) - 2*cos(3*t) - cos(4*t)' },
       ] },
+  ];
+  /* разделы вкладки «Эффекты», как у фигур; сканер тоже раздел, но со своими настройками */
+  const CATS = [
+    { id: 'all', name: 'Все' },
+    { id: 'scan', name: 'Сканер' },
+    { id: 'letters', name: 'Буквы' },
+    { id: 'charts', name: 'Графики' },
+    { id: 'light', name: 'Лучи и точки' },
+    { id: 'glitch', name: 'Глитч' },
   ];
   const byId = (id) => EFFECTS.find((e) => e.id === id) || null;
   /* вид эффекта: первый из списка, если не выбран */
@@ -1495,7 +1504,7 @@ window.Effects = (function () {
   }
 
   /* lastBoxes помнит рамки, показанные на карточке, чтобы их можно было сразу двигать рукой. */
-  const api = { EFFECTS, byId, usesBoxes, fonts, styleOf, analyze, autoBoxes, makeRng, lastBoxes: {} };
+  const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze, autoBoxes, makeRng, lastBoxes: {} };
 
   /* rect: где лежит фото на карточке. Эффект рисуется только там, рамки в долях этой области. */
   api.draw = function (ctx, state, CW, CH, rect, key = 'fx') {

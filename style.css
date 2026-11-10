@@ -285,7 +285,7 @@ button { cursor: pointer; }
 }
 .subtools { border-top: 1px solid var(--hairline); }
 /* наборы сканера всегда одной полосой, чтобы под ними сразу были настройки */
-[data-panel="scan"] .thumbs { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 76px; overflow-x: auto; scrollbar-width: none; align-items: start; }
+#scanGrid { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 76px; overflow-x: auto; scrollbar-width: none; align-items: start; }
 @media (min-width: 861px) { #tools { flex-wrap: wrap; } #tools button { flex: 0 0 calc(20% - 2px); } #tools [data-tab]::before { display: none; } #tools [data-tab="photo"], #tools [data-tab="layers"], #tools [data-tab="paper"] { margin-left: 0; } }
 .subtools button { flex-basis: 52px; }
 
@@ -545,7 +545,7 @@ button { cursor: pointer; }
   .swatches { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; }
   .swatches button, .swatches label { flex: none; }
   /* наборы сканера мельче: над ними должно оставаться место для настроек */
-  [data-panel="scan"] .thumbs { grid-auto-columns: 64px; }
+  #scanGrid { grid-auto-columns: 64px; }
   .chips::-webkit-scrollbar { display: none; }
   .chips button { flex: none; }
   .thumbs { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 84px; align-items: start; overflow-x: auto; scrollbar-width: none; }
@@ -559,7 +559,7 @@ button { cursor: pointer; }
   .app.dock-full .panels { animation: panelGrid .3s ease-out; }
   .app.dock-full .chips { flex-wrap: wrap; }
   .app.dock-full .thumbs { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); overflow-x: visible; }
-  .app.dock-full [data-panel="scan"] .thumbs { grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; }
+  .app.dock-full #scanGrid { grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; }
   .app.dock-full .thumbs.papers { grid-template-columns: repeat(2, 1fr); }
 }
 
