@@ -900,6 +900,47 @@
     }
     return { w: size, h: size, size };
   }
+  /* эмодзи как картинка: нужна, чтобы обвести его контур */
+  function emojiBitmap(emoji, size) {
+    const c = canvas(size, size);
+    const x = c.getContext('2d');
+    x.font = `${size * 0.86}px ${EMOJI_FONT}`;
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(emoji, size / 2, size / 2 + size * 0.04);
+    return c;
+  }
+  /* Наклейка: картинку рисуем по кругу со сдвигом, перекрашенную в белый, — получается обводка по контуру;
+     сверху сама картинка и мягкий блик в верхней части. Результат кешируем: жесты перерисовывают его часто. */
+  const dieCache = lruCache(16);
+  function dieCut(art, w, h, stroke, key) {
+    return dieCache(key, () => {
+      const pad = Math.ceil(stroke + 2);
+      const c = canvas(w + pad * 2, h + pad * 2);
+      const x = c.getContext('2d');
+      const steps = 24;
+      for (let i = 0; i < steps; i++) {
+        const a = (i / steps) * Math.PI * 2;
+        x.drawImage(art, pad + Math.cos(a) * stroke, pad + Math.sin(a) * stroke, w, h);
+      }
+      x.drawImage(art, pad, pad, w, h);
+      x.globalCompositeOperation = 'source-in';
+      x.fillStyle = '#ffffff';
+      x.fillRect(0, 0, c.width, c.height);
+      x.globalCompositeOperation = 'source-over';
+      x.drawImage(art, pad, pad, w, h);
+      /* блик: светлая полоса сверху, только по форме наклейки */
+      const g = x.createLinearGradient(0, 0, c.width * 0.35, c.height);
+      g.addColorStop(0, 'rgba(255,255,255,.38)');
+      g.addColorStop(0.32, 'rgba(255,255,255,.1)');
+      g.addColorStop(0.5, 'rgba(255,255,255,0)');
+      x.globalCompositeOperation = 'source-atop';
+      x.fillStyle = g;
+      x.fillRect(0, 0, c.width, c.height);
+      return c;
+    });
+  }
+
   function drawLayers(ctx, s, assets, W, H) {
     (s.layers || []).forEach((l) => {
       const b = layerBox(ctx, l, assets, W, H);
@@ -927,6 +968,14 @@
           ctx.fillStyle = l.color || '#111111';
           ctx.fillText(ln, 0, y);
         });
+      } else if (l.die) {
+        /* эффект наклейки: белая обводка по контуру, блик сверху и тень под всей наклейкой */
+        const art = b.img || emojiBitmap(l.emoji, b.size);
+        const bmp = dieCut(art, b.w, b.h, (l.dieW ?? 0.05) * b.size, `${l.img || l.emoji}|${Math.round(b.w)}|${Math.round(b.h)}|${l.dieW ?? 0.05}`);
+        ctx.shadowColor = 'rgba(0,0,0,.32)';
+        ctx.shadowBlur = b.size * 0.05;
+        ctx.shadowOffsetY = b.size * 0.03;
+        ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
       } else if (b.img) {
         /* своя картинка: мягкая тень, как у наклейки */
         ctx.shadowColor = 'rgba(0,0,0,.28)';

@@ -606,7 +606,7 @@
         slots: slots.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, blob: s.src && s.src.blob, kind: s.src && s.src.kind })),
         bgBlob: assets.bgBlob,
         maskBlob: assets.maskBlob,
-        stickers: Object.entries(assets.stickerBlobs),
+        stickers: Object.entries(assets.stickerBlobs).filter(([id]) => !id.startsWith('c') || state.layers.some((l) => l.img === id)),
       });
     }, 700);
   }
@@ -1312,7 +1312,8 @@
   function syncStickers() {
     const grid = $('stickerGrid');
     grid.replaceChildren();
-    Object.entries(assets.stickers).forEach(([id, el]) => {
+    /* в наборе только исходные картинки; копии без фона (id на «c») живут только на карточке */
+    Object.entries(assets.stickers).filter(([id]) => !id.startsWith('c')).forEach(([id, el]) => {
       const b = document.createElement('button');
       b.type = 'button';
       const img = document.createElement('img');
@@ -1332,6 +1333,174 @@
     });
   }
 
+  /* ---------- убрать фон у картинки-стикера ---------- */
+  /* Цвет фона берём самый частый по краю картинки. «Фон вокруг» заливает от краёв всё похожее на него,
+     «Этот цвет везде» убирает похожие пиксели по всей картинке. Край выреза мягкий: почти похожие
+     пиксели становятся полупрозрачными, чтобы не было белой каймы. */
+  function cutBackground(img, tol, mode, edgePx = 1) {
+    const k = Math.min(1, 2000 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
+    const c = canvas((img.naturalWidth || img.width) * k, (img.naturalHeight || img.height) * k);
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, c.width, c.height);
+    const { width: w, height: h } = c;
+    const im = x.getImageData(0, 0, w, h);
+    const d = im.data;
+    /* самый частый цвет по краю, с округлением, чтобы шум JPEG не мешал */
+    const counts = new Map();
+    const edge = (i) => {
+      if (d[i + 3] < 20) return;
+      const key = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    };
+    for (let px = 0; px < w; px++) { edge(px * 4); edge(((h - 1) * w + px) * 4); }
+    for (let py = 0; py < h; py++) { edge(py * w * 4); edge((py * w + w - 1) * 4); }
+    let best = -1;
+    let top = 0;
+    counts.forEach((n, key) => { if (n > top) { top = n; best = key; } });
+    if (best < 0) return null;
+    /* точный средний цвет среди краевых пикселей этой группы */
+    let sr = 0; let sg = 0; let sb = 0; let sn = 0;
+    const add = (i) => {
+      const key = ((d[i] >> 4) << 8) | ((d[i + 1] >> 4) << 4) | (d[i + 2] >> 4);
+      if (key === best && d[i + 3] >= 20) { sr += d[i]; sg += d[i + 1]; sb += d[i + 2]; sn++; }
+    };
+    for (let px = 0; px < w; px++) { add(px * 4); add(((h - 1) * w + px) * 4); }
+    for (let py = 0; py < h; py++) { add(py * w * 4); add((py * w + w - 1) * 4); }
+    const br = sr / sn; const bg = sg / sn; const bb = sb / sn;
+    const soft = tol * 0.5;
+    const dist = (i) => Math.hypot(d[i] - br, d[i + 1] - bg, d[i + 2] - bb);
+    /* сколько непрозрачности оставить пикселю: 0 у фона, 1 у рисунка, плавно между */
+    const keep = (i) => {
+      if (d[i + 3] < 20) return 0;
+      const v = dist(i);
+      return v <= tol ? 0 : v >= tol + soft ? 1 : (v - tol) / soft;
+    };
+    /* маска непрозрачности 0..1 для каждого пикселя: сначала считаем её, потом чистим края */
+    const n = w * h;
+    const alpha = new Float32Array(n).fill(1);
+    if (mode === 'all') {
+      for (let p = 0; p < n; p++) alpha[p] = keep(p * 4);
+    } else {
+      const seen = new Uint8Array(n);
+      const stack = [];
+      const push = (p) => { if (!seen[p]) { seen[p] = 1; stack.push(p); } };
+      for (let px = 0; px < w; px++) { push(px); push((h - 1) * w + px); }
+      for (let py = 0; py < h; py++) { push(py * w); push(py * w + w - 1); }
+      while (stack.length) {
+        const p = stack.pop();
+        const a = keep(p * 4);
+        if (a >= 1) continue;
+        alpha[p] = a;
+        /* дальше растекаемся только от настоящего фона, полупрозрачная кайма не ведёт внутрь рисунка */
+        if (a > 0) continue;
+        const px = p % w;
+        if (px > 0) push(p - 1);
+        if (px < w - 1) push(p + 1);
+        if (p >= w) push(p - w);
+        if (p < w * (h - 1)) push(p + w);
+      }
+    }
+
+    /* 1. Цвет каймы: в полупрозрачном пикселе вычитаем подмешанный фон, иначе остаётся светлый ореол. */
+    for (let p = 0; p < n; p++) {
+      const a = alpha[p];
+      if (a <= 0.02 || a >= 1) continue;
+      const i = p * 4;
+      d[i] = Math.max(0, Math.min(255, (d[i] - (1 - a) * br) / a));
+      d[i + 1] = Math.max(0, Math.min(255, (d[i + 1] - (1 - a) * bg) / a));
+      d[i + 2] = Math.max(0, Math.min(255, (d[i + 2] - (1 - a) * bb) / a));
+    }
+    /* 2. Подрезаем край на edgePx пикселей: убирает светлую полоску от сжатия JPEG вокруг рисунка. */
+    let mask = alpha;
+    for (let k = 0; k < edgePx; k++) {
+      const next = new Float32Array(n);
+      for (let py = 0; py < h; py++) {
+        for (let px = 0; px < w; px++) {
+          const p = py * w + px;
+          let v = mask[p];
+          if (px > 0) v = Math.min(v, mask[p - 1]);
+          if (px < w - 1) v = Math.min(v, mask[p + 1]);
+          if (py > 0) v = Math.min(v, mask[p - w]);
+          if (py < h - 1) v = Math.min(v, mask[p + w]);
+          next[p] = v;
+        }
+      }
+      mask = next;
+    }
+    /* 3. Сглаживаем край маски по соседям 3×3: лесенка становится плавной линией. */
+    const smooth = new Float32Array(n);
+    for (let py = 0; py < h; py++) {
+      for (let px = 0; px < w; px++) {
+        let sum = 0;
+        let cnt = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          const yy = py + dy;
+          if (yy < 0 || yy >= h) continue;
+          for (let dx = -1; dx <= 1; dx++) {
+            const xx = px + dx;
+            if (xx < 0 || xx >= w) continue;
+            sum += mask[yy * w + xx];
+            cnt++;
+          }
+        }
+        smooth[py * w + px] = sum / cnt;
+      }
+    }
+    for (let p = 0; p < n; p++) d[p * 4 + 3] = Math.round(d[p * 4 + 3] * smooth[p]);
+    x.putImageData(im, 0, 0);
+    return c;
+  }
+
+  let cutTimer = 0;
+  /* делает копию картинки без фона и ставит её на выбранный стикер; исходник остаётся в l.src */
+  function applyCut(tol, mode, edge) {
+    const l = layerAt(selectedLayer);
+    if (!l || !l.img) return;
+    const srcId = l.cut ? l.cut.src : l.img;
+    const orig = assets.stickers[srcId];
+    if (!orig) return;
+    const out = cutBackground(orig, tol, mode, edge);
+    if (!out) return toast(t('Не получилось найти фон у этой картинки.'));
+    const index = selectedLayer;
+    out.toBlob(async (blob) => {
+      const { el } = await imageSrc(blob);
+      const id = `c${Date.now()}_${stickerCount++}`;
+      assets.stickers[id] = el;
+      assets.stickerBlobs[id] = blob;
+      /* прежние копии не удаляем: к ним может вернуть «Назад»; в черновик попадают только нужные */
+      state.layers = state.layers.map((x, i) => (i === index ? { ...x, img: id, cut: { src: srcId, tol, mode, edge } } : x));
+      syncLayerTools();
+      update();
+    }, 'image/png');
+  }
+  function bindCut() {
+    $('bgCut').onclick = () => applyCut(40, 'edge', 1);
+    $('bgRestore').onclick = () => {
+      const l = layerAt(selectedLayer);
+      if (!l || !l.cut) return;
+      editLayer({ img: l.cut.src, cut: null });
+    };
+    $('bgTol').oninput = (e) => {
+      const l = layerAt(selectedLayer);
+      if (!l || !l.cut) return;
+      clearTimeout(cutTimer);
+      const tol = Number(e.target.value);
+      cutTimer = setTimeout(() => applyCut(tol, l.cut.mode, l.cut.edge ?? 1), 120);
+    };
+    $('bgEdge').oninput = (e) => {
+      const l = layerAt(selectedLayer);
+      if (!l || !l.cut) return;
+      clearTimeout(cutTimer);
+      const edge = Number(e.target.value);
+      cutTimer = setTimeout(() => applyCut(l.cut.tol, l.cut.mode, edge), 120);
+    };
+    $('bgMode').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      const l = layerAt(selectedLayer);
+      if (b && l && l.cut) applyCut(l.cut.tol, b.dataset.v, l.cut.edge ?? 1);
+    });
+  }
+
   function syncLayerTools() {
     const l = layerAt(selectedLayer);
     $('layerTools').hidden = !l;
@@ -1339,6 +1508,26 @@
     const isText = l.type === 'text';
     $('textTools').hidden = !isText;
     $('layerFlip').hidden = isText;
+    /* эффект наклейки включается у каждого стикера отдельно */
+    $('dieTools').hidden = isText;
+    if (!isText) {
+      markSeg($('dieSeg'), l.die ? 'on' : 'off');
+      $('dieWidthField').hidden = !l.die;
+      $('dieWidth').value = l.dieW ?? 0.05;
+    }
+    /* убрать фон можно только у своей картинки */
+    const own = l.type === 'sticker' && !!l.img;
+    $('cutTools').hidden = !own;
+    if (own) {
+      const cut = !!l.cut;
+      $('bgCutOptions').hidden = !cut;
+      $('bgRestore').disabled = !cut;
+      $('bgCut').textContent = t(cut ? 'Фон убран' : 'Убрать фон');
+      $('bgCut').disabled = cut;
+      $('bgTol').value = l.cut ? l.cut.tol : 40;
+      $('bgEdge').value = l.cut ? l.cut.edge ?? 1 : 1;
+      markSeg($('bgMode'), l.cut ? l.cut.mode : 'edge');
+    }
     $('layerSize').value = l.size;
     $('layerRot').value = Math.round(((l.rot || 0) * 180) / Math.PI);
     $('layerUp').disabled = selectedLayer >= state.layers.length - 1;
@@ -1449,6 +1638,12 @@
     $('layerSize').oninput = (e) => editLayer({ size: Number(e.target.value) }, true);
     $('layerRot').oninput = (e) => editLayer({ rot: (Number(e.target.value) * Math.PI) / 180 }, true);
     $('layerFlip').onclick = () => editLayer({ flip: !layerAt(selectedLayer).flip });
+    bindCut();
+    $('dieSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) editLayer({ die: b.dataset.v === 'on' });
+    });
+    $('dieWidth').oninput = (e) => editLayer({ dieW: Number(e.target.value) }, true);
     $('layerCopy').onclick = () => {
       const l = layerAt(selectedLayer);
       if (l) addLayer({ ...l, x: clamp(l.x + 0.05, 0, 1), y: clamp(l.y + 0.05, 0, 1) });

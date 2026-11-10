@@ -170,6 +170,30 @@
             <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="layerColor"></div></div>
             <div class="group"><span class="label">Цвет фона и контура</span><div class="swatches" id="layerBg"></div></div>
           </div>
+          <div class="group" id="dieTools" hidden>
+            <span class="label">Эффект наклейки</span>
+            <div class="seg" id="dieSeg">
+              <button type="button" data-v="off">Выключен</button>
+              <button type="button" data-v="on">Включён</button>
+            </div>
+            <label class="slider" id="dieWidthField">Толщина обводки<input id="dieWidth" type="range" min="0.015" max="0.12" step="0.005"></label>
+          </div>
+          <div class="group" id="cutTools" hidden>
+            <span class="label">Фон картинки</span>
+            <div class="row">
+              <button class="btn primary" id="bgCut" type="button">Убрать фон</button>
+              <button class="btn" id="bgRestore" type="button">Вернуть фон</button>
+            </div>
+            <div class="group" id="bgCutOptions" hidden>
+              <label class="slider">Сколько убрать<input id="bgTol" type="range" min="4" max="140" step="1"></label>
+              <label class="slider">Подрезать край<input id="bgEdge" type="range" min="0" max="4" step="1"></label>
+              <div class="seg" id="bgMode">
+                <button type="button" data-v="edge">Фон вокруг</button>
+                <button type="button" data-v="all">Этот цвет везде</button>
+              </div>
+              <p class="hint">«Фон вокруг» убирает цвет, который касается краёв картинки. «Этот цвет везде» убирает его и внутри, например в дырках буквы О.</p>
+            </div>
+          </div>
           <label class="slider">Размер<input id="layerSize" type="range" min="0.03" max="1.2" step="0.005"></label>
           <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1"></label>
           <div class="row">
