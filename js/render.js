@@ -962,7 +962,7 @@
     if (s.paper === 'own' && assets.bg) drawCover(ctx, assets.bg, assets.bg.naturalWidth, assets.bg.naturalHeight, W, H);
     if (s.collage && window.Collages.byId(s.collage)) {
       renderCollage(ctx, s, slots, W, H, u, paper);
-      if (window.Effects) window.Effects.draw(ctx, s, W, H);
+      if (window.Effects) { window.Effects.draw(ctx, s, W, H); window.Effects.draw(ctx, s, W, H, null, 'fx2'); }
       drawLayers(ctx, s, assets, W, H);
       return;
     }
@@ -1010,7 +1010,7 @@
       withShadow(() => ctx.drawImage(holed, a.x, a.y, a.w, a.h));
     }
 
-    if (window.Effects) window.Effects.draw(ctx, s, W, H, fxRect(s, W, H));
+    if (window.Effects) { window.Effects.draw(ctx, s, W, H, fxRect(s, W, H)); window.Effects.draw(ctx, s, W, H, fxRect(s, W, H), 'fx2'); }
     drawNote(ctx, s, L, W, H);
     drawLayers(ctx, s, assets, W, H);
   }

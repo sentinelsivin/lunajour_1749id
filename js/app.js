@@ -20,6 +20,7 @@
     pieces: [],
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
     fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [] },
+    fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [] },
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
   });
@@ -623,6 +624,7 @@
     state = { ...defaults(), ...draft.state };
     state.note = { ...defaults().note, ...draft.state.note };
     state.fx = { ...defaults().fx, ...(draft.state.fx || {}) };
+    state.fx2 = { ...defaults().fx2, ...(draft.state.fx2 || {}) };
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];
@@ -1319,11 +1321,17 @@
     circle: 'Подписи по краям через запятую.',
     chart: 'Заголовок блока обозначений.',
     vwords: 'Каждое слово встанет своим столбиком.',
+    rain: 'Слова через запятую: часть встанет вдоль капель, часть у кругов на воде.',
+    split: 'Подпись на плашке.',
+    glass: 'Для вида «С подписями»: строки через запятую, число в конце строки встанет ниже.',
+    curve: 'Подписи точек через запятую.',
     formula: 'Например: x^2 [-3, 3], sin(x)/x, abs(x). Для кривой: x = cos(t); y = sin(t).',
   };
   let selectedBox = -1;
-  const fxDef = () => (state.fx.id ? Effects.byId(state.fx.id) : null);
-  const fxBoxMode = () => tab === 'fx' && Effects.usesBoxes(state.fx.id);
+  /* какой из двух слоёв эффектов сейчас правится */
+  let fxSlot = 'fx';
+  const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
+  const fxBoxMode = () => tab === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
 
   function syncFx() {
     const grid = $('fxGrid');
@@ -1337,7 +1345,7 @@
         const label = document.createElement('span');
         b.append(c, label);
         b.onclick = () => {
-          if (state.fx.id !== e.id) state.fx = { ...state.fx, id: e.id, text: '', color: '', style: '', boxes: [] };
+          if (state[fxSlot].id !== e.id) state[fxSlot] = { ...state[fxSlot], id: e.id, text: '', color: '', style: '', boxes: [] };
           selectedBox = -1;
           syncFx();
           syncGrab();
@@ -1352,8 +1360,15 @@
         }, 30 * i);
       });
     }
+    /* переключатель слоёв: у каждого свой эффект, второй ложится поверх первого */
+    const slotsBar = $('fxSlots');
+    slotsBar.replaceChildren();
+    [['fx', 1], ['fx2', 2]].forEach(([key, n]) => {
+      const e = Effects.byId(state[key].id);
+      chip(slotsBar, `${t('Эффект')} ${n}${e ? ': ' + t(e.name) : ''}`, fxSlot === key, () => { fxSlot = key; selectedBox = -1; syncFx(); syncGrab(); invalidate(); });
+    });
     grid.querySelectorAll('[data-fx]').forEach((b) => {
-      b.classList.toggle('on', b.dataset.fx === (state.fx.id || ''));
+      b.classList.toggle('on', b.dataset.fx === (state[fxSlot].id || ''));
       const e = Effects.byId(b.dataset.fx);
       b.querySelector('span').textContent = t(e ? e.name : 'Без эффекта');
     });
@@ -1364,28 +1379,29 @@
     $('fxTextField').hidden = !hint;
     $('fxTextHint').hidden = !hint;
     $('fxTextHint').textContent = hint ? t(hint) : '';
-    const st = Effects.styleOf(def, state.fx);
+    const st = Effects.styleOf(def, state[fxSlot]);
     $('fxText').placeholder = (st && st.text) || def.text || '';
-    $('fxText').value = state.fx.text;
-    $('fxAmount').value = state.fx.amount;
+    $('fxText').value = state[fxSlot].text;
+    $('fxAmount').value = state[fxSlot].amount;
     $('fxFontGroup').hidden = def.id === 'points';
     $('fxStyleGroup').hidden = !def.styles;
     const fxStyles = $('fxStyles');
     fxStyles.replaceChildren();
     (def.styles || []).forEach((st, i) => {
-      const on = state.fx.style ? state.fx.style === st.id : i === 0;
-      chip(fxStyles, t(st.name), on, () => { state.fx = { ...state.fx, style: st.id, color: '', text: st.text ? '' : state.fx.text }; syncFx(); update(); });
+      const on = state[fxSlot].style ? state[fxSlot].style === st.id : i === 0;
+      chip(fxStyles, t(st.name), on, () => { state[fxSlot] = { ...state[fxSlot], style: st.id, color: '', text: st.text ? '' : state[fxSlot].text }; syncFx(); update(); });
     });
     const fxFonts = $('fxFonts');
     fxFonts.replaceChildren();
-    chip(fxFonts, t('Как в эффекте'), !state.fx.font, () => { state.fx = { ...state.fx, font: '' }; syncFx(); update(); });
+    chip(fxFonts, t('Как в эффекте'), !state[fxSlot].font, () => { state[fxSlot] = { ...state[fxSlot], font: '' }; syncFx(); update(); });
     Effects.fonts().forEach((f) => {
-      chip(fxFonts, t(f.name), f.id === state.fx.font, () => { state.fx = { ...state.fx, font: f.id }; syncFx(); update(); }).style.fontFamily = f.css;
+      chip(fxFonts, t(f.name), f.id === state[fxSlot].font, () => { state[fxSlot] = { ...state[fxSlot], font: f.id }; syncFx(); update(); }).style.fontFamily = f.css;
     });
-    swatches($('fxSwatches'), FX_COLORS, state.fx.color, (v) => { state.fx = { ...state.fx, color: v }; syncFx(); update(); }, t('Как в эффекте'));
+    swatches($('fxSwatches'), FX_COLORS, state[fxSlot].color, (v) => { state[fxSlot] = { ...state[fxSlot], color: v }; syncFx(); update(); }, t('Как в эффекте'));
     $('fxBoxTools').hidden = !def.boxes;
+    $('fxCenterHint').hidden = !def.center;
     $('fxBoxDelete').disabled = selectedBox < 0;
-    $('fxBoxAuto').disabled = !state.fx.boxes.length;
+    $('fxBoxAuto').disabled = !state[fxSlot].boxes.length;
   }
 
   function bindFx() {
@@ -1402,9 +1418,16 @@
       if (!fxBoxMode()) return;
       const [fx, fy, aspect] = toCard(e);
       if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+      if (fxDef().center) {
+        state[fxSlot] = { ...state[fxSlot], center: { x: fx, y: fy } };
+        drag = { id: e.pointerId, center: true };
+        try { card.setPointerCapture(e.pointerId); } catch {}
+        update();
+        return;
+      }
       /* первая правка превращает рамки «сами» в свои, чтобы их можно было двигать */
-      if (!state.fx.boxes.length) state.fx.boxes = Effects.lastBoxes.map((b) => ({ ...b }));
-      const list = state.fx.boxes;
+      if (!state[fxSlot].boxes.length) state[fxSlot].boxes = (Effects.lastBoxes[fxSlot] || []).map((b) => ({ ...b }));
+      const list = state[fxSlot].boxes;
       const gx = 0.03;
       const gy = gx * aspect;
       let hit = -1;
@@ -1429,7 +1452,12 @@
     card.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id || !fxBoxMode()) return;
       const [fx, fy] = toCard(e);
-      const m = state.fx.boxes[selectedBox];
+      if (drag.center) {
+        state[fxSlot] = { ...state[fxSlot], center: { x: clamp(fx, 0, 1), y: clamp(fy, 0, 1) } };
+        update();
+        return;
+      }
+      const m = state[fxSlot].boxes[selectedBox];
       if (!m) return;
       const dx = fx - drag.fx;
       const dy = fy - drag.fy;
@@ -1447,18 +1475,18 @@
     card.addEventListener('pointercancel', end);
 
     $('fxShuffle').onclick = () => {
-      state.fx = { ...state.fx, seed: Math.floor(Math.random() * 1e6) };
+      state[fxSlot] = { ...state[fxSlot], seed: Math.floor(Math.random() * 1e6) };
       update();
     };
     $('fxBoxDelete').onclick = () => {
       if (selectedBox < 0) return;
-      state.fx.boxes.splice(selectedBox, 1);
+      state[fxSlot].boxes.splice(selectedBox, 1);
       selectedBox = -1;
       syncFx();
       update();
     };
     $('fxBoxAuto').onclick = () => {
-      state.fx = { ...state.fx, boxes: [] };
+      state[fxSlot] = { ...state[fxSlot], boxes: [] };
       selectedBox = -1;
       syncFx();
       update();
@@ -1474,13 +1502,13 @@
     try {
       await loadDetector();
       const c = canvas(card.width, card.height);
-      renderCard(c.getContext('2d'), { ...state, fx: { ...state.fx, id: '' }, layers: [] }, slots, assets);
+      renderCard(c.getContext('2d'), { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, layers: [] }, slots, assets);
       const found = await detector.detect(c, 40, 0.3);
       const r = window.Render.fxRect(state, c.width, c.height);
       if (!found.length) return toast(t('Ничего не нашлось. Поставь рамки пальцем.'));
       const name = (k) => k.charAt(0).toUpperCase() + k.slice(1);
-      state.fx = {
-        ...state.fx,
+      state[fxSlot] = {
+        ...state[fxSlot],
         boxes: found.map(({ bbox: [x, y, w, h], class: k, score }) => ({ x: (x - r.x) / r.w, y: (y - r.y) / r.h, w: w / r.w, h: h / r.h, label: name(k), score }))
           .filter((b) => b.x < 1 && b.y < 1 && b.x + b.w > 0 && b.y + b.h > 0),
       };

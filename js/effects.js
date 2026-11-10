@@ -14,7 +14,8 @@ window.Effects = (function () {
   const EFFECTS = [
     { id: 'detect', name: 'Распознавание', color: '#f5c518', boxes: true, text: 'Person',
       styles: [{ id: 'plate', name: 'Плашки' }, { id: 'tab', name: 'Флажки', color: '#ff2020' }] },
-    { id: 'objects', name: 'Объекты', color: '#ffffff', boxes: true, text: 'Object' },
+    { id: 'objects', name: 'Объекты', color: '#ffffff', boxes: true, text: 'Object',
+      styles: [{ id: 'boxes', name: 'Рамки' }, { id: 'rings', name: 'Кружки' }] },
     { id: 'hud', name: 'Координаты', color: '#ffffff', boxes: true, text: '',
       styles: [{ id: 'lines', name: 'Лучи' }, { id: 'arcs', name: 'Дуги', color: '#ff3b3b' }] },
     { id: 'tags', name: 'Метки', color: '#39ff6a', boxes: true, text: 'online, AFK, searching…, online, where am i, a way out ???, online' },
@@ -28,6 +29,18 @@ window.Effects = (function () {
     { id: 'graph', name: 'График', color: '#ffffff', text: 'JFMAMJJASOND' },
     { id: 'circle', name: 'Круг', color: '#ffffff', text: 'Body, Bees, Plants, Space, Water, Soil, Poop, Babies' },
     { id: 'chart', name: 'Диаграмма', color: '#ffffff', text: '' },
+    { id: 'rays', name: 'Лучи', color: '#ffffff', center: true, text: '',
+      styles: [{ id: 'pulsar', name: 'С засечками' }, { id: 'lines', name: 'Прямые' }, { id: 'orbits', name: 'Орбиты' }] },
+    { id: 'rain', name: 'Дождь', color: '#e8352b', text: 'rain on the lake, circles on the water, time slows down, a quiet nook, by the lake, softer now' },
+    { id: 'split', name: 'Плашка с кругом', color: '#2f62c9', text: 'ereignis',
+      styles: [{ id: 'bottom', name: 'Снизу' }, { id: 'left', name: 'Слева' }, { id: 'right', name: 'Справа' }, { id: 'top', name: 'Сверху' }] },
+    { id: 'glass', name: 'Стекло', color: '#2b5fd9', text: '',
+      styles: [{ id: 'squares', name: 'Квадраты' }, { id: 'circles', name: 'Круги' },
+        { id: 'labels', name: 'С подписями', color: '#9fb3c2', text: 'Eastern plateau -94°C, Vostok station -89.2°C, South pole -82.8°C, Denali -73°C, North ice -66.1°C' }] },
+    { id: 'glitch', name: 'Глитч', color: '#ff5a1f', text: '',
+      styles: [{ id: 'smear', name: 'Потёки' }, { id: 'shift', name: 'Сдвиг' }] },
+    { id: 'curve', name: 'Линия с подписями', color: '#ffffff', text: '+17°C, +19°C, +28°C, +25°C',
+      styles: [{ id: 'wiggle', name: 'Дрожит' }, { id: 'smooth', name: 'Плавная' }] },
     { id: 'vwords', name: 'Слова столбиками', color: '#ffffff', text: 'where the tall trees keep the quiet of everything we never said out loud and the light comes down slowly to find us' },
     { id: 'formula', name: 'Формула', color: '#ffffff', text: 'e^(-x^2) [-2.5, 2.5]',
       styles: [
@@ -171,7 +184,38 @@ window.Effects = (function () {
     });
   }
 
+  /* овалы, на каждом точка, точки соединены по порядку, номера у точки и у края */
+  function rings(ctx, boxes, W, H, u, col, fx, rng) {
+    const list = boxes.map((b) => ({ cx: (b.x + b.w / 2) * W, cy: (b.y + b.h / 2) * H, w: b.w * W, h: b.h * H })).sort((a, b) => a.cy - b.cy);
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 1.3 * u;
+    list.forEach((b) => {
+      ctx.beginPath();
+      ctx.ellipse(b.cx, b.cy, Math.max(b.w, 60 * u) * (1 + rng() * 0.6), Math.max(b.h, 40 * u) * (0.4 + rng() * 0.25), 0, 0, Math.PI * 2);
+      ctx.stroke();
+    });
+    const dots = list.map((b) => [b.cx + (rng() - 0.5) * b.w * 0.6, b.cy + (rng() - 0.5) * b.h * 0.3]);
+    ctx.lineWidth = 2.2 * u;
+    ctx.beginPath();
+    dots.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y)));
+    ctx.stroke();
+    ctx.font = `${wt(300)} ${24 * u}px ${face(SANS)}`;
+    ctx.textBaseline = 'middle';
+    dots.forEach(([x, y], i) => {
+      ctx.beginPath();
+      ctx.ellipse(x, y, 13 * u, 8 * u, 0, 0, Math.PI * 2);
+      ctx.fill();
+      const n = String(i + 1).padStart(2, '0');
+      ctx.fillText(n, x + 26 * u, y);
+      ctx.fillText(n, 28 * u, y);
+    });
+    ctx.restore();
+  }
+
   function objects(ctx, boxes, W, H, u, col, fx, rng) {
+    if (fx.style === 'rings') return rings(ctx, boxes, W, H, u, col, fx, rng);
     const name = words(fx.text, 'Object')[0];
     const c = boxes.map((b) => [(b.x + b.w / 2) * W, (b.y + b.h / 2) * H]);
     ctx.save();
@@ -1121,14 +1165,345 @@ window.Effects = (function () {
     ctx.restore();
   }
 
+  /* ---------- лучи из одной точки: карта пульсаров, прямые, орбиты ---------- */
+  function rays(ctx, W, H, u, col, fx, rng) {
+    const c = fx.center || { x: fx.style === 'pulsar' ? 0.3 : 0.5, y: 0.5 };
+    const cx = c.x * W, cy = c.y * H;
+    const far = Math.hypot(Math.max(cx, W - cx), Math.max(cy, H - cy));
+    const am = fx.amount || 1;
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    if (fx.style === 'orbits') {
+      const tilt = -0.45 + (rng() - 0.5) * 0.4;
+      const n = 2 + Math.round(rng() * 2 * am);
+      ctx.lineWidth = 2 * u;
+      for (let i = 0; i < n; i++) {
+        const rx = Math.min(W, H) * (0.22 + i * 0.1 + rng() * 0.05);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx, rx * (0.38 + rng() * 0.15), tilt + (rng() - 0.5) * 0.9, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      const m = Math.round(46 * am);
+      for (let i = 0; i < m; i++) {
+        const r = (1.5 + Math.pow(rng(), 3) * 12) * u;
+        ctx.beginPath();
+        ctx.ellipse(rng() * W, rng() * H, r, r * (0.7 + rng() * 0.3), rng() * 3, 0, Math.PI * 2);
+        if (rng() < 0.2) { ctx.lineWidth = 1.2 * u; ctx.stroke(); } else ctx.fill();
+      }
+      ctx.restore();
+      return;
+    }
+    const n = Math.round((fx.style === 'lines' ? 18 : 15) * am);
+    for (let i = 0; i < n; i++) {
+      const a = i === 0 ? 0 : rng() * Math.PI * 2;
+      const dx = Math.cos(a), dy = Math.sin(a);
+      const len = i === 0 ? far : far * (0.18 + rng() * 0.62);
+      if (fx.style === 'lines') {
+        ctx.lineWidth = (1 + rng() * 1.2) * u;
+        const back = rng() < 0.6 ? len * (0.3 + rng() * 0.7) : 0;
+        ctx.beginPath();
+        ctx.moveTo(cx - dx * back, cy - dy * back);
+        ctx.lineTo(cx + dx * len, cy + dy * len);
+        ctx.stroke();
+        continue;
+      }
+      /* сплошная часть, потом пунктир с засечками по одной, две, три */
+      const r0 = 14 * u;
+      const solid = len * (0.25 + rng() * 0.45);
+      ctx.lineWidth = 1.5 * u;
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * r0, cy + dy * r0);
+      ctx.lineTo(cx + dx * solid, cy + dy * solid);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * r0, cy + dy * r0);
+      ctx.lineTo(cx + dx * r0 * 2.4 - dy * 3 * u, cy + dy * r0 * 2.4 + dx * 3 * u);
+      ctx.lineTo(cx + dx * r0 * 2.4 + dy * 3 * u, cy + dy * r0 * 2.4 - dx * 3 * u);
+      ctx.closePath();
+      ctx.fill();
+      let t = solid + 8 * u;
+      while (t < len) {
+        const seg = (6 + rng() * 14) * u;
+        ctx.beginPath();
+        ctx.moveTo(cx + dx * t, cy + dy * t);
+        ctx.lineTo(cx + dx * Math.min(len, t + seg), cy + dy * Math.min(len, t + seg));
+        ctx.stroke();
+        t += seg + 4 * u;
+        const ticks = rng() < 0.55 ? 0 : 1 + Math.floor(rng() * 4);
+        for (let k = 0; k < ticks && t < len; k++) {
+          ctx.beginPath();
+          ctx.moveTo(cx + dx * t - dy * 5 * u, cy + dy * t + dx * 5 * u);
+          ctx.lineTo(cx + dx * t + dy * 5 * u, cy + dy * t - dx * 5 * u);
+          ctx.stroke();
+          t += 3.2 * u;
+        }
+        t += 4 * u;
+      }
+      ctx.lineWidth = 2 * u;
+      ctx.beginPath();
+      ctx.moveTo(cx + dx * len - dy * 6 * u, cy + dy * len + dx * 6 * u);
+      ctx.lineTo(cx + dx * len + dy * 6 * u, cy + dy * len - dx * 6 * u);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /* ---------- дождь: косые линии со словами и круги на воде ---------- */
+  function rain(ctx, W, H, u, col, fx, rng) {
+    const list = words(fx.text, '');
+    const a = (70 * Math.PI) / 180;
+    const dx = Math.cos(a), dy = Math.sin(a);
+    const n = Math.round(14 * (fx.amount || 1));
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 2.6 * u;
+    ctx.font = `${wt(400)} ${24 * u}px ${face(SERIF)}`;
+    ctx.textBaseline = 'middle';
+    let wi = 0;
+    for (let i = 0; i < n; i++) {
+      const x = (rng() * 1.1 - 0.1) * W;
+      const y = rng() * H * 0.62;
+      const len = H * (0.06 + rng() * 0.32);
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + dx * len, y + dy * len);
+      ctx.stroke();
+      if (i % 2 === 0 && wi < Math.ceil(list.length / 2) && list[wi]) {
+        ctx.save();
+        ctx.translate(x - dy * 16 * u, y + dx * 16 * u);
+        ctx.rotate(a);
+        ctx.fillText(list[wi++], 0, 0);
+        ctx.restore();
+      }
+    }
+    /* круги расходятся по воде в нижней части */
+    const m = Math.max(3, Math.round(5 * (fx.amount || 1)));
+    ctx.lineWidth = 2.4 * u;
+    for (let i = 0; i < m; i++) {
+      const x = W * (0.12 + rng() * 0.76), y = H * (0.62 + rng() * 0.28);
+      const rx = (40 + rng() * 110) * u;
+      ctx.beginPath();
+      ctx.ellipse(x, y, rx, rx * 0.32, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      if (rng() < 0.6) {
+        ctx.beginPath();
+        ctx.ellipse(x + rx * 0.1, y, rx * 1.35, rx * 0.45, 0, Math.PI * (1.05 + rng() * 0.2), Math.PI * (1.75 + rng() * 0.2));
+        ctx.stroke();
+      }
+      if (list[wi]) {
+        ctx.save();
+        ctx.translate(x - rx * 0.6, y + (rng() < 0.5 ? -1 : 1) * rx * 0.55);
+        ctx.rotate((rng() - 0.3) * 0.25);
+        ctx.fillText(list[wi++], 0, 0);
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ---------- плашка цвета на полфото, большой круг, тонкая рамка, точки по углам ---------- */
+  function split(ctx, W, H, u, col, fx, rng) {
+    const side = fx.style || 'bottom';
+    ctx.save();
+    ctx.fillStyle = col;
+    const k = 0.48 + (rng() - 0.5) * 0.08;
+    if (side === 'bottom') ctx.fillRect(0, H * k, W, H * (1 - k));
+    if (side === 'top') ctx.fillRect(0, 0, W, H * (1 - k));
+    if (side === 'left') ctx.fillRect(0, 0, W * k, H);
+    if (side === 'right') ctx.fillRect(W * (1 - k), 0, W * k, H);
+    grain(ctx, W, H, 0.12, rng);
+    const ink = '#ffffff';
+    ctx.strokeStyle = ink;
+    ctx.fillStyle = ink;
+    const m = Math.min(W, H) * 0.035;
+    ctx.lineWidth = 1.6 * u;
+    ctx.strokeRect(m, m, W - m * 2, H - m * 2);
+    const R = Math.min(W, H) * 0.44;
+    ctx.lineWidth = 2 * u;
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2 + (side === 'bottom' ? H * 0.04 : 0), R, 0, Math.PI * 2);
+    ctx.stroke();
+    [[m * 2, m * 2], [W - m * 2, m * 2], [m * 2, H - m * 2], [W - m * 2, H - m * 2]].forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, 9 * u, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    /* подпись на плашке и мелкие цифры по краям */
+    ctx.font = `${wt(500)} ${26 * u}px ${face(SANS)}`;
+    ctx.textBaseline = 'middle';
+    const tx = side === 'right' ? W * (1 - k) + W * 0.08 : W * 0.1;
+    const ty = side === 'top' ? H * 0.3 : side === 'bottom' ? H * (k + 0.1) : H * 0.42;
+    ctx.fillText(String(fx.text || ''), tx, ty);
+    ctx.font = `${wt(400)} ${14 * u}px ${face(SANS)}`;
+    const d = new Date();
+    const p2 = (v) => String(v).padStart(2, '0');
+    ctx.save();
+    ctx.translate(m * 2 - 4 * u, m * 4);
+    ctx.rotate(Math.PI / 2);
+    ctx.fillText(`${p2(d.getDate())}.${p2(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)}`, 0, 0);
+    ctx.restore();
+    ctx.fillText(`${p2(d.getHours())}:${p2(d.getMinutes())}`, m * 3.2, H - m * 2);
+    ctx.restore();
+  }
+
+  /* ---------- стекло: полупрозрачные плитки или слитые круги ---------- */
+  function glass(ctx, W, H, u, col, fx, rng) {
+    const S = 52 * u / Math.sqrt(fx.amount || 1);
+    const cols = Math.ceil(W / S), rows = Math.ceil(H / S);
+    const on = new Set();
+    const band = fx.style === 'labels';
+    const walks = Math.round(cols * rows * (band ? 0.07 : 0.05));
+    for (let k = 0; k < walks; k++) {
+      let c = band ? Math.floor(cols * (0.18 + rng() * 0.55)) : Math.floor(rng() * cols);
+      let r = Math.floor(rng() * rows);
+      const len = 2 + Math.floor(rng() * 6);
+      const horiz = rng() < 0.5;
+      for (let i = 0; i < len; i++) {
+        if (c >= 0 && c < cols && r >= 0 && r < rows) on.add(r * cols + c);
+        if (horiz) c += 1; else r += 1;
+      }
+    }
+    ctx.save();
+    if (fx.style === 'circles') {
+      /* круги рисуем на отдельном слое одной заливкой: там, где они перекрываются, сливаются в пятно */
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(W);
+      c.height = Math.ceil(H);
+      const x = c.getContext('2d');
+      x.fillStyle = col;
+      x.beginPath();
+      on.forEach((i) => {
+        const px = (i % cols + 0.5) * S, py = (Math.floor(i / cols) + 0.5) * S;
+        const r = S * (0.55 + rng() * 0.35);
+        x.moveTo(px + r, py);
+        x.arc(px, py, r, 0, Math.PI * 2);
+      });
+      x.fill();
+      ctx.globalAlpha = 0.6;
+      ctx.drawImage(c, 0, 0);
+      ctx.restore();
+      return;
+    }
+    on.forEach((i) => {
+      const x = (i % cols) * S, y = Math.floor(i / cols) * S;
+      ctx.globalAlpha = 0.25 + rng() * 0.6;
+      ctx.fillStyle = col;
+      ctx.fillRect(x, y, S, S);
+    });
+    ctx.globalAlpha = 1;
+    if (band) {
+      const list = words(fx.text, '');
+      ctx.fillStyle = '#ffffff';
+      ctx.textBaseline = 'top';
+      list.forEach((line, i) => {
+        const y = H * (0.08 + (0.84 * i) / Math.max(1, list.length - 1));
+        const m = line.match(/^(.*?)\s*([-+]?\d[\d.,]*\s*°?\w*)$/);
+        ctx.font = `${wt(600)} ${15 * u}px ${face(SANS)}`;
+        ctx.fillText((m ? m[1] : line).toUpperCase(), W * 0.19, y);
+        if (m) {
+          ctx.font = `${wt(400)} ${15 * u}px ${face(SANS)}`;
+          ctx.fillText(m[2], W * 0.19, y + 20 * u);
+        }
+      });
+    }
+    ctx.restore();
+  }
+
+  /* ---------- глитч: потёки вниз или сдвиг полос ---------- */
+  function glitch(ctx, W, H, u, col, fx, rng, r) {
+    const snap = document.createElement('canvas');
+    snap.width = Math.ceil(W);
+    snap.height = Math.ceil(H);
+    snap.getContext('2d').drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, W, H);
+    const am = fx.amount || 1;
+    ctx.save();
+    if (fx.style === 'shift') {
+      const n = Math.round(18 * am);
+      for (let i = 0; i < n; i++) {
+        const y = rng() * H, h = (4 + rng() * 50) * u, d = (rng() - 0.5) * 120 * u;
+        ctx.drawImage(snap, 0, y, W, h, d, y, W, h);
+        if (rng() < 0.3) {
+          ctx.globalCompositeOperation = 'screen';
+          ctx.fillStyle = rng() < 0.5 ? 'rgba(255,0,60,.35)' : 'rgba(0,200,255,.35)';
+          ctx.fillRect(0, y, W, h);
+          ctx.globalCompositeOperation = 'source-over';
+        }
+      }
+    } else {
+      /* полоса пикселей тянется вниз, как сломанный кадр */
+      let x = 0;
+      while (x < W) {
+        const bw = (8 + rng() * 55) * u;
+        if (rng() < 0.55 * am + 0.1) {
+          const y0 = rng() * H * 0.85;
+          const len = H * (0.08 + rng() * 0.55);
+          ctx.drawImage(snap, x, y0, bw, 1, x, y0, bw, len);
+        }
+        x += bw;
+      }
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 2.4 * u;
+      const px = W * (0.2 + rng() * 0.2);
+      for (let k = 0; k < 6; k++) {
+        const y = H * (0.1 + k * 0.08), xx = px + (k % 2 ? W * 0.07 : 0);
+        ctx.beginPath();
+        ctx.moveTo(xx - 7 * u, y); ctx.lineTo(xx + 7 * u, y);
+        ctx.moveTo(xx, y - 7 * u); ctx.lineTo(xx, y + 7 * u);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ---------- линия с подписями в точках ---------- */
+  function curve(ctx, W, H, u, col, fx, rng) {
+    const labels = words(fx.text, '');
+    const n = Math.max(2, labels.length);
+    const key = Array.from({ length: n }, (_, i) => {
+      const t = i / (n - 1);
+      return [W * (0.12 + t * 0.76), H * (0.62 - Math.sin(t * Math.PI * 0.95) * 0.16 + (rng() - 0.5) * 0.06)];
+    });
+    /* сглаживаем Catmull-Rom и при «Дрожит» добавляем мелкую дрожь поперёк */
+    const pts = [];
+    for (let i = 0; i < n - 1; i++) {
+      const p0 = key[Math.max(0, i - 1)], p1 = key[i], p2 = key[i + 1], p3 = key[Math.min(n - 1, i + 2)];
+      for (let t = 0; t < 1; t += 0.01) {
+        const t2 = t * t, t3 = t2 * t;
+        pts.push([0, 1].map((k) => 0.5 * (2 * p1[k] + (-p0[k] + p2[k]) * t + (2 * p0[k] - 5 * p1[k] + 4 * p2[k] - p3[k]) * t2 + (-p0[k] + 3 * p1[k] - 3 * p2[k] + p3[k]) * t3)));
+      }
+    }
+    pts.push(key[n - 1]);
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = 2.2 * u;
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    pts.forEach(([x, y], i) => {
+      let yy = y;
+      if (fx.style !== 'smooth') yy += Math.sin(i * 1.7) * 3.2 * u + (rng() - 0.5) * 2.4 * u;
+      if (i) ctx.lineTo(x, yy); else ctx.moveTo(x, yy);
+    });
+    ctx.stroke();
+    ctx.font = `${wt(500)} ${30 * u}px ${face(SANS)}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    key.forEach(([x, y], i) => { if (labels[i]) ctx.fillText(labels[i], x, y - 16 * u); });
+    ctx.restore();
+  }
+
   /* lastBoxes помнит рамки, показанные на карточке, чтобы их можно было сразу двигать рукой. */
-  const api = { EFFECTS, byId, usesBoxes, fonts, styleOf, lastBoxes: [] };
+  const api = { EFFECTS, byId, usesBoxes, fonts, styleOf, lastBoxes: {} };
 
   /* rect: где лежит фото на карточке. Эффект рисуется только там, рамки в долях этой области. */
-  api.draw = function (ctx, s, CW, CH, rect) {
-    if (!s.fx || !s.fx.id) return;
-    const def = byId(s.fx.id);
+  api.draw = function (ctx, state, CW, CH, rect, key = 'fx') {
+    const src = state[key];
+    if (!src || !src.id) return;
+    const def = byId(src.id);
     if (!def) return;
+    const s = { fx: src };
     /* пустое поле текста значит «как в эффекте» */
     const st0 = styleOf(def, s.fx);
     const fx = { ...s.fx, text: s.fx.text || (st0 && st0.text) || def.text, own: !!s.fx.text };
@@ -1144,7 +1519,7 @@ window.Effects = (function () {
     const A = analyze(ctx, W, H, r);
     const box = () => {
       const list = fx.boxes && fx.boxes.length ? fx.boxes : autoBoxes(A, Math.round((def.id === 'tags' ? 6 : fx.style === 'arcs' ? 16 : 10) * (fx.amount || 1)), makeRng(fx.seed || 1), W, H, def.id === 'tags' ? 0.05 : def.id === 'objects' ? -0.02 : 0.01);
-      api.lastBoxes = list;
+      api.lastBoxes[key] = list;
       return list;
     };
     ctx.save();
@@ -1167,6 +1542,12 @@ window.Effects = (function () {
       case 'graph': graph(ctx, W, H, u, col, fx, rng); break;
       case 'circle': circle(ctx, A, W, H, u, col, fx, rng); break;
       case 'chart': chart(ctx, W, H, u, col, fx, rng); break;
+      case 'rays': rays(ctx, W, H, u, col, fx, rng); break;
+      case 'rain': rain(ctx, W, H, u, col, fx, rng); break;
+      case 'split': split(ctx, W, H, u, col, fx, rng); break;
+      case 'glass': glass(ctx, W, H, u, col, fx, rng); break;
+      case 'glitch': glitch(ctx, W, H, u, col, fx, rng, r); break;
+      case 'curve': curve(ctx, W, H, u, col, fx, rng); break;
       case 'vwords': vwords(ctx, W, H, u, col, fx, rng); break;
       case 'formula': formula(ctx, W, H, u, col, fx); break;
       default: break;
