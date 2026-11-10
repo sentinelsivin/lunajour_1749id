@@ -1208,7 +1208,8 @@ window.Scanner = (function () {
       ctx.lineWidth = lw;
       shapePath(ctx, sc.shape, b.x, b.y, b.w, b.h, u, lw, i);
       ctx.restore();
-      const tpl = list.length ? list[i % list.length] : '';
+      /* у рамки может быть свой текст вместо общего шаблона */
+      const tpl = boxes[i].text ? boxes[i].text : list.length ? list[i % list.length] : '';
       /* пока рамка «думает», проценты перебираются, потом застывают */
       const settled = T == null || T > appear(i) + 1.3;
       const tick = boxes[i].epoch != null ? boxes[i].epoch * 7 + 1 : settled ? null : Math.floor(T * 12);

@@ -255,50 +255,81 @@ button { cursor: pointer; }
 .seg button:first-child { border-left: 0; }
 .seg button.on { background: rgba(49, 113, 198, .18); color: var(--bone); }
 
-/* Семь вкладок помещаются в один ряд; на совсем узком экране переносятся во вторую строку, а не обрезаются. */
-.tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0 2px;
-  padding: 0 6px;
-  border-bottom: 1px solid var(--hairline);
-  flex: none;
-}
-.tabs button {
-  flex: 1 0 auto;
-  padding: 12px 4px;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font: 10.5px var(--mono);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-.tabs button.on { color: var(--bone); border-bottom-color: var(--accent-light); }
-.tabs button.away { display: none; }
-.tabs[hidden] { display: none; }
 
-/* Четыре раздела сверху, под ними вкладки раздела. */
-.groups {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+
+.panels { flex: 1; min-height: 0; overflow-y: auto; display: none; }
+
+/* Один ряд инструментов, как в редакторах на телефоне. Открытый инструмент занимает его место. */
+.tools { display: flex; gap: 2px; padding: 8px 6px; overflow-x: auto; scrollbar-width: none; flex: none; }
+.tools::-webkit-scrollbar { display: none; }
+.tools[hidden], .tools button[hidden] { display: none; }
+.tools button {
+  flex: 1 0 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   gap: 4px;
-  padding: 8px 10px 6px;
-  flex: none;
+  padding: 7px 2px 6px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: var(--muted);
+  font: 500 11px var(--body);
 }
-.groups button {
-  padding: 9px 4px;
+.tools button:hover { color: var(--bone); }
+.tools button.on { color: var(--bone); background: rgba(49, 113, 198, .2); }
+/* тонкая черта между группами: форма, фото, поверх, фон */
+#tools [data-tab="photo"], #tools [data-tab="layers"], #tools [data-tab="paper"] { margin-left: 9px; position: relative; }
+#tools [data-tab="photo"]::before, #tools [data-tab="layers"]::before, #tools [data-tab="paper"]::before {
+  content: ""; position: absolute; left: -6px; top: 14px; bottom: 14px; width: 1px; background: var(--hairline);
+}
+.subtools { border-top: 1px solid var(--hairline); }
+/* наборы сканера всегда одной полосой, чтобы под ними сразу были настройки */
+[data-panel="scan"] .thumbs { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 76px; overflow-x: auto; scrollbar-width: none; align-items: start; }
+@media (min-width: 861px) { #tools { flex-wrap: wrap; } #tools button { flex: 0 0 calc(20% - 2px); } #tools [data-tab]::before { display: none; } #tools [data-tab="photo"], #tools [data-tab="layers"], #tools [data-tab="paper"] { margin-left: 0; } }
+.subtools button { flex-basis: 52px; }
+
+.panel-head { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px; border-bottom: 1px solid var(--hairline); flex: none; }
+.panel-title { font: 600 14px var(--body); color: var(--bone); }
+.icon-btn { width: 44px; height: 38px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 18px; }
+.icon-btn:hover { color: var(--bone); }
+.icon-btn.ok { color: var(--accent-light); font-size: 20px; }
+.app.tool-open #tools { display: none; }
+.app.tool-open .panel-head { display: flex; }
+.app.tool-open .panels { display: block; }
+.app.tool-open .bar { display: none; }
+
+/* шапка редактора: новый снимок, отмена, сравнение и «Готово» */
+.edit-only { display: none; }
+.app.editing .edit-only { display: inline-grid; place-items: center; }
+.btn.icon { padding: 4px 7px; }
+.history .btn.primary { font-size: 11px; padding: 4px 12px; }
+
+/* один ползунок на несколько величин, как в фоторедакторах */
+.one-slider { display: flex; flex-direction: column; gap: 8px; }
+.one-slider .val { font: 12px var(--mono); color: var(--bone); min-width: 44px; text-align: right; }
+.one-slider .line { display: flex; align-items: center; gap: 10px; }
+.one-slider input { flex: 1; accent-color: var(--accent); }
+
+/* меню у выбранной рамки, значка или досье прямо на фото */
+.ctx {
+  position: absolute;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  background: rgba(14, 14, 16, .94);
   border: 1px solid var(--hairline);
   border-radius: 10px;
-  background: transparent;
-  color: var(--muted);
-  font: 600 12px var(--body);
-  letter-spacing: .02em;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, .45);
 }
-.groups button.on { background: rgba(49, 113, 198, .2); border-color: var(--accent-light); color: var(--bone); }
-
-.panels { flex: 1; min-height: 0; overflow-y: auto; }
+.ctx[hidden] { display: none; }
+.ctx button { padding: 7px 9px; border: 0; border-radius: 6px; background: none; color: var(--bone); font: 500 12.5px var(--body); white-space: nowrap; }
+.ctx button:hover { background: rgba(255, 255, 255, .08); }
+.ctx button.danger { color: #ff7b7b; }
+.ctx input { width: min(52vw, 220px); padding: 7px 8px; border: 1px solid var(--hairline); border-radius: 6px; background: var(--surface2); color: var(--bone); font: 15px var(--body); }
+.app.view .ctx { display: none; }
 .panel { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 24px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -463,13 +494,22 @@ button { cursor: pointer; }
 @media (max-width: 860px) {
   .app {
     grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr) 38dvh;
+    --dock-h: calc(178px + env(safe-area-inset-bottom));
+    grid-template-rows: auto minmax(0, 1fr) var(--dock-h);
     grid-template-areas: "top" "stage" "dock";
   }
   .top { align-items: center; padding-top: max(6px, env(safe-area-inset-top)); padding-bottom: 4px; }
   .logo { font-size: 24px; }
   .deco, .readout { display: none; }
   .seg.lang { width: 72px; }
+  .app.editing { --dock-h: calc(84px + env(safe-area-inset-bottom)); }
+  .app.tool-open { --dock-h: 48dvh; }
+  .app.editing .seg.lang { display: none; }
+  .app.editing .logo { font-size: 20px; }
+  .top-side { flex-direction: row; align-items: center; }
+  .history { gap: 3px; }
+  .grip { display: none !important; }
+  .app.tool-open .grip { display: block !important; }
 
   #card { max-width: calc(100% - 16px); max-height: calc(100% - 12px); }
   .tag { top: 6px; left: 8px; }
@@ -482,7 +522,7 @@ button { cursor: pointer; }
     right: 0;
     bottom: 0;
     z-index: 22;
-    height: 38dvh;
+    height: var(--dock-h);
     border-left: 0;
     border-top: 1px solid var(--hairline);
     transition: height .34s cubic-bezier(.22, 1, .36, 1), padding-top .34s cubic-bezier(.22, 1, .36, 1);
@@ -498,13 +538,14 @@ button { cursor: pointer; }
   }
   .seg button { padding: 6px 4px; }
   .shutter { width: 52px; height: 52px; }
-  .tabs button { padding: 7px 4px; }
-  .groups { padding: 4px 10px 4px; }
-  .groups button { padding: 7px 4px; }
   .panel { gap: 10px; padding: 10px 12px 16px; }
 
   /* В обычном виде ряды листаются вбок, чтобы над ними оставалось место для карточки. */
   .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+  .swatches { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; padding: 4px 2px; }
+  .swatches button, .swatches label { flex: none; }
+  /* наборы сканера мельче: над ними должно оставаться место для настроек */
+  [data-panel="scan"] .thumbs { grid-auto-columns: 64px; }
   .chips::-webkit-scrollbar { display: none; }
   .chips button { flex: none; }
   .thumbs { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 84px; align-items: start; overflow-x: auto; scrollbar-width: none; }
@@ -518,6 +559,7 @@ button { cursor: pointer; }
   .app.dock-full .panels { animation: panelGrid .3s ease-out; }
   .app.dock-full .chips { flex-wrap: wrap; }
   .app.dock-full .thumbs { grid-auto-flow: row; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); overflow-x: visible; }
+  .app.dock-full [data-panel="scan"] .thumbs { grid-auto-flow: column; grid-template-columns: none; overflow-x: auto; }
   .app.dock-full .thumbs.papers { grid-template-columns: repeat(2, 1fr); }
 }
 

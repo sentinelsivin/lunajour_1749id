@@ -236,9 +236,10 @@
     dirty = false;
     lastFrame = now;
     Scanner.clock = videoClock();
-    renderCard(ctx, state, slots, assets);
+    renderCard(ctx, comparing ? { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false } } : state, slots, assets);
     Scanner.clock = null;
-    drawSelection();
+    if (!comparing) drawSelection();
+    placeCtx();
   }
 
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
@@ -355,7 +356,7 @@
   function setPhase(next) {
     phase = next;
     $('shootBar').hidden = next !== 'shoot';
-    $('editBar').hidden = next !== 'edit';
+    document.querySelector('.app').classList.toggle('editing', next === 'edit');
     syncStarter();
     syncSlotUI();
   }
@@ -1415,10 +1416,8 @@
   let selectedBox = -1;
   /* какой из двух слоёв эффектов сейчас правится */
   let fxSlot = 'fx';
-  /* что открыто во вкладке «Эффекты»: сами эффекты или сканер */
-  let fxView = 'fx';
   const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
-  const fxBoxMode = () => tab === 'fx' && fxView === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
+  const fxBoxMode = () => tab === 'fx' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
 
   function syncFx() {
     const grid = $('fxGrid');
@@ -1575,13 +1574,6 @@
     };
     $('fxFind').onclick = () => findThings();
     $('fxFont').onchange = (e) => { state[fxSlot] = { ...state[fxSlot], font: e.target.value }; syncFx(); update(); };
-    $('fxView').addEventListener('click', (e) => {
-      const b = e.target.closest('button');
-      if (!b) return;
-      fxView = b.dataset.v;
-      selectedBox = -1;
-      syncFxView();
-    });
   }
 
   /* Ищем людей и вещи на чистой карточке, без эффекта, сканера и стикеров сверху. */
@@ -1619,70 +1611,178 @@
   /* ---------- сканер: рамки, подписи, линза, лупа, связи, интерфейс камеры ---------- */
   let selectedScan = -1;
   let selectedIcon = -1;
+  /* выбрано досье: у него своё меню на фото */
+  let dossierPicked = false;
   /* проигрывание анимации сканера в превью: время старта или null */
   let scanPlay = null;
-  const scanMode = () => tab === 'fx' && fxView === 'scan' && !!state.scan.on;
+  /* свои наборы сканера, лежат на устройстве */
+  let userPresets = [];
+  const scanMode = () => tab === 'scan' && !!state.scan.on;
   let scanSub = 'boxes';
-  function syncFxView() {
-    markSeg($('fxView'), fxView);
-    $('fxPane').hidden = fxView !== 'fx';
-    $('scanPane').hidden = fxView !== 'scan';
-    if (fxView === 'scan') syncScan();
-    else syncFx();
-    syncGrab();
-    invalidate();
-  }
   const setScan = (patch) => { state.scan = { ...state.scan, ...patch }; syncScan(); update(); };
+  const presetLookup = (id) => userPresets.find((p) => p.id === id) || Scanner.presetById(id);
+  const unselect = () => { selectedScan = -1; selectedIcon = -1; dossierPicked = false; ctxEdit = false; };
+
+  /* Набор меняет только вид: свои рамки, сид и живое сканирование остаются. */
+  function applyPreset(p) {
+    unselect();
+    const keep = { boxes: state.scan.boxes, seed: state.scan.seed, anim: state.scan.anim };
+    /* свои значки остаются, а значки прошлого набора уходят вместе с ним */
+    const was = presetLookup(state.scan.preset);
+    if (JSON.stringify(state.scan.icons) !== JSON.stringify((was && was.set.icons) || [])) keep.icons = state.scan.icons;
+    /* копия набора: правки досье и значков не должны менять сам набор */
+    state.scan = { ...Scanner.defaults(), ...JSON.parse(JSON.stringify(p.set)), ...keep, on: true, preset: p.id };
+    syncScan();
+    syncGrab();
+    update();
+  }
+
+  /* Кубик: случайное сочетание деталей. Свои рамки, значки и тексты не трогаем. */
+  function diceScan() {
+    const pick = (list) => list[Math.floor(Math.random() * list.length)];
+    const sc = state.scan;
+    const hud = Scanner.HUD.map(([v]) => v).filter(() => Math.random() < 0.3);
+    state.scan = {
+      ...sc,
+      on: true,
+      preset: '',
+      color: pick(FX_COLORS),
+      shape: pick(Scanner.SHAPES)[0],
+      label: pick(Scanner.LABELS.filter(([v]) => v !== 'none'))[0],
+      text: pick(Scanner.PACKS)[2],
+      lens: Math.random() < 0.5 ? 'none' : pick(Scanner.LENSES)[0],
+      lensOut: Math.random() < 0.35,
+      zoom: Math.floor(Math.random() * 3),
+      zoomLook: pick(Scanner.LOOKS)[0],
+      zoomLine: pick(Scanner.ZOOM_LINES)[0],
+      links: pick(Scanner.LINKS)[0],
+      hud,
+      glow: Math.random() < 0.4,
+      line: Math.round((0.6 + Math.random() * 1.4) * 20) / 20,
+      seed: Math.floor(Math.random() * 1e6),
+    };
+    unselect();
+    syncScan();
+    syncGrab();
+    update();
+  }
+
+  async function saveUserPreset() {
+    const { boxes, seed, on, preset, ...set } = JSON.parse(JSON.stringify(state.scan));
+    const n = userPresets.length + 1;
+    const p = { id: `u${Date.now()}`, name: `${t('Мой набор')} ${n}`, set };
+    userPresets = [p, ...userPresets];
+    state.scan = { ...state.scan, preset: p.id };
+    await Store.set('scanPresets', userPresets).catch(() => {});
+    buildScanGrid();
+    syncScan();
+    toast(t('Набор сохранён. Он первый в ряду.'));
+  }
+  async function deleteUserPreset(id) {
+    userPresets = userPresets.filter((p) => p.id !== id);
+    if (state.scan.preset === id) state.scan = { ...state.scan, preset: '' };
+    await Store.set('scanPresets', userPresets).catch(() => {});
+    buildScanGrid();
+    syncScan();
+  }
+
+  /* картинка-кнопка для действий в ряду наборов: плюс, кубик */
+  function actionThumb(c, mark) {
+    const x = c.getContext('2d');
+    x.fillStyle = '#16181d';
+    x.fillRect(0, 0, c.width, c.height);
+    x.fillStyle = '#9fb3d9';
+    x.font = '600 54px "Golos Text", system-ui, sans-serif';
+    x.textAlign = 'center';
+    x.textBaseline = 'middle';
+    x.fillText(mark, c.width / 2, c.height / 2 + 2);
+  }
+
+  function buildScanGrid() {
+    const grid = $('scanGrid');
+    grid.replaceChildren();
+    const items = [
+      { id: '', name: 'Выключен' },
+      { id: '@save', name: 'Сохранить свой', mark: '+' },
+      { id: '@dice', name: 'Случайно', mark: '⚄' },
+      ...userPresets.map((p) => ({ ...p, mine: true })),
+      ...Scanner.PRESETS,
+    ];
+    items.forEach((p, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thumb';
+      b.dataset.scan = p.id;
+      b.dataset.name = p.name;
+      if (p.mine) b.dataset.mine = '1';
+      const c = canvas(120, 150);
+      b.append(c, document.createElement('span'));
+      b.onclick = () => {
+        if (p.id === '') { unselect(); setScan({ on: false, preset: '' }); setTab('scan'); return; }
+        if (p.id === '@save') return saveUserPreset();
+        if (p.id === '@dice') return diceScan();
+        applyPreset(p);
+      };
+      grid.append(b);
+      if (p.mark) { actionThumb(c, p.mark); return; }
+      /* превью рисуются по одной, чтобы вкладка открывалась сразу */
+      setTimeout(() => {
+        const x = c.getContext('2d');
+        drawCover(x, sample, sample.width, sample.height, c.width, c.height);
+        if (p.id) Scanner.draw(x, { scan: { ...Scanner.defaults(), ...p.set, on: true, seed: 4 }, note: state.note }, c.width, c.height);
+      }, 30 * i);
+    });
+  }
+
+  /* Один ползунок на несколько величин: выбираешь величину, ползунок один. Двойное нажатие сбрасывает. */
+  const sliderPick = {};
+  function oneSlider(el, items) {
+    if (!items.length) { el.replaceChildren(); return; }
+    const cur = items.find((it) => it.id === sliderPick[el.id]) || items[0];
+    sliderPick[el.id] = cur.id;
+    el.replaceChildren();
+    const row = document.createElement('div');
+    row.className = 'chips';
+    items.forEach((it) => chip(row, t(it.label), it === cur, () => { sliderPick[el.id] = it.id; oneSlider(el, items); }));
+    const line = document.createElement('div');
+    line.className = 'line';
+    const r = document.createElement('input');
+    r.type = 'range';
+    Object.assign(r, { min: cur.min, max: cur.max, step: cur.step });
+    r.value = cur.get();
+    r.setAttribute('aria-label', t(cur.label));
+    const val = document.createElement('span');
+    val.className = 'val';
+    const show = () => { val.textContent = `${Math.round(Number(r.value) * 100)}%`; };
+    show();
+    r.oninput = () => { cur.set(Number(r.value)); show(); update(); };
+    r.ondblclick = () => { cur.set(cur.def); r.value = cur.def; show(); update(); };
+    line.append(r, val);
+    el.append(row, line);
+  }
 
   function syncScan() {
     const sc = state.scan;
     const grid = $('scanGrid');
-    if (!grid.childElementCount) {
-      [{ id: '', name: 'Выключен' }, ...Scanner.PRESETS].forEach((p, i) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'thumb';
-        b.dataset.scan = p.id;
-        const c = canvas(120, 150);
-        b.append(c, document.createElement('span'));
-        b.onclick = () => {
-          selectedScan = -1;
-          if (!p.id) setScan({ on: false, preset: '' });
-          else {
-            /* свои рамки и сид остаются: набор меняет только вид */
-            const keep = { boxes: state.scan.boxes, seed: state.scan.seed, anim: state.scan.anim };
-            /* свои значки остаются, а значки прошлого набора уходят вместе с ним */
-            const was = Scanner.presetById(state.scan.preset);
-            if (JSON.stringify(state.scan.icons) !== JSON.stringify((was && was.set.icons) || [])) keep.icons = state.scan.icons;
-            /* копия набора: правки досье и значков не должны менять сам набор */
-            state.scan = { ...Scanner.defaults(), ...JSON.parse(JSON.stringify(p.set)), ...keep, on: true, preset: p.id };
-            syncScan();
-            update();
-          }
-          syncGrab();
-        };
-        grid.append(b);
-        /* превью рисуются по одной, чтобы вкладка открывалась сразу */
-        setTimeout(() => {
-          const x = c.getContext('2d');
-          drawCover(x, sample, sample.width, sample.height, c.width, c.height);
-          if (p.id) Scanner.draw(x, { scan: { ...Scanner.defaults(), ...p.set, on: true, seed: 4 }, note: state.note }, c.width, c.height);
-        }, 40 * i);
-      });
-    }
+    if (!grid.childElementCount || grid.dataset.lang !== I18n.lang) { buildScanGrid(); grid.dataset.lang = I18n.lang; }
     grid.querySelectorAll('[data-scan]').forEach((b) => {
-      const p = Scanner.presetById(b.dataset.scan);
-      b.classList.toggle('on', sc.on ? b.dataset.scan === sc.preset : !b.dataset.scan);
-      b.querySelector('span').textContent = t(p ? p.name : 'Выключен');
+      const id = b.dataset.scan;
+      b.classList.toggle('on', sc.on ? !!id && id === sc.preset : id === '');
+      b.querySelector('span').textContent = b.dataset.mine ? b.dataset.name : t(b.dataset.name);
     });
+    $('scanMineTools').hidden = !(sc.on && String(sc.preset).startsWith('u'));
     $('scanTools').hidden = !sc.on;
-    if (!sc.on) return;
+    $('scanSub').hidden = !(tab === 'scan' && sc.on);
+    if (!sc.on) { syncCtx(); return; }
 
     const choose = (id, items, key) => {
       const el = $(id);
       el.replaceChildren();
       items.forEach(([v, name]) => chip(el, t(name), sc[key] === v, () => setScan({ [key]: v })));
     };
+    markSeg($('scanSub'), scanSub);
+    document.querySelectorAll('[data-sub]').forEach((el) => { el.hidden = el.dataset.sub !== scanSub; });
+
     swatches($('scanSwatches'), FX_COLORS, sc.color, (v) => setScan({ color: v }));
     choose('scanShapes', Scanner.SHAPES, 'shape');
     choose('scanMotion', Scanner.MOTIONS, 'motion');
@@ -1692,8 +1792,15 @@
       flash: 'Рамки вспыхивают и гаснут в местах с деталями. Свои рамки мигают на своих местах.',
       swarm: 'Много тонких рамок перестраиваются несколько раз в секунду.',
     }[sc.motion || 'still']);
-    const free = !['flash', 'swarm'].includes(sc.motion);
-    $('scanAmountField').hidden = free ? !!sc.boxes.length : sc.motion === 'flash' && !!sc.boxes.length;
+    /* рамки либо ставятся сами (тогда работает «Сколько рамок»), либо свои */
+    const ownCount = sc.boxes.length;
+    const countWorks = sc.motion === 'swarm' || !ownCount;
+    oneSlider($('scanSliders'), [
+      ...(countWorks ? [{ id: 'amount', label: 'Сколько рамок', min: 0.2, max: 2.5, step: 0.05, def: 1, get: () => state.scan.amount, set: (v) => { state.scan.amount = v; } }] : []),
+      { id: 'line', label: 'Толщина линий', min: 0.4, max: 3, step: 0.05, def: 1, get: () => state.scan.line, set: (v) => { state.scan.line = v; } },
+    ]);
+    $('scanOwn').hidden = countWorks;
+    $('scanOwnText').textContent = `${t('Рамки расставлены вручную')}: ${ownCount}. ${t('Чтобы снова менять их число ползунком, верни автоматические.')}`;
     choose('scanLabels', Scanner.LABELS, 'label');
     choose('scanLenses', Scanner.LENSES, 'lens');
     choose('scanLooks', Scanner.LOOKS, 'zoomLook');
@@ -1705,7 +1812,6 @@
     const vars = $('scanVars');
     vars.replaceChildren();
     Scanner.VARS.forEach((v) => chip(vars, v, false, () => setScan({ text: `${sc.text}${v}` })));
-
     fontSelect($('scanFont'), t('Моноширинный'), sc.font);
 
     const packs = $('scanPacks');
@@ -1729,6 +1835,7 @@
           /* новый значок встаёт чуть в стороне от центра, чтобы не лечь на прошлый */
           const n = state.scan.icons.length;
           state.scan.icons = [...state.scan.icons, { k, x: 0.3 + ((n * 0.17) % 0.4), y: 0.3 + ((n * 0.13) % 0.4), s: 1 }];
+          unselect();
           selectedIcon = state.scan.icons.length - 1;
           syncScan();
           update();
@@ -1736,18 +1843,12 @@
         b.title = t(name);
         b.setAttribute('aria-label', t(name));
         const c = canvas(68, 68);
-        const x = c.getContext('2d');
-        Scanner.drawIcon(x, k, k === 'cursor' ? 20 : 34, k === 'cursor' ? 10 : 34, 46, sc.color);
+        Scanner.drawIcon(c.getContext('2d'), k, k === 'cursor' ? 20 : 34, k === 'cursor' ? 10 : 34, 46, sc.color);
         b.append(c);
       });
       icons.dataset.color = sc.color;
       icons.dataset.lang = I18n.lang;
     }
-    const ic = sc.icons[selectedIcon];
-    $('scanIconTools').hidden = !ic;
-    if (ic) $('scanIconSize').value = ic.s || 1;
-    markSeg($('scanSub'), scanSub);
-    document.querySelectorAll('[data-sub]').forEach((el) => { el.hidden = el.dataset.sub !== scanSub; });
     markSeg($('scanLensWhere'), sc.lensOut ? 'out' : 'in');
     $('scanLensWhere').hidden = !sc.lens || sc.lens === 'none';
 
@@ -1764,16 +1865,118 @@
       if (el.type === 'checkbox') el.checked = !!v;
       else if (document.activeElement !== el) el.value = v;
     });
-    /* рамки либо ставятся сами (тогда работает «Сколько рамок»), либо свои */
-    const ownCount = sc.boxes.length;
-    if (free) $('scanAmountField').hidden = !!ownCount;
-    $('scanOwn').hidden = !ownCount;
-    $('scanOwnText').textContent = `${t('Рамки расставлены вручную')}: ${ownCount}. ${t('Чтобы снова менять их число ползунком, верни автоматические.')}`;
-    const own = sc.boxes[selectedScan];
-    $('scanBoxDelete').hidden = !own;
-    $('scanZoomPick').disabled = !own;
-    $('scanZoomPick').textContent = t(own && own.zoom ? 'Убрать лупу с рамки' : 'Лупа на выбранную рамку');
-    $('scanZoomHint').hidden = !!own;
+    syncCtx();
+  }
+
+  /* ---------- меню у выбранного прямо на фото, как в Canva ---------- */
+  let ctxEdit = false;
+  let ctxKey = '';
+  function ctxTarget() {
+    if (!scanMode()) return null;
+    const sc = state.scan;
+    if (selectedIcon >= 0 && sc.icons[selectedIcon]) return { kind: 'icon', i: selectedIcon, box: (Scanner.lastIcons || [])[selectedIcon] };
+    if (dossierPicked && sc.dossier.on) return { kind: 'dossier', box: Scanner.lastDossier };
+    if (selectedScan >= 0 && sc.boxes[selectedScan] && !['flash', 'swarm'].includes(sc.motion)) {
+      const moved = Scanner.lastMotion === 'track' && Scanner.lastBoxes.length === sc.boxes.length;
+      return { kind: 'box', i: selectedScan, box: (moved ? Scanner.lastBoxes : sc.boxes)[selectedScan] };
+    }
+    return null;
+  }
+
+  function syncCtx() {
+    const menu = $('ctxMenu');
+    const tg = ctxTarget();
+    const key = tg ? `${tg.kind}:${tg.i}:${ctxEdit}:${tg.kind === 'box' ? !!state.scan.boxes[tg.i].zoom : ''}:${I18n.lang}` : '';
+    if (key === ctxKey) { placeCtx(); return; }
+    ctxKey = key;
+    menu.replaceChildren();
+    menu.hidden = !tg;
+    if (!tg) return;
+    const add = (label, run, cls) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = label;
+      if (cls) b.className = cls;
+      b.onclick = (e) => { e.stopPropagation(); run(); };
+      menu.append(b);
+      return b;
+    };
+    const sc = state.scan;
+    if (tg.kind === 'box' && ctxEdit) {
+      /* свой текст у этой рамки вместо общего шаблона */
+      const b = sc.boxes[tg.i];
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.maxLength = 80;
+      input.value = b.text || '';
+      input.placeholder = t('Свой текст этой рамки');
+      input.oninput = () => { b.text = input.value; update(); };
+      input.onkeydown = (e) => { if (e.key === 'Enter') { ctxEdit = false; syncCtx(); } };
+      menu.append(input);
+      add('✓', () => { ctxEdit = false; syncCtx(); });
+      placeCtx();
+      setTimeout(() => input.focus(), 0);
+      return;
+    }
+    if (tg.kind === 'box') {
+      const b = sc.boxes[tg.i];
+      add(t('Текст'), () => { ctxEdit = true; syncCtx(); });
+      add(b.zoom ? t('Без лупы') : t('Лупа'), () => {
+        b.zoom = !b.zoom;
+        if (!b.zoom) { delete b.zx; delete b.zy; }
+        const flagged = sc.boxes.filter((x) => x.zoom).length;
+        setScan({ zoom: flagged ? Math.min(3, Math.max(flagged, sc.zoom)) : sc.zoom });
+      });
+      add(t('Копия'), () => {
+        const c = { ...b, x: clamp(b.x + 0.04, 0, 1 - b.w), y: clamp(b.y + 0.04, 0, 1 - b.h) };
+        delete c.zx; delete c.zy;
+        sc.boxes.push(c);
+        selectedScan = sc.boxes.length - 1;
+        syncScan();
+        update();
+      });
+      add(t('Удалить'), () => { sc.boxes.splice(tg.i, 1); unselect(); syncScan(); update(); }, 'danger');
+    } else if (tg.kind === 'icon') {
+      const ic = sc.icons[tg.i];
+      const size = (k) => { ic.s = clamp(Math.round(((ic.s || 1) * k) * 100) / 100, 0.3, 3.5); update(); };
+      add('−', () => size(1 / 1.2)).setAttribute('aria-label', t('Меньше'));
+      add('+', () => size(1.2)).setAttribute('aria-label', t('Больше'));
+      add(t('Копия'), () => {
+        sc.icons = [...sc.icons, { ...ic, x: clamp(ic.x + 0.05, 0, 1), y: clamp(ic.y + 0.05, 0, 1) }];
+        selectedIcon = sc.icons.length - 1;
+        syncScan();
+        update();
+      });
+      add(t('Удалить'), () => { sc.icons = sc.icons.filter((_, i) => i !== tg.i); unselect(); syncScan(); update(); }, 'danger');
+    } else {
+      add(t('Изменить'), () => { scanSub = 'dossier'; syncScan(); });
+      if (sc.dossier.x != null) add(t('На место'), () => setScan({ dossier: { ...sc.dossier, x: null, y: null } }));
+      add(t('Скрыть'), () => { unselect(); setScan({ dossier: { ...sc.dossier, on: false } }); }, 'danger');
+    }
+    placeCtx();
+  }
+
+  /* меню встаёт над выбранным, а если места нет, то под ним */
+  function placeCtx() {
+    const menu = $('ctxMenu');
+    if (menu.hidden) return;
+    const tg = ctxTarget();
+    if (!tg || !tg.box) { menu.style.visibility = 'hidden'; return; }
+    menu.style.visibility = '';
+    const stage = $('stage').getBoundingClientRect();
+    const cb = card.getBoundingClientRect();
+    const r = window.Render.fxRect(state, card.width, card.height);
+    const k = cb.width / card.width;
+    const x = cb.left - stage.left + (r.x + tg.box.x * r.w) * k;
+    const y = cb.top - stage.top + (r.y + tg.box.y * r.h) * k;
+    const w = tg.box.w * r.w * k;
+    const h = tg.box.h * r.h * k;
+    const mw = menu.offsetWidth;
+    const mh = menu.offsetHeight;
+    const left = clamp(x + w / 2 - mw / 2, 6, stage.width - mw - 6);
+    const top = y - mh - 10 >= 4 ? y - mh - 10 : Math.min(stage.height - mh - 4, y + h + 10);
+    menu.style.left = `${left}px`;
+    menu.style.top = `${top}px`;
   }
 
   function bindScan() {
@@ -1791,44 +1994,46 @@
       if (!state.scan.boxes.length) state.scan.boxes = (Scanner.lastBoxes || []).map((b) => ({ ...b }));
       return state.scan.boxes;
     };
+    const capture = (e) => { try { card.setPointerCapture(e.pointerId); } catch {} };
     card.addEventListener('pointerdown', (e) => {
       if (!scanMode()) return;
       const [fx, fy, aspect] = toRect(e);
       if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+      ctxEdit = false;
       const inside = (s) => s && fx >= s.x && fx <= s.x + s.w && fy >= s.y && fy <= s.y + s.h;
       /* сверху вниз: значки, досье, увеличенные куски, рамки */
       const iconHit = (Scanner.lastIcons || []).map((b, i) => [b, i]).reverse().find(([b]) => inside(b));
       if (iconHit) {
         const ic = state.scan.icons[iconHit[1]];
+        unselect();
         selectedIcon = iconHit[1];
-        selectedScan = -1;
         drag = { id: e.pointerId, icon: true, fx, fy, start: { x: ic.x, y: ic.y } };
-        try { card.setPointerCapture(e.pointerId); } catch {}
-        syncScan();
+        capture(e);
+        syncCtx();
         invalidate();
         return;
       }
-      selectedIcon = -1;
       if (state.scan.dossier.on && inside(Scanner.lastDossier)) {
-        const dz = Scanner.lastDossier;
-        drag = { id: e.pointerId, dossier: true, fx, fy, start: { ...dz } };
-        try { card.setPointerCapture(e.pointerId); } catch {}
-        syncScan();
+        unselect();
+        dossierPicked = true;
+        drag = { id: e.pointerId, dossier: true, fx, fy, start: { ...Scanner.lastDossier } };
+        capture(e);
+        syncCtx();
         invalidate();
         return;
       }
       const motion = state.scan.motion || 'still';
-      if (motion === 'flash' || motion === 'swarm') { syncScan(); invalidate(); return; }
+      if (motion === 'flash' || motion === 'swarm') { unselect(); syncCtx(); invalidate(); return; }
       /* рамки уехали за объектом: правим их там, где они сейчас, и следим дальше оттуда */
       if (motion === 'track' && state.scan.boxes.length && Scanner.lastBoxes.length === state.scan.boxes.length) {
         state.scan.boxes = Scanner.lastBoxes.map((b) => ({ ...b }));
       }
       const inset = [...(Scanner.lastInsets || [])].reverse().find(inside);
-      /* на вкладках досье и значков пустое место не ставит новую рамку */
-      const canAdd = !['dossier', 'icons', 'hud'].includes(scanSub);
+      /* новая рамка ставится только на вкладке рамок, на других пустое место снимает выбор */
       const hitsBox = (Scanner.lastBoxes || []).some(inside);
-      if (!inset && !hitsBox && !canAdd) { syncScan(); invalidate(); return; }
+      if (!inset && !hitsBox && scanSub !== 'boxes') { unselect(); syncCtx(); invalidate(); return; }
       const list = own();
+      unselect();
       if (inset && list[inset.i]) {
         selectedScan = inset.i;
         drag = { id: e.pointerId, inset: true, fx, fy, start: { ...inset } };
@@ -1851,7 +2056,7 @@
         selectedScan = hit;
         drag = { id: e.pointerId, mode, fx, fy, start: { ...list[hit] } };
       }
-      try { card.setPointerCapture(e.pointerId); } catch {}
+      capture(e);
       syncScan();
       update();
     });
@@ -1901,39 +2106,11 @@
       state.scan.boxes.forEach((b) => { delete b.zx; delete b.zy; });
       setScan({ seed: Math.floor(Math.random() * 1e6) });
     };
-    $('scanBoxDelete').onclick = () => {
-      if (!state.scan.boxes[selectedScan]) return;
-      state.scan.boxes.splice(selectedScan, 1);
-      selectedScan = -1;
-      syncScan();
-      update();
-    };
-    $('scanBoxAuto').onclick = () => { selectedScan = -1; setScan({ boxes: [] }); };
-    /* лупа на выбранную рамку: отмеченные рамки идут в лупу первыми */
-    $('scanZoomPick').onclick = () => {
-      const b = state.scan.boxes[selectedScan];
-      if (!b) return;
-      b.zoom = !b.zoom;
-      if (!b.zoom) { delete b.zx; delete b.zy; }
-      const flagged = state.scan.boxes.filter((x) => x.zoom).length;
-      setScan({ zoom: flagged ? Math.min(3, Math.max(flagged, state.scan.zoom)) : state.scan.zoom });
-    };
-    $('scanFind').onclick = () => findThings('scanFind', (boxes) => { selectedScan = -1; setScan({ boxes }); });
+    $('scanBoxAuto').onclick = () => { unselect(); setScan({ boxes: [] }); };
+    $('scanFind').onclick = () => findThings('scanFind', (boxes) => { unselect(); setScan({ boxes }); });
     $('scanFont').onchange = (e) => setScan({ font: e.target.value });
     $('scanDossierHome').onclick = () => setScan({ dossier: { ...state.scan.dossier, x: null, y: null } });
-    $('scanIconSize').addEventListener('input', (e) => {
-      const ic = state.scan.icons[selectedIcon];
-      if (!ic) return;
-      ic.s = Number(e.target.value);
-      update();
-    });
-    $('scanIconDelete').onclick = () => {
-      if (!state.scan.icons[selectedIcon]) return;
-      state.scan.icons = state.scan.icons.filter((_, i) => i !== selectedIcon);
-      selectedIcon = -1;
-      syncScan();
-      update();
-    };
+    $('scanMineDelete').onclick = () => deleteUserPreset(state.scan.preset);
     $('scanPlay').onclick = () => {
       scanPlay = performance.now();
       invalidate();
@@ -1942,6 +2119,7 @@
       const b = e.target.closest('button');
       if (!b) return;
       scanSub = b.dataset.v;
+      document.querySelector('.panels').scrollTop = $('scanTools').offsetTop - 8;
       syncScan();
     });
     $('scanLensWhere').addEventListener('click', (e) => {
@@ -2652,18 +2830,20 @@
       syncAll();
     });
 
-    $('tabs').addEventListener('click', (e) => {
+    $('tools').addEventListener('click', (e) => {
       const b = e.target.closest('[data-tab]');
-      if (b) setTab(b.dataset.tab);
+      if (b) openTool(b.dataset.tab);
     });
-    /* Разделы: открывается вкладка, на которой ты была в этом разделе в прошлый раз. */
-    $('groups').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-group]');
-      if (!b) return;
-      const g = b.dataset.group;
-      const visible = [...document.querySelectorAll(`[data-tab][data-g="${g}"]`)].filter((x) => !x.hidden);
-      const last = visible.find((x) => x.dataset.tab === lastTab[g]) || visible[0];
-      if (last) setTab(last.dataset.tab);
+    $('toolDone').onclick = () => closeTool(true);
+    $('toolCancel').onclick = () => closeTool(false);
+    /* удерживай, чтобы увидеть фото без эффектов и сканера */
+    const cmp = $('compareBtn');
+    const cmpOn = (on) => { comparing = on; cmp.classList.toggle('primary', on); invalidate(); };
+    cmp.addEventListener('pointerdown', (e) => { e.preventDefault(); cmpOn(true); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => cmp.addEventListener(ev, () => { if (comparing) cmpOn(false); }));
+    cmp.addEventListener('contextmenu', (e) => e.preventDefault());
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && tab && !document.querySelector('.app').classList.contains('view')) closeTool(true);
     });
     $('modeSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button');
@@ -2785,27 +2965,54 @@
     buildPalette();
   }
 
-  const lastTab = {};
+  /* Открытый инструмент: панель с ✕ и ✓ вместо ряда инструментов. ✕ возвращает всё, как было до открытия. */
+  let toolSnap = null;
+  let comparing = false;
   function setTab(next) {
-    tab = next;
-    const btn = document.querySelector(`[data-tab="${next}"]`);
-    const group = btn ? btn.dataset.g : 'shape';
-    lastTab[group] = next;
-    document.querySelectorAll('[data-group]').forEach((b) => b.classList.toggle('on', b.dataset.group === group));
-    let shown = 0;
-    document.querySelectorAll('[data-tab]').forEach((b) => {
-      b.classList.toggle('on', b.dataset.tab === next);
-      b.setAttribute('aria-selected', b.dataset.tab === next);
-      b.classList.toggle('away', b.dataset.g !== group);
-      if (b.dataset.g === group && !b.hidden) shown++;
-    });
-    /* в разделе с одной вкладкой второй ряд не нужен */
-    $('tabs').hidden = shown < 2;
-    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== next; });
+    tab = next || '';
+    const app = document.querySelector('.app');
+    app.classList.toggle('tool-open', !!tab);
+    if (!tab) app.classList.remove('dock-full');
+    document.querySelectorAll('#tools [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
+    document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+    const btn = document.querySelector(`#tools [data-tab="${tab}"]`);
+    $('toolTitle').textContent = btn ? btn.querySelector('span').textContent : '';
+    $('scanSub').hidden = !(tab === 'scan' && state.scan.on);
+    if (tab !== 'scan') unselect();
     syncGrab();
-    if (next === 'layers') syncLayerTools();
-    if (next === 'fx') syncFxView();
+    if (tab === 'layers') syncLayerTools();
+    if (tab === 'fx') syncFx();
+    if (tab === 'scan') syncScan();
+    syncCtx();
     invalidate();
+  }
+  function openTool(name) {
+    toolSnap = JSON.stringify(state);
+    document.querySelector('.panels').scrollTop = 0;
+    setTab(name);
+    showHint(name);
+  }
+  function closeTool(keep) {
+    if (!keep && toolSnap && toolSnap !== JSON.stringify(state)) applySnap(toolSnap);
+    toolSnap = null;
+    setTab('');
+  }
+
+  /* Подсказка при первом открытии инструмента, потом больше не показывается. */
+  const HINTS = {
+    scan: 'Выбери набор. Нажми на фото, чтобы добавить рамку, а нажатие на рамку откроет её меню.',
+    fx: 'Можно наложить два эффекта: переключатель «Эффект 1 / Эффект 2» сверху.',
+    layers: 'Стикеры двигаются пальцем. Двумя пальцами можно повернуть и увеличить.',
+    collage: 'Нажми на ячейку коллажа, чтобы выбрать, куда встанет следующее фото.',
+  };
+  function showHint(name) {
+    if (!HINTS[name]) return;
+    try {
+      const seen = JSON.parse(localStorage.getItem('lunajour-hints') || '[]');
+      if (seen.includes(name)) return;
+      localStorage.setItem('lunajour-hints', JSON.stringify([...seen, name]));
+    } catch { return; }
+    toast(t(HINTS[name]));
   }
 
   function syncAll() {
@@ -2838,7 +3045,8 @@
     markSeg($('langSeg'), I18n.lang);
     resetSlots();
     bindEvents();
-    setTab('motif');
+    setTab('');
+    Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
     markSeg($('modeSeg'), mode);
     syncAll();
     setPhase('shoot');
