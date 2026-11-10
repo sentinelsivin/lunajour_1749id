@@ -576,3 +576,16 @@ button { cursor: pointer; }
   .panels, .app.dock-full .panels { animation: none; }
   .logo, .floaters svg { animation: none; }
 }
+
+/* Компьютер с мышью: тонкая полоса прокрутки у рядов, которые листаются вбок, и рука при перетаскивании. */
+@media (hover: hover) and (pointer: fine) {
+  .thumbs, .chips, .swatches, .tools { scrollbar-width: thin; scrollbar-color: rgba(255, 255, 255, .22) transparent; }
+  .thumbs::-webkit-scrollbar, .chips::-webkit-scrollbar, .swatches::-webkit-scrollbar, .tools::-webkit-scrollbar { display: block; height: 6px; }
+  .thumbs::-webkit-scrollbar-thumb, .chips::-webkit-scrollbar-thumb, .swatches::-webkit-scrollbar-thumb, .tools::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, .22); border-radius: 3px; }
+  .pulling { cursor: grabbing; user-select: none; }
+}
+/* на широком экране вкладки сканера помещаются в два ряда, без прокрутки */
+@media (min-width: 861px) {
+  #scanSub { flex-wrap: wrap; }
+  #scanSub button { flex: 0 0 calc(25% - 2px); }
+}

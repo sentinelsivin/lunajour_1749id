@@ -1770,7 +1770,7 @@
       b.classList.toggle('on', sc.on ? !!id && id === sc.preset : id === '');
       b.querySelector('span').textContent = b.dataset.mine ? b.dataset.name : t(b.dataset.name);
     });
-    $('scanMineTools').hidden = !(sc.on && String(sc.preset).startsWith('u'));
+    $('scanMineTools').hidden = !(sc.on && userPresets.some((p) => p.id === sc.preset));
     $('scanTools').hidden = !sc.on;
     $('scanSub').hidden = !(tab === 'scan' && sc.on);
     if (!sc.on) { syncCtx(); return; }
@@ -2712,6 +2712,52 @@
     });
   }
 
+  /* ---------- ряды, которые листаются вбок ----------
+     На телефоне их листают пальцем. На компьютере колесо мыши крутит их вбок,
+     а ещё их можно тянуть мышью, как пальцем. */
+  const STRIPS = '.thumbs, .chips, .swatches, .tools';
+  const stripAt = (el) => {
+    for (let n = el && el.closest(STRIPS); n; n = n.parentElement && n.parentElement.closest(STRIPS)) {
+      if (n.scrollWidth > n.clientWidth + 2 && getComputedStyle(n).overflowX !== 'visible') return n;
+    }
+    return null;
+  };
+  function bindStrips() {
+    document.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      const n = stripAt(e.target);
+      if (!n) return;
+      const max = n.scrollWidth - n.clientWidth;
+      /* у края ряда колесо снова листает панель вниз */
+      if ((e.deltaY < 0 && n.scrollLeft <= 0) || (e.deltaY > 0 && n.scrollLeft >= max - 1)) return;
+      e.preventDefault();
+      n.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : 1);
+    }, { passive: false });
+
+    let pull = null;
+    document.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'mouse' || e.button !== 0) return;
+      const n = stripAt(e.target);
+      if (n) pull = { n, x: e.clientX, left: n.scrollLeft, moved: false };
+    });
+    document.addEventListener('pointermove', (e) => {
+      if (!pull) return;
+      const dx = e.clientX - pull.x;
+      if (!pull.moved && Math.abs(dx) < 6) return;
+      pull.moved = true;
+      pull.n.classList.add('pulling');
+      pull.n.scrollLeft = pull.left - dx;
+    });
+    document.addEventListener('pointerup', () => {
+      if (!pull) return;
+      const { n, moved } = pull;
+      pull = null;
+      n.classList.remove('pulling');
+      /* после перетаскивания отпускание не должно нажать на кнопку под мышью */
+      if (moved) window.addEventListener('click', (ev) => { ev.stopPropagation(); ev.preventDefault(); }, { capture: true, once: true });
+    });
+  }
+
   /* ---------- весь экран ---------- */
   function bindFullscreen() {
     const app = document.querySelector('.app');
@@ -2962,6 +3008,7 @@
     bindLayers();
     bindHistory();
     bindFullscreen();
+    bindStrips();
     buildPalette();
   }
 
