@@ -459,6 +459,44 @@
       '.#########..........###...',
       '##########..........##....',
     ],
+    /* северная снежинка, как на вязаном свитере */
+    nordic: [
+      '.........#.........',
+      '...................',
+      '.........#.........',
+      '...#.#..#.#..#.#...',
+      '....##...#...##....',
+      '...###.#...#.###...',
+      '......##.#.##......',
+      '.....###...###.....',
+      '...#...........#...',
+      '#.#.#.#..#..#.#.#.#',
+      '...#...........#...',
+      '.....###...###.....',
+      '......##.#.##......',
+      '...###.#...#.###...',
+      '....##...#...##....',
+      '...#.#..#.#..#.#...',
+      '.........#.........',
+      '...................',
+      '.........#.........',
+    ],
+    /* искры: крестик из чёрточек, ромбик, большая звезда и точки */
+    sparkles: [
+      '.....#........',
+      '.....#........',
+      '..............',
+      '..##.#.##...#.',
+      '..............',
+      '.....#........',
+      '#....#....#...',
+      '..........#...',
+      '..#......###..',
+      '.#.#...#######',
+      '..#......###..',
+      '..........#...',
+      '....#.....#...',
+    ],
     plus: ['.#.', '###', '.#.'],
     box: ['###', '#.#', '###'],
     /* заяц смотрит вправо: разбег, полёт, приземление */
@@ -522,6 +560,72 @@
       if (Math.abs(x - w / 2) < m * 0.42 && Math.abs(y - h / 2) < m * 0.34) continue;
       ctx.fillRect(x, y, cell * 2, cell * 2);
     }
+  };
+
+  /* Один крупный пиксельный рисунок посередине, без россыпи вокруг. */
+  const pixelSolo = (name, k) => (ctx, w, h, rng, o) => {
+    const rows = SPRITES[name];
+    const m = Math.min(w, h);
+    sprite(ctx, rows, w / 2, h / 2, (m * k * o.size) / Math.max(rows.length, rows[0].length));
+  };
+
+  /* Северные снежинки разного размера вразброс, не налезают друг на друга. */
+  function nordicSnow(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const n = Math.round(7 * o.density);
+    const placed = [];
+    for (let i = 0; i < n * 6 && placed.length < n; i++) {
+      const cell = m * (0.005 + rng() * 0.013) * o.size;
+      const size = cell * 19;
+      const x = rng() * w, y = rng() * h;
+      if (placed.some(([px, py, ps]) => Math.hypot(px - x, py - y) < (ps + size) * 0.55)) continue;
+      placed.push([x, y, size]);
+      sprite(ctx, SPRITES.nordic, x, y, cell);
+    }
+  }
+
+  /* Звезда из четырёх полос: четыре прямых и четыре косых луча. Контурная остаётся тонкой линией. */
+  function asteriskBars(ctx, cx, cy, R, a) {
+    for (let k = 0; k < 4; k++) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((k * Math.PI) / 4);
+      ctx.fillRect(-R, -a / 2, R * 2, a);
+      ctx.restore();
+    }
+  }
+  const asterisk = (outline) => (ctx, w, h, rng, o) => {
+    const m = Math.min(w, h);
+    const R = m * 0.4 * o.size;
+    const a = R * 0.19;
+    const cx = w / 2, cy = h / 2;
+    if (!outline) asteriskBars(ctx, cx, cy, R, a);
+    else {
+      /* контур: вся звезда минус та же звезда чуть тоньше; «Плотность» делает линию толще */
+      const c = document.createElement('canvas');
+      c.width = w;
+      c.height = h;
+      const x = c.getContext('2d');
+      x.fillStyle = '#fff';
+      asteriskBars(x, cx, cy, R, a);
+      const t = Math.max(1.5, m * 0.004 * o.density);
+      x.globalCompositeOperation = 'destination-out';
+      asteriskBars(x, cx, cy, R - t, a - t * 2);
+      ctx.drawImage(c, 0, 0);
+    }
+    /* подпись в левом луче, как координаты на постере */
+    const text = (o.text || '').trim() || '90°00′00″';
+    const font = wordFont(o.font);
+    ctx.save();
+    ctx.font = `${font.weight || 400} ${a * 0.42}px ${font.css}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if (outline) ctx.fillText(text, cx - R * 0.55, cy);
+    else {
+      ctx.globalCompositeOperation = 'destination-out';
+      ctx.fillText(text, cx - R * 0.55, cy);
+    }
+    ctx.restore();
   };
 
   /* Спираль на клетках: точки кривой округляются до сетки. */
@@ -1957,6 +2061,8 @@
     { id: 'star-hand', name: 'Рисованные звёзды', cat: 'stars', draw: handStars },
     { id: 'moon-orbit', name: 'Лунный круг', cat: 'stars', draw: scatterMotif('moon', 'orbit') },
     { id: 'moon-solo', name: 'Полумесяц', cat: 'stars', draw: scatterMotif('moon', 'solo') },
+    { id: 'asterisk-line', name: 'Контурная звезда', cat: 'stars', usesText: true, draw: asterisk(true) },
+    { id: 'asterisk', name: 'Звезда из полос', cat: 'stars', usesText: true, draw: asterisk(false) },
 
     { id: 'dot-polka', name: 'Горох', cat: 'dots', draw: scatterMotif('dot', 'polka') },
     { id: 'dot-flock', name: 'Пузыри', cat: 'dots', draw: scatterMotif('dot', 'flock') },
@@ -2017,6 +2123,9 @@
     { id: 'px-dot-bows', name: 'Бантики из точек', cat: 'pixels', draw: dotBows },
     { id: 'px-hibiscus', name: 'Гибискус из точек', cat: 'pixels', draw: hibiscusDots },
     { id: 'px-spiral-cross', name: 'Спираль с крестиками', cat: 'pixels', draw: pixelSpiralCross },
+    { id: 'px-nordic', name: 'Северная снежинка', cat: 'pixels', draw: pixelSolo('nordic', 0.82) },
+    { id: 'px-nordic-snow', name: 'Северный снегопад', cat: 'pixels', draw: nordicSnow },
+    { id: 'px-sparkles', name: 'Пиксельные искры', cat: 'pixels', draw: pixelSolo('sparkles', 0.72) },
 
     { id: 'st-heart', name: 'Вышитое сердце', cat: 'stitch', draw: stitchMotif('bigheart') },
     { id: 'st-butterfly', name: 'Бабочка', cat: 'stitch', draw: stitchMotif('butterfly') },
