@@ -430,6 +430,12 @@
       tracePts(ctx, shapePts.bumps(w, h));
       ctx.stroke();
     }
+    if (cell.inner) {
+      /* тонкая тёмная рамка по краю картинки марки */
+      ctx.strokeStyle = cell.innerColor || '#2b2b2b';
+      ctx.lineWidth = Math.max(1.5, w * 0.006);
+      ctx.strokeRect(-w / 2, -h / 2, w, h);
+    }
     if (cell.frame === 'thin') {
       ctx.strokeStyle = cell.color || '#a33a3a';
       ctx.lineWidth = Math.max(2, w * 0.012);
@@ -2015,6 +2021,88 @@
     },
   );
 
+  /* ---------- лист марок на весь лист ---------- */
+  /* Марки идут сеткой до краёв и дальше: крайние обрезаются, как на листе марок под стеклом.
+     Своих снимков меньше, чем марок: центральные марки получают разные снимки, крайние повторяют их.
+     Текст из «Подписи» печатается на каждой марке по-разному: мелко, крупно или во всю марку. */
+  const STAMP_GRIDS = {
+    big: { sw: 0.47, cx: 0.235, cy: 0.27, n: 4 },
+    sheet: { sw: 0.36, cx: 0.5, cy: 0.12, n: 6 },
+    neat: { sw: 0.36, cx: 0.29, cy: 0.2, n: 6, rows: 3, cols: 2 },
+  };
+  COLLAGES.push({
+    id: 'stampSheet', name: 'Лист марок', noNote: true, sample: 'BUT WHY ?',
+    palette: [
+      { key: 'bg', name: 'Фон между марками', def: '#0a0a0a' },
+      { key: 'stamps', name: 'Марки', def: '#efe6d8' },
+      { key: 'line', name: 'Рамка картинки', def: '#2b2b2b' },
+      { key: 'text', name: 'Текст', def: '#2b2b2b' },
+    ],
+    choices: [
+      { key: 'grid', name: 'Расположение', def: 'big', options: [['big', 'Крупно, 2 × 2'], ['sheet', 'Лист до краёв'], ['neat', 'Ровно, 2 × 3']] },
+      { key: 'words', name: 'Текст на марках', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    deco(ctx, box, u, geo, opt) {
+      ctx.fillStyle = opt.c('bg', '#0a0a0a');
+      ctx.fillRect(0, 0, geo.W, geo.H);
+    },
+    layout(W, H, env) {
+      const g = STAMP_GRIDS[env.pick('grid', 'big')] || STAMP_GRIDS.big;
+      const sw = g.sw * W;
+      const sh = sw / 1.36;
+      const gap = W * 0.035;
+      const px = sw * 1.16 + gap;
+      const py = sh + sw * 0.16 + gap;
+      const list = [];
+      if (g.rows) {
+        for (let r = 0; r < g.rows; r++) for (let c = 0; c < g.cols; c++) list.push([g.cx * W + c * px, g.cy * H + r * py]);
+      } else {
+        /* сетка от опорной марки во все стороны, пока покрывает лист с запасом */
+        const c0 = Math.ceil((g.cx * W + px / 2) / px);
+        const r0 = Math.ceil((g.cy * H + py / 2) / py);
+        for (let r = -r0; g.cy * H + r * py - py / 2 < H; r++) {
+          for (let c = -c0; g.cx * W + c * px - px / 2 < W; c++) list.push([g.cx * W + c * px, g.cy * H + r * py]);
+        }
+      }
+      /* ближние к центру марки получают разные снимки, дальние повторяют их по кругу */
+      const order = list.map((p, k) => [Math.hypot(p[0] - W / 2, (p[1] - H / 2) * 0.8), k]).sort((a, b) => a[0] - b[0]);
+      const slotOf = new Map(order.map(([, k], rank) => [k, rank % g.n]));
+      const stamps = env.pick('stamps', '#efe6d8');
+      const line = env.pick('line', '#2b2b2b');
+      const cells = list.map(([cx, cy], k) => ({
+        x: cx - sw / 2, y: cy - sh / 2, w: sw, h: sh, rot: 0, frame: 'stamp', color: stamps, inner: true, innerColor: line, slot: slotOf.get(k), style: k,
+      }));
+      return { cells };
+    },
+    overlay(ctx, geo, u, opt) {
+      if (opt.c('words', 'on') === 'off') return;
+      const text = words(opt, this.sample).join(' ');
+      const color = opt.c('text', '#2b2b2b');
+      geo.cells.forEach((c) => {
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(c.x, c.y, c.w, c.h);
+        ctx.clip();
+        ctx.fillStyle = color;
+        ctx.textBaseline = 'middle';
+        /* у каждой марки своя подача текста; узкое начертание как у плакатного шрифта */
+        const v = [
+          { size: 0.13, x: 0.5, y: 0.2, align: 'center' },
+          { size: 0.3, x: 0.93, y: 0.5, align: 'right' },
+          { size: 0.95, x: -0.12, y: 0.62, align: 'left' },
+          { size: 0.11, x: 0.5, y: 0.78, align: 'center' },
+          { size: 0.18, x: 0.08, y: 0.32, align: 'left' },
+        ][c.style % 5];
+        ctx.translate(c.x + c.w * v.x, c.y + c.h * v.y);
+        ctx.scale(0.78, 1);
+        ctx.font = `700 ${c.h * v.size}px ${SANS}`;
+        ctx.textAlign = v.align;
+        ctx.fillText(text, 0, 0);
+        ctx.restore();
+      });
+    },
+  });
+
   const byId = (id) => COLLAGES.find((c) => c.id === id) || null;
   /* Рамки, у которых можно поменять цвет. */
   const COLORABLE = ['border', 'thin', 'wavy', 'lace', 'ovalLace', 'stamp', 'heartLace'];
@@ -2090,16 +2178,20 @@
       const dy = py - (c.y + c.h / 2);
       const lx = dx * Math.cos(-c.rot) - dy * Math.sin(-c.rot);
       const ly = dx * Math.sin(-c.rot) + dy * Math.cos(-c.rot);
-      if (Math.abs(lx) <= c.w / 2 && Math.abs(ly) <= c.h / 2) return i;
+      if (Math.abs(lx) <= c.w / 2 && Math.abs(ly) <= c.h / 2) return c.slot ?? i;
     }
     return -1;
   }
+  /* ячейка, где лежит снимок номер i: у листа марок один снимок повторяется в нескольких ячейках */
+  const cellOf = (geo, i) => geo.cells.find((c, k) => (c.slot ?? k) === i);
 
   /* сколько снимков нужно шаблону: у фраз это зависит от текста */
   const count = (id, s) => {
     const tpl = byId(id);
     if (!tpl) return 1;
-    return tpl.layout ? geometry(id, 1080, 1350, s).cells.length : tpl.cells.length;
+    if (!tpl.layout) return tpl.cells.length;
+    const cells = geometry(id, 1080, 1350, s).cells;
+    return cells.reduce((n, c, k) => Math.max(n, (c.slot ?? k) + 1), 0);
   };
-  window.Collages = { COLLAGES, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, drawFrame, drawOver, clipBox, clipCell };
+  window.Collages = { COLLAGES, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
 })();

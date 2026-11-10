@@ -15,6 +15,8 @@
     { id: 'smooth', name: 'Гладкая' },
     { id: 'lace', name: 'Кружево' },
     { id: 'tablecloth', name: 'Скатерть' },
+    { id: 'fold4', name: 'Сложенный лист' },
+    { id: 'fold8', name: 'Сложенный плакат' },
     { id: 'tulle', name: 'Сетка' },
     { id: 'crumple', name: 'Мятая' },
     { id: 'gridfold', name: 'Мятая клетка' },
@@ -303,6 +305,55 @@
     x.globalAlpha = 1;
   }
 
+  /* Лист, сложенный и снова развёрнутый: каждая панель чуть по-своему наклонена к свету,
+     по сгибам тонкая тень с одной стороны и светлая грань с другой, сверху редкие волокна. */
+  function foldedSheet(x, w, h, u, rng, cols, rows) {
+    const xs = [0, ...cols.map((c) => c * w), w];
+    const ys = [0, ...rows.map((r) => r * h), h];
+    for (let i = 0; i < xs.length - 1; i++) {
+      for (let j = 0; j < ys.length - 1; j++) {
+        const x0 = xs[i]; const x1 = xs[i + 1]; const y0 = ys[j]; const y1 = ys[j + 1];
+        const flip = (i + j) % 2;
+        const g = x.createLinearGradient(flip ? x1 : x0, y0, flip ? x0 : x1, y1);
+        g.addColorStop(0, `rgba(255,255,255,${rng.range(0.05, 0.12)})`);
+        g.addColorStop(1, `rgba(0,0,0,${rng.range(0.03, 0.07)})`);
+        x.fillStyle = g;
+        x.fillRect(x0, y0, x1 - x0, y1 - y0);
+      }
+    }
+    const crease = (ax, ay, bx, by, nx, ny) => {
+      [[18, 0.05], [7, 0.08], [2, 0.16]].forEach(([wd, a]) => {
+        x.strokeStyle = `rgba(0,0,0,${a})`;
+        x.lineWidth = wd * u;
+        x.beginPath();
+        x.moveTo(ax + nx * wd * 0.5 * u, ay + ny * wd * 0.5 * u);
+        x.lineTo(bx + nx * wd * 0.5 * u, by + ny * wd * 0.5 * u);
+        x.stroke();
+      });
+      x.strokeStyle = 'rgba(255,255,255,.85)';
+      x.lineWidth = 2.2 * u;
+      x.beginPath();
+      x.moveTo(ax - nx * 1.6 * u, ay - ny * 1.6 * u);
+      x.lineTo(bx - nx * 1.6 * u, by - ny * 1.6 * u);
+      x.stroke();
+    };
+    cols.forEach((c) => crease(c * w, 0, c * w, h, 1, 0));
+    rows.forEach((r) => crease(0, r * h, w, r * h, 0, 1));
+    /* волокна и мелкие пятнышки бумаги */
+    x.lineWidth = 1 * u;
+    for (let i = 0; i < 1400; i++) {
+      const cx = rng() * w;
+      const cy = rng() * h;
+      const a = rng() * 6.28;
+      const l = rng.range(3, 14) * u;
+      x.strokeStyle = `rgba(0,0,0,${rng.range(0.015, 0.05)})`;
+      x.beginPath();
+      x.moveTo(cx, cy);
+      x.lineTo(cx + Math.cos(a) * l, cy + Math.sin(a) * l);
+      x.stroke();
+    }
+  }
+
   function paintPaper(type, color, w, h) {
     {
       const c = canvas(w, h);
@@ -358,6 +409,8 @@
         for (let y = 0; y < h + tile; y += tile * 0.72, row++) {
           for (let v = row % 2 ? tile / 2 : 0; v < w + tile; v += tile) laceFlower(x, v, y, 88 * u, ink, u, rng);
         }
+      } else if (type === 'fold4' || type === 'fold8') {
+        foldedSheet(x, w, h, u, rng, type === 'fold8' ? [0.5] : [0.5], type === 'fold8' ? [0.25, 0.5, 0.75] : [0.5]);
       } else if (type === 'tablecloth') {
         tablecloth(x, w, h, u, rng);
       } else if (type === 'tulle') {
@@ -477,7 +530,7 @@
 
   /* ---------- маска мотива ---------- */
   function drawMask(s, w, h, assets) {
-    const key = [s.motif, s.seed, s.size, s.density, s.word, s.wordFont, s.invert, assets.maskId, JSON.stringify(s.pieces), w, h].join('|');
+    const key = [s.motif, s.seed, s.size, s.density, s.word, s.wordFont, assets.maskId, JSON.stringify(s.pieces), w, h].join('|');
     return maskCache(key, () => {
       const c = canvas(w, h);
       const x = c.getContext('2d');
@@ -485,12 +538,87 @@
       byId(s.motif).draw(x, c.width, c.height, makeRng(s.seed), {
         size: s.size, density: s.density, text: s.word, font: s.wordFont, image: assets.mask, pieces: s.pieces,
       });
-      if (s.invert) {
-        x.globalCompositeOperation = 'source-out';
-        x.fillRect(0, 0, c.width, c.height);
-      }
       return c;
     });
+  }
+
+  /* ---------- кусочки вразброс ---------- */
+  /* Кусочки фигуры находим как отдельные пятна на маске (в уменьшенном виде, это быстро) и делим на несколько групп.
+     Каждая группа берёт снимок со своим случайным сдвигом, снимок при этом повторяется плиткой,
+     поэтому в каждом кусочке оказывается другая часть фото. Разметку групп кешируем по маске. */
+  const SCATTER_GROUPS = 7;
+  const scatterCache = new WeakMap();
+  function scatterGroups(mask) {
+    if (scatterCache.has(mask)) return scatterCache.get(mask);
+    const k = Math.min(1, 360 / Math.max(mask.width, mask.height));
+    const lw = Math.max(1, Math.round(mask.width * k));
+    const lh = Math.max(1, Math.round(mask.height * k));
+    const low = canvas(lw, lh);
+    const lx = low.getContext('2d', { willReadFrequently: true });
+    lx.drawImage(mask, 0, 0, lw, lh);
+    const a = lx.getImageData(0, 0, lw, lh).data;
+    const label = new Int32Array(lw * lh);
+    let next = 0;
+    const stack = [];
+    for (let p = 0; p < lw * lh; p++) {
+      if (label[p] || a[p * 4 + 3] < 30) continue;
+      next += 1;
+      label[p] = next;
+      stack.push(p);
+      while (stack.length) {
+        const q = stack.pop();
+        const qx = q % lw;
+        for (const n of [qx > 0 ? q - 1 : -1, qx < lw - 1 ? q + 1 : -1, q >= lw ? q - lw : -1, q < lw * (lh - 1) ? q + lw : -1]) {
+          if (n >= 0 && !label[n] && a[n * 4 + 3] >= 30) { label[n] = next; stack.push(n); }
+        }
+      }
+    }
+    /* маска каждой группы: пятна с номером по кругу; края потом всё равно режет точная маска фигуры */
+    const groups = [];
+    for (let g = 0; g < SCATTER_GROUPS; g++) {
+      const gc = canvas(lw, lh);
+      const gx = gc.getContext('2d');
+      const img = gx.createImageData(lw, lh);
+      for (let p = 0; p < lw * lh; p++) {
+        const l = label[p];
+        if (l && (l * 2654435761 >>> 0) % SCATTER_GROUPS === g) img.data[p * 4 + 3] = 255;
+      }
+      gx.putImageData(img, 0, 0);
+      /* чуть расширяем, чтобы полупрозрачный край кусочка тоже получил свою часть снимка */
+      const up = canvas(mask.width, mask.height);
+      const ux = up.getContext('2d');
+      const pad = Math.ceil(1 / k);
+      [[0, 0], [pad, 0], [-pad, 0], [0, pad], [0, -pad]].forEach(([dx, dy]) => ux.drawImage(gc, dx, dy, mask.width, mask.height));
+      groups.push(up);
+    }
+    scatterCache.set(mask, groups);
+    return groups;
+  }
+  function scatterContent(photo, mask, seed) {
+    const groups = scatterGroups(mask);
+    const w = mask.width;
+    const h = mask.height;
+    const out = buffer('scatter', w, h);
+    const tmp = buffer('scatter-tmp', w, h);
+    const pattern = out.x.createPattern(photo, 'repeat');
+    const rng = makeRng(seed * 31 + 3);
+    groups.forEach((gm) => {
+      /* сдвиг не меньше четверти снимка, чтобы кусочек точно показал другое место */
+      const dx = (0.25 + rng() * 0.5) * w * (rng() < 0.5 ? -1 : 1);
+      const dy = (0.25 + rng() * 0.5) * h * (rng() < 0.5 ? -1 : 1);
+      tmp.x.globalCompositeOperation = 'source-over';
+      tmp.x.clearRect(0, 0, w, h);
+      tmp.x.drawImage(gm, 0, 0);
+      tmp.x.globalCompositeOperation = 'source-in';
+      tmp.x.save();
+      tmp.x.translate(dx, dy);
+      tmp.x.scale(w / photo.width, h / photo.height);
+      tmp.x.fillStyle = pattern;
+      tmp.x.fillRect(-dx * photo.width / w, -dy * photo.height / h, photo.width, photo.height);
+      tmp.x.restore();
+      out.x.drawImage(tmp.c, 0, 0);
+    });
+    return out.c;
   }
 
   /* ---------- геометрия ---------- */
@@ -736,7 +864,7 @@
     const opt = { title: s.note.title, ink: inkText, c: pick };
     if (geo.tpl.deco) geo.tpl.deco(ctx, geo.box, u, geo, opt);
     geo.cells.forEach((base, i) => {
-      const slot = slots[i];
+      const slot = slots[base.slot ?? i];
       const cell = { ...base };
       if (base.tint) cell.color = pick(base.tint, base.color);
       else if (C.COLORABLE.includes(base.frame)) cell.color = pick('frame', base.color);
@@ -855,7 +983,8 @@
         ctx.restore();
       }
       const { c: cut, x } = buffer('cut', a.w, a.h);
-      x.drawImage(second, 0, 0);
+      /* вразброс: кусочки на своих местах, но внутри каждого случайная часть снимка */
+      x.drawImage(s.scatter ? scatterContent(second, mask, s.seed) : second, 0, 0, cut.width, cut.height);
       x.globalCompositeOperation = 'destination-in';
       x.drawImage(mask, 0, 0, cut.width, cut.height);
       withShadow(() => ctx.drawImage(cut, a.x, a.y, a.w, a.h));

@@ -15,7 +15,7 @@
 
   const today = () => new Date().toLocaleDateString('sv-SE');
   const defaults = () => ({
-    motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, invert: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
+    motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
@@ -160,6 +160,8 @@
       const current = (state.tints[id] && state.tints[id][item.key]) || item.def;
       item.options.forEach(([value, name]) => chip(row, t(name), value === current, () => {
         state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: value } };
+        /* от варианта может зависеть число снимков, например у листа марок */
+        syncSlotCount();
         syncCollages();
         update();
       }));
@@ -239,7 +241,7 @@
       return;
     }
     if (collageTpl() && (tab === 'collage' || tab === 'photo')) {
-      const c = collageGeo().cells[activeSlot];
+      const c = Collages.cellOf(collageGeo(), activeSlot);
       if (!c) return;
       ctx.save();
       ctx.translate(c.x + c.w / 2, c.y + c.h / 2);
@@ -1062,7 +1064,7 @@
   /* Размер окна снимка номер i: ячейка коллажа или половина карточки. */
   function slotSize(i) {
     if (collageTpl()) {
-      const c = collageGeo().cells[i];
+      const c = Collages.cellOf(collageGeo(), i);
       return { w: c.w, h: c.h };
     }
     return slotFrame(state, i, slots.length, card.width, card.height).rect;
