@@ -39,6 +39,13 @@ window.Effects = (function () {
         { id: 'labels', name: 'С подписями', color: '#9fb3c2', text: 'Eastern plateau -94°C, Vostok station -89.2°C, South pole -82.8°C, Denali -73°C, North ice -66.1°C' }] },
     { id: 'glitch', cat: 'glitch', name: 'Глитч', color: '#ff5a1f', text: '',
       styles: [{ id: 'smear', name: 'Потёки' }, { id: 'shift', name: 'Сдвиг' }] },
+    { id: 'stretch', cat: 'glitch', name: 'Растяжка', color: '#ffffff', center: true, text: '', styles: [{ id: 'down', name: 'Вниз' }, { id: 'up', name: 'Вверх' }, { id: 'right', name: 'Вправо' }, { id: 'left', name: 'Влево' }] },
+    { id: 'sort', cat: 'glitch', name: 'Сортировка пикселей', color: '#ffffff', text: '', styles: [{ id: 'down', name: 'Вниз' }, { id: 'up', name: 'Вверх' }, { id: 'right', name: 'Вправо' }, { id: 'left', name: 'Влево' }] },
+    { id: 'bsod', cat: 'glitch', name: 'Ошибка системы', color: '#1414ff', text: '' },
+    { id: 'blocks', cat: 'glitch', name: 'Пиксельные блоки', color: '#ffffff', text: '',
+      styles: [{ id: 'plain', name: 'Блоки' }, { id: 'grid', name: 'С крестиками' }] },
+    { id: 'quads', cat: 'glitch', name: 'Квадраты-контуры', color: '#c9ccd2', text: '',
+      styles: [{ id: 'dark', name: 'В темноту' }, { id: 'photo', name: 'Только контуры' }] },
     { id: 'curve', cat: 'charts', name: 'Линия с подписями', color: '#ffffff', text: '+17°C, +19°C, +28°C, +25°C',
       styles: [{ id: 'wiggle', name: 'Дрожит' }, { id: 'smooth', name: 'Плавная' }] },
     { id: 'vwords', cat: 'letters', name: 'Слова столбиками', color: '#ffffff', text: 'where the tall trees keep the quiet of everything we never said out loud and the light comes down slowly to find us' },
@@ -1504,7 +1511,295 @@ window.Effects = (function () {
   }
 
   /* lastBoxes помнит рамки, показанные на карточке, чтобы их можно было сразу двигать рукой. */
+  /* ---------- новые глитчи: растяжка, сортировка, ошибка, блоки, квадраты ---------- */
+  /* кусок кадра под эффектом, чтобы тянуть и сортировать пиксели исходного фото */
+  function snapOf(ctx, W, H, r) {
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.ceil(W));
+    c.height = Math.max(1, Math.ceil(H));
+    c.getContext('2d').drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, W, H);
+    return c;
+  }
+  const dirOf = (fx) => fx.style || 'down';
+
+  /* Растяжка: одна строка (или столбец) пикселей тянется от линии до края кадра.
+     Каждый столбик начинается чуть в своём месте, поэтому край получается рваным. */
+  function stretch(ctx, W, H, u, col, fx, rng, r) {
+    const snap = snapOf(ctx, W, H, r);
+    const dir = dirOf(fx);
+    const c = fx.center || { x: 0.5, y: 0.45 };
+    const t = fx.t;
+    /* в видео линия медленно плавает */
+    const wob = t == null ? 0 : Math.sin(t * 0.9) * 0.05;
+    const jag = 0.02 + (fx.amount || 1) * 0.06;
+    const vertical = dir === 'down' || dir === 'up';
+    const len = vertical ? W : H;
+    const span = vertical ? H : W;
+    const line = (vertical ? c.y : c.x) + wob;
+    let p = 0;
+    while (p < len) {
+      const bw = Math.max(1, (1 + rng() * 4) * u);
+      const shift = (rng() * rng()) * jag * span * (rng() < 0.15 ? 3 : 1);
+      if (dir === 'down') {
+        const y = Math.min(H - 1, Math.max(0, line * H + shift));
+        ctx.drawImage(snap, p, y, bw, 1, p, y, bw, H - y);
+      } else if (dir === 'up') {
+        const y = Math.min(H - 1, Math.max(1, line * H - shift));
+        ctx.drawImage(snap, p, y, bw, 1, p, 0, bw, y);
+      } else if (dir === 'right') {
+        const x = Math.min(W - 1, Math.max(0, line * W + shift));
+        ctx.drawImage(snap, x, p, 1, bw, x, p, W - x, bw);
+      } else {
+        const x = Math.min(W - 1, Math.max(1, line * W - shift));
+        ctx.drawImage(snap, x, p, 1, bw, 0, p, x, bw);
+      }
+      p += bw;
+    }
+  }
+
+  /* Сортировка пикселей: светлые места в каждом столбике стекают и выстраиваются по яркости.
+     Считаем на уменьшенной копии, а обратно кладём только сами потёки, чтобы фото не мылилось. */
+  function pixelSort(ctx, W, H, u, col, fx, rng, r) {
+    const dir = dirOf(fx);
+    const k = Math.min(1, 640 / Math.max(W, H));
+    const w = Math.max(2, Math.round(W * k));
+    const h = Math.max(2, Math.round(H * k));
+    const c = document.createElement('canvas');
+    c.width = w;
+    c.height = h;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, w, h);
+    const img = x.getImageData(0, 0, w, h);
+    const d = img.data;
+    const out = new Uint8ClampedArray(d.length);
+    const lum = (i) => 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+    /* «Сколько» опускает порог: больше — течёт и то, что потемнее */
+    const thr = Math.max(40, 235 - (fx.amount || 1) * 85);
+    /* в видео потёки растут первые две секунды */
+    const grow = fx.t == null ? 1 : Math.min(1, 0.15 + fx.t / 2.2);
+    const vertical = dir === 'down' || dir === 'up';
+    const lines = vertical ? w : h;
+    const len = vertical ? h : w;
+    const at = (a, b) => (vertical ? (b * w + a) * 4 : (a * w + b) * 4);
+    const forward = dir === 'down' || dir === 'right';
+    for (let a = 0; a < lines; a++) {
+      let b = 0;
+      while (b < len) {
+        if (lum(at(a, forward ? b : len - 1 - b)) < thr) { b++; continue; }
+        let e = b;
+        while (e < len && lum(at(a, forward ? e : len - 1 - e)) >= thr) e++;
+        /* потёк продолжается за светлым местом, как капля */
+        const tail = Math.round((e - b) * (0.4 + rng() * 1.6) * grow + rng() * 6);
+        const end = Math.min(len, e + tail);
+        const px = [];
+        for (let q = b; q < end; q++) {
+          const i = at(a, forward ? q : len - 1 - q);
+          px.push([lum(i), d[i], d[i + 1], d[i + 2]]);
+        }
+        px.sort((p1, p2) => p2[0] - p1[0]);
+        for (let q = b; q < end; q++) {
+          const i = at(a, forward ? q : len - 1 - q);
+          const p = px[q - b];
+          out[i] = p[1]; out[i + 1] = p[2]; out[i + 2] = p[3]; out[i + 3] = 255;
+        }
+        b = end + 1;
+      }
+    }
+    img.data.set(out);
+    x.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(c, 0, 0, W, H);
+    ctx.restore();
+  }
+
+  /* Ошибка системы: пятна из клеток залиты цветом, по ним идёт текст ошибки. */
+  const BSOD = 'a problem has been detected and your heart has been paused to prevent damage. FEELINGS_NOT_LESS_OR_EQUAL. if this is the first time you have seen this screen, close your eyes and restart slowly. check to make sure any new person or memory is properly installed. if problems continue, call someone you love. technical information: *** STOP: 0x0000LOVE (0x0000000C, 0x00000002) address F86B5A89 base at F8657000 DateStamp 3dd991eb';
+  function bsod(ctx, W, H, u, col, fx, rng) {
+    const cs = Math.max(8, 30 * u);
+    const cols = Math.ceil(W / cs), rows = Math.ceil(H / cs);
+    const on = new Uint8Array(cols * rows);
+    const blobs = Math.round(13 * (fx.amount || 1));
+    for (let b = 0; b < blobs; b++) {
+      const cx = Math.floor(rng() * cols), cy = Math.floor(rng() * rows);
+      const parts = 5 + Math.floor(rng() * 8);
+      for (let p = 0; p < parts; p++) {
+        const x0 = cx + Math.floor((rng() - 0.5) * 10), y0 = cy + Math.floor((rng() - 0.5) * 6);
+        const bw = 2 + Math.floor(rng() * 9), bh = 1 + Math.floor(rng() * 3);
+        for (let y = y0; y < y0 + bh; y++) for (let x = x0; x < x0 + bw; x++) if (x >= 0 && y >= 0 && x < cols && y < rows) on[y * cols + x] = 1;
+      }
+    }
+    ctx.save();
+    ctx.beginPath();
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) if (on[y * cols + x]) ctx.rect(x * cs, y * cs, cs + 0.5, cs + 0.5);
+    ctx.fillStyle = col;
+    ctx.fill();
+    ctx.clip();
+    /* текст ошибки идёт строками по всему кадру, а виден только на пятнах */
+    const size = cs * 0.78;
+    ctx.font = `${wt(500)} ${size}px ${face(MONO)}`;
+    ctx.fillStyle = isLightHex(col) ? '#111' : '#e8ecff';
+    ctx.textBaseline = 'middle';
+    const text = (fx.own ? fx.text : BSOD).replace(/\s+/g, ' ');
+    let pos = Math.floor(rng() * text.length);
+    for (let y = 0; y < rows; y++) {
+      let line = '';
+      while (ctx.measureText(line).width < W + size * 2) { line += text[pos % text.length]; pos++; }
+      ctx.fillText(line, -size * 0.3, y * cs + cs / 2);
+    }
+    ctx.restore();
+  }
+  const isLightHex = (hex) => {
+    const n = parseInt(String(hex || '#000').replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
+    return 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255) > 150;
+  };
+
+  /* Пиксельные блоки: куски кадра съезжают вбок, последний столбик куска тянется шлейфом. */
+  function blocks(ctx, A, W, H, u, col, fx, rng, r) {
+    const snap = snapOf(ctx, W, H, r);
+    /* блоки ложатся туда, где на фото детали: из нескольких случайных мест берём самое резкое */
+    const spot = () => {
+      let best = null;
+      for (let k = 0; k < 6; k++) {
+        const x = rng() * W, y = rng() * H;
+        const e = A.edge[Math.min(A.gh - 1, Math.floor(y / A.sy)) * A.gw + Math.min(A.gw - 1, Math.floor(x / A.sx))];
+        if (!best || e > best[2]) best = [x, y, e];
+      }
+      return best;
+    };
+    const n = Math.round(30 * (fx.amount || 1));
+    for (let i = 0; i < n; i++) {
+      const bh = (6 + rng() * 60) * u;
+      const [sx0, sy0] = spot();
+      const bw = (60 + rng() * 380) * u;
+      const y = Math.max(0, Math.min(H - bh, sy0 - bh / 2));
+      const x0 = Math.max(0, Math.min(W - bw, sx0 - bw / 2));
+      const dx = (rng() - 0.3) * 320 * u;
+      ctx.drawImage(snap, x0, y, bw, bh, x0 + dx, y, bw, bh);
+      if (rng() < 0.7) {
+        const sx = Math.min(W - 1, x0 + bw - 1);
+        ctx.drawImage(snap, sx, y, 1, bh, x0 + dx + bw, y, (60 + rng() * 420) * u, bh);
+      }
+      if (rng() < 0.35) {
+        ctx.save();
+        ctx.globalCompositeOperation = 'screen';
+        ctx.fillStyle = rng() < 0.5 ? 'rgba(255,90,170,.28)' : 'rgba(60,220,255,.28)';
+        ctx.fillRect(x0 + dx, y, bw, bh);
+        ctx.restore();
+      }
+    }
+    if (fx.style === 'grid') {
+      /* сетка крестиков, как на постере */
+      ctx.save();
+      ctx.strokeStyle = col;
+      ctx.globalAlpha = 0.8;
+      ctx.lineWidth = 1.2 * u;
+      const step = 74 * u;
+      ctx.beginPath();
+      for (let y = step / 2; y < H; y += step) {
+        for (let x = step / 2; x < W; x += step) {
+          ctx.moveTo(x - 9 * u, y); ctx.lineTo(x + 9 * u, y);
+          ctx.moveTo(x, y - 9 * u); ctx.lineTo(x, y + 9 * u);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /* Квадраты-контуры: кадр делится на квадраты, ровные места крупнее и уходят в темноту,
+     от них остаются только тонкие контуры, а в деталях фото видно. */
+  function quads(ctx, A, W, H, u, col, fx) {
+    const gw = A.gw, gh = A.gh;
+    const S = new Float64Array((gw + 1) * (gh + 1));
+    const Q = new Float64Array((gw + 1) * (gh + 1));
+    for (let y = 0; y < gh; y++) {
+      let rs = 0, rq = 0;
+      for (let x = 0; x < gw; x++) {
+        const v = A.lum[y * gw + x];
+        rs += v; rq += v * v;
+        S[(y + 1) * (gw + 1) + x + 1] = S[y * (gw + 1) + x + 1] + rs;
+        Q[(y + 1) * (gw + 1) + x + 1] = Q[y * (gw + 1) + x + 1] + rq;
+      }
+    }
+    const sum = (T, x0, y0, x1, y1) => T[y1 * (gw + 1) + x1] - T[y0 * (gw + 1) + x1] - T[y1 * (gw + 1) + x0] + T[y0 * (gw + 1) + x0];
+    /* в видео порог дышит, и квадраты то дробятся, то сливаются */
+    const breathe = fx.t == null ? 1 : 1 + Math.sin(fx.t * 1.6) * 0.35;
+    const thr = (0.0016 / (fx.amount || 1)) * breathe;
+    const leaves = [];
+    const split = (x0, y0, x1, y1) => {
+      const n = (x1 - x0) * (y1 - y0);
+      if (n <= 0) return;
+      const m = sum(S, x0, y0, x1, y1) / n;
+      const v = sum(Q, x0, y0, x1, y1) / n - m * m;
+      if (v > thr && x1 - x0 > 1 && y1 - y0 > 1) {
+        const mx = (x0 + x1) >> 1, my = (y0 + y1) >> 1;
+        split(x0, y0, mx, my); split(mx, y0, x1, my); split(x0, my, mx, y1); split(mx, my, x1, y1);
+      } else leaves.push([x0, y0, x1, y1]);
+    };
+    split(0, 0, gw, gh);
+    ctx.save();
+    const big = Math.max(gw, gh) / 22;
+    ctx.fillStyle = fx.style === 'photo' ? 'rgba(0,0,0,0)' : 'rgba(6,6,8,.9)';
+    ctx.strokeStyle = col;
+    ctx.lineWidth = 1 * u;
+    leaves.forEach(([x0, y0, x1, y1]) => {
+      const x = x0 * A.sx, y = y0 * A.sy, w = (x1 - x0) * A.sx, h = (y1 - y0) * A.sy;
+      const large = x1 - x0 >= big || y1 - y0 >= big;
+      if (large && fx.style !== 'photo') ctx.fillRect(x, y, w, h);
+      ctx.globalAlpha = large ? 0.85 : 0.4;
+      ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+      if (large) {
+        /* вложенные рамки внутри крупного квадрата, как на сломанном кадре */
+        const k = ((x0 * 7 + y0 * 13) % 5) / 10;
+        ctx.strokeRect(x + w * (0.12 + k * 0.3), y + h * (0.15 + k * 0.2), w * (0.5 - k * 0.3), h * (0.35 + k * 0.2));
+        if ((x0 + y0) % 3 === 0) ctx.strokeRect(x + w * 0.06, y + h * 0.62, w * 0.3, h * 0.28);
+      }
+      ctx.globalAlpha = 1;
+    });
+    ctx.restore();
+  }
+
+  /* ---------- где лежит глитч: везде, в рамках сканера или там, где провели кистью ---------- */
+  let maskCanvas = null;
+  function maskFor(state, fx, W, H, u) {
+    if (!maskCanvas) maskCanvas = document.createElement('canvas');
+    maskCanvas.width = Math.max(1, Math.ceil(W));
+    maskCanvas.height = Math.max(1, Math.ceil(H));
+    const m = maskCanvas.getContext('2d');
+    m.clearRect(0, 0, W, H);
+    m.fillStyle = '#fff';
+    m.strokeStyle = '#fff';
+    if (fx.mask === 'scan') {
+      const sc = state.scan;
+      const list = sc && sc.on ? (sc.boxes && sc.boxes.length ? sc.boxes : (window.Scanner && window.Scanner.lastBoxes) || []) : [];
+      list.forEach((b) => m.fillRect(b.x * W, b.y * H, b.w * W, b.h * H));
+    } else if (fx.mask === 'brush') {
+      m.lineCap = 'round';
+      m.lineJoin = 'round';
+      m.lineWidth = Math.min(W, H) * 0.07 * (fx.brushSize || 1);
+      (fx.brush || []).forEach((stroke) => {
+        m.beginPath();
+        stroke.forEach(([x, y], i) => (i ? m.lineTo(x * W, y * H) : m.moveTo(x * W, y * H)));
+        if (stroke.length === 1) m.lineTo(stroke[0][0] * W + 0.1, stroke[0][1] * H);
+        m.stroke();
+      });
+    }
+    return maskCanvas;
+  }
+  let maskOff = null;
+
   const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze, autoBoxes, makeRng, lastBoxes: {} };
+
+  /* часы ролика в секундах: глитчи в видео живут, null у фото */
+  api.clock = null;
+  const isGlitch = (def) => def.cat === 'glitch';
+  /* живой эффект: глитч, у которого не выключено «Живой в видео» */
+  api.animates = (state) => ['fx', 'fx2'].some((k) => {
+    const f = state[k];
+    const def = f && f.id && byId(f.id);
+    return !!def && isGlitch(def) && f.live !== false;
+  });
 
   /* rect: где лежит фото на карточке. Эффект рисуется только там, рамки в долях этой области. */
   api.draw = function (ctx, state, CW, CH, rect, key = 'fx') {
@@ -1524,44 +1819,79 @@ window.Effects = (function () {
     const st = styleOf(def, s.fx);
     if (st) fx.style = st.id;
     const col = fx.color || (st && st.color) || def.color;
-    const rng = makeRng((fx.seed || 1) * 31 + 7);
-    const A = analyze(ctx, W, H, r);
+    /* живой глитч: время идёт, и раз в несколько долей секунды он ломается заново */
+    const live = isGlitch(def) && fx.live !== false && api.clock != null;
+    fx.t = live ? api.clock : null;
+    const tick = live ? Math.floor(api.clock * ({ bsod: 2.5, blocks: 7, quads: 3, stretch: 4, sort: 3 }[def.id] || 5)) : 0;
+    const rng = makeRng((fx.seed || 1) * 31 + 7 + tick * 101);
+
+    /* глитч только в рамках сканера или под кистью: рисуем на копии и вырезаем по маске */
+    const masked = isGlitch(def) && fx.mask && fx.mask !== 'all';
+    let c = ctx;
+    let rr = r;
+    if (masked) {
+      if (!maskOff) maskOff = document.createElement('canvas');
+      maskOff.width = Math.max(1, Math.ceil(W));
+      maskOff.height = Math.max(1, Math.ceil(H));
+      c = maskOff.getContext('2d', { willReadFrequently: true });
+      c.drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, W, H);
+      rr = { x: 0, y: 0, w: W, h: H };
+    }
+    const A = analyze(c, W, H, rr);
     const box = () => {
       const list = fx.boxes && fx.boxes.length ? fx.boxes : autoBoxes(A, Math.round((def.id === 'tags' ? 6 : fx.style === 'arcs' ? 16 : 10) * (fx.amount || 1)), makeRng(fx.seed || 1), W, H, def.id === 'tags' ? 0.05 : def.id === 'objects' ? -0.02 : 0.01);
       api.lastBoxes[key] = list;
       return list;
     };
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(r.x, r.y, r.w, r.h);
-    ctx.clip();
-    ctx.translate(r.x, r.y);
-    switch (fx.id) {
-      case 'detect': detect(ctx, box(), W, H, u, col, fx, rng); break;
-      case 'objects': objects(ctx, box(), W, H, u, col, fx, rng); break;
-      case 'hud': hud(ctx, box(), W, H, u, col, fx, rng); break;
-      case 'tags': tags(ctx, box(), W, H, u, col, fx, rng); break;
-      case 'points': points(ctx, A, W, H, u, col, fx, rng); break;
-      case 'frameLetters': frameLetters(ctx, W, H, u, col, fx, rng); break;
-      case 'colLetters': colLetters(ctx, W, H, u, col, fx, rng); break;
-      case 'pixels': pixels(ctx, W, H, u, col, fx, rng); break;
-      case 'ascii': ascii(ctx, A, W, H, u, col, fx, rng); break;
-      case 'morse': morse(ctx, W, H, u, col, fx, rng); break;
-      case 'threads': threads(ctx, A, W, H, u, col, fx, rng); break;
-      case 'graph': graph(ctx, W, H, u, col, fx, rng); break;
-      case 'circle': circle(ctx, A, W, H, u, col, fx, rng); break;
-      case 'chart': chart(ctx, W, H, u, col, fx, rng); break;
-      case 'rays': rays(ctx, W, H, u, col, fx, rng); break;
-      case 'rain': rain(ctx, W, H, u, col, fx, rng); break;
-      case 'split': split(ctx, W, H, u, col, fx, rng); break;
-      case 'glass': glass(ctx, W, H, u, col, fx, rng); break;
-      case 'glitch': glitch(ctx, W, H, u, col, fx, rng, r); break;
-      case 'curve': curve(ctx, W, H, u, col, fx, rng); break;
-      case 'vwords': vwords(ctx, W, H, u, col, fx, rng); break;
-      case 'formula': formula(ctx, W, H, u, col, fx); break;
-      default: break;
+    c.save();
+    if (!masked) {
+      c.beginPath();
+      c.rect(r.x, r.y, r.w, r.h);
+      c.clip();
+      c.translate(r.x, r.y);
     }
-    ctx.restore();
+    run(c);
+    c.restore();
+    if (masked) {
+      c.globalCompositeOperation = 'destination-in';
+      c.drawImage(maskFor(state, fx, W, H, u), 0, 0);
+      c.globalCompositeOperation = 'source-over';
+      ctx.drawImage(maskOff, r.x, r.y, W, H);
+    }
+
+    function run(ctx) {
+      const r = rr;
+      switch (fx.id) {
+        case 'detect': detect(ctx, box(), W, H, u, col, fx, rng); break;
+        case 'objects': objects(ctx, box(), W, H, u, col, fx, rng); break;
+        case 'hud': hud(ctx, box(), W, H, u, col, fx, rng); break;
+        case 'tags': tags(ctx, box(), W, H, u, col, fx, rng); break;
+        case 'points': points(ctx, A, W, H, u, col, fx, rng); break;
+        case 'frameLetters': frameLetters(ctx, W, H, u, col, fx, rng); break;
+        case 'colLetters': colLetters(ctx, W, H, u, col, fx, rng); break;
+        case 'pixels': pixels(ctx, W, H, u, col, fx, rng); break;
+        case 'ascii': ascii(ctx, A, W, H, u, col, fx, rng); break;
+        case 'morse': morse(ctx, W, H, u, col, fx, rng); break;
+        case 'threads': threads(ctx, A, W, H, u, col, fx, rng); break;
+        case 'graph': graph(ctx, W, H, u, col, fx, rng); break;
+        case 'circle': circle(ctx, A, W, H, u, col, fx, rng); break;
+        case 'chart': chart(ctx, W, H, u, col, fx, rng); break;
+        case 'rays': rays(ctx, W, H, u, col, fx, rng); break;
+        case 'rain': rain(ctx, W, H, u, col, fx, rng); break;
+        case 'split': split(ctx, W, H, u, col, fx, rng); break;
+        case 'glass': glass(ctx, W, H, u, col, fx, rng); break;
+        case 'glitch': glitch(ctx, W, H, u, col, fx, rng, r); break;
+        case 'stretch': stretch(ctx, W, H, u, col, fx, rng, r); break;
+        case 'sort': pixelSort(ctx, W, H, u, col, fx, rng, r); break;
+        case 'bsod': bsod(ctx, W, H, u, col, fx, rng); break;
+        case 'blocks': blocks(ctx, A, W, H, u, col, fx, rng, r); break;
+        case 'quads': quads(ctx, A, W, H, u, col, fx); break;
+        case 'curve': curve(ctx, W, H, u, col, fx, rng); break;
+        case 'vwords': vwords(ctx, W, H, u, col, fx, rng); break;
+        case 'formula': formula(ctx, W, H, u, col, fx); break;
+        default: break;
+      }
+    }
   };
 
   return api;

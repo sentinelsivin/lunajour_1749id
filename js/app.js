@@ -19,8 +19,8 @@
     motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
-    fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [] },
-    fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [] },
+    fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
+    fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     scan: Scanner.defaults(),
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
@@ -217,8 +217,10 @@
         dirty = true;
       } else {
         Scanner.time = T;
+        Effects.clock = T;
         renderCard(ctx, state, slots, assets);
         Scanner.time = null;
+        Effects.clock = null;
         return;
       }
     }
@@ -236,8 +238,10 @@
     dirty = false;
     lastFrame = now;
     Scanner.clock = videoClock();
+    Effects.clock = Scanner.clock;
     renderCard(ctx, comparing ? { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false } } : state, slots, assets);
     Scanner.clock = null;
+    Effects.clock = null;
     if (!comparing) drawSelection();
     placeCtx();
   }
@@ -1412,12 +1416,14 @@
     glass: 'Для вида «С подписями»: строки через запятую, число в конце строки встанет ниже.',
     curve: 'Подписи точек через запятую.',
     formula: 'Например: x^2 [-3, 3], sin(x)/x, abs(x). Для кривой: x = cos(t); y = sin(t).',
+    bsod: 'Свой текст ошибки. Пусто: про сердце, которое поставили на паузу.',
   };
   let selectedBox = -1;
   /* какой из двух слоёв эффектов сейчас правится */
   let fxSlot = 'fx';
   const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
-  const fxBoxMode = () => tab === 'fx' && fxCat !== 'scan' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center));
+  const fxBrush = () => !!(fxDef() && fxDef().cat === 'glitch' && state[fxSlot].mask === 'brush');
+  const fxBoxMode = () => tab === 'fx' && fxCat !== 'scan' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center) || fxBrush());
 
   function syncFx() {
     const grid = $('fxGrid');
@@ -1502,7 +1508,33 @@
     fontSelect($('fxFont'), t('Как в эффекте'), state[fxSlot].font);
     swatches($('fxSwatches'), FX_COLORS, state[fxSlot].color, (v) => { state[fxSlot] = { ...state[fxSlot], color: v }; syncFx(); update(); }, t('Как в эффекте'));
     $('fxBoxTools').hidden = !def.boxes;
-    $('fxCenterHint').hidden = !def.center;
+    $('fxCenterHint').hidden = !def.center || fxBrush();
+    $('fxCenterHint').textContent = t(def.id === 'stretch' ? 'Нажми на фото, чтобы поставить линию, от которой тянется картинка.' : 'Нажми на фото, чтобы поставить центр лучей.');
+    const g = def.cat === 'glitch';
+    $('fxGlitchTools').hidden = !g;
+    if (g) {
+      const f = state[fxSlot];
+      const mask = $('fxMask');
+      mask.replaceChildren();
+      [['all', 'Везде'], ['scan', 'В рамках сканера'], ['brush', 'Кистью']].forEach(([v, name]) => chip(mask, t(name), (f.mask || 'all') === v, () => {
+        state[fxSlot] = { ...state[fxSlot], mask: v };
+        syncFx();
+        syncGrab();
+        update();
+      }));
+      $('fxMaskHint').textContent = t({
+        all: 'Глитч по всему фото.',
+        scan: state.scan.on ? 'Глитч только внутри рамок сканера.' : 'Глитч только внутри рамок сканера. Включи сканер в разделе «Сканер».',
+        brush: 'Води пальцем по фото: глитч появится только там.',
+      }[f.mask || 'all']);
+      $('fxBrushTools').hidden = f.mask !== 'brush';
+      const size = $('fxBrushSize');
+      size.replaceChildren();
+      [[0.5, 'Тонкая'], [1, 'Средняя'], [2, 'Толстая']].forEach(([v, name]) => chip(size, t(name), (f.brushSize || 1) === v, () => { state[fxSlot] = { ...state[fxSlot], brushSize: v }; syncFx(); update(); }));
+      $('fxBrushClear').disabled = !(f.brush && f.brush.length);
+      $('fxLive').checked = f.live !== false;
+      $('fxPlay').hidden = f.live === false;
+    }
     $('fxBoxDelete').disabled = selectedBox < 0;
     $('fxBoxAuto').disabled = !state[fxSlot].boxes.length;
   }
@@ -1521,6 +1553,13 @@
       if (!fxBoxMode()) return;
       const [fx, fy, aspect] = toCard(e);
       if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+      if (fxBrush()) {
+        state[fxSlot] = { ...state[fxSlot], brush: [...(state[fxSlot].brush || []), [[fx, fy]]] };
+        drag = { id: e.pointerId, brush: true };
+        try { card.setPointerCapture(e.pointerId); } catch {}
+        update();
+        return;
+      }
       if (fxDef().center) {
         state[fxSlot] = { ...state[fxSlot], center: { x: fx, y: fy } };
         drag = { id: e.pointerId, center: true };
@@ -1555,6 +1594,14 @@
     card.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id || !fxBoxMode()) return;
       const [fx, fy] = toCard(e);
+      if (drag.brush) {
+        const strokes = state[fxSlot].brush;
+        const stroke = strokes[strokes.length - 1];
+        const last = stroke[stroke.length - 1];
+        if (Math.hypot(fx - last[0], fy - last[1]) > 0.006) stroke.push([clamp(fx, 0, 1), clamp(fy, 0, 1)]);
+        update();
+        return;
+      }
       if (drag.center) {
         state[fxSlot] = { ...state[fxSlot], center: { x: clamp(fx, 0, 1), y: clamp(fy, 0, 1) } };
         update();
@@ -1595,6 +1642,9 @@
       update();
     };
     $('fxFind').onclick = () => findThings();
+    $('fxBrushClear').onclick = () => { state[fxSlot] = { ...state[fxSlot], brush: [] }; syncFx(); update(); };
+    $('fxLive').onchange = (e) => { state[fxSlot] = { ...state[fxSlot], live: e.target.checked }; syncFx(); update(); };
+    $('fxPlay').onclick = () => { scanPlay = performance.now(); invalidate(); };
     $('fxFont').onchange = (e) => { state[fxSlot] = { ...state[fxSlot], font: e.target.value }; syncFx(); update(); };
   }
 

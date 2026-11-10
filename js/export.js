@@ -57,14 +57,16 @@
 
     function frame(t) {
       /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
-      const live = window.Scanner && window.Scanner.animates(s);
+      const live = (window.Scanner && window.Scanner.animates(s)) || (window.Effects && window.Effects.animates(s));
       if (moving || live) {
         if (window.Scanner) {
           if (live) window.Scanner.time = t / 1000;
           window.Scanner.clock = t / 1000;
         }
+        if (window.Effects) window.Effects.clock = t / 1000;
         renderCard(still.getContext('2d'), s, slots, assets);
         if (window.Scanner) { window.Scanner.time = null; window.Scanner.clock = null; }
+        if (window.Effects) window.Effects.clock = null;
       }
       /* рисуем кадр каждый раз, даже неподвижный: иначе запись может пропустить кадры */
       x.drawImage(still, 0, 0);
