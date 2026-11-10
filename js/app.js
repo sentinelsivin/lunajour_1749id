@@ -205,6 +205,18 @@
   let lastFrame = 0;
   function loop(now) {
     requestAnimationFrame(loop);
+    if (scanPlay != null) {
+      const T = (now - scanPlay) / 1000;
+      if (T > Scanner.DURATION) {
+        scanPlay = null;
+        dirty = true;
+      } else {
+        Scanner.time = T;
+        renderCard(ctx, state, slots, assets);
+        Scanner.time = null;
+        return;
+      }
+    }
     const due = isMoving() && now - lastFrame > 33;
     if (!dirty && !due) return;
     dirty = false;
@@ -215,6 +227,18 @@
 
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
+    if (scanMode() && selectedIcon >= 0) {
+      const b = (Scanner.lastIcons || [])[selectedIcon];
+      if (!b) return;
+      const r = window.Render.fxRect(state, card.width, card.height);
+      ctx.save();
+      ctx.strokeStyle = '#6c9fe0';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(r.x + b.x * r.w - 6, r.y + b.y * r.h - 6, b.w * r.w + 12, b.h * r.h + 12);
+      ctx.restore();
+      return;
+    }
     if (scanMode()) {
       const b = state.scan.boxes[selectedScan];
       if (!b) return;
@@ -1576,6 +1600,9 @@
 
   /* ---------- сканер: рамки, подписи, линза, лупа, связи, интерфейс камеры ---------- */
   let selectedScan = -1;
+  let selectedIcon = -1;
+  /* проигрывание анимации сканера в превью: время старта или null */
+  let scanPlay = null;
   const scanMode = () => tab === 'fx' && fxView === 'scan' && !!state.scan.on;
   let scanSub = 'boxes';
   function syncFxView() {
@@ -1605,8 +1632,12 @@
           if (!p.id) setScan({ on: false, preset: '' });
           else {
             /* свои рамки и сид остаются: набор меняет только вид */
-            const keep = { boxes: state.scan.boxes, seed: state.scan.seed };
-            state.scan = { ...Scanner.defaults(), ...p.set, ...keep, on: true, preset: p.id };
+            const keep = { boxes: state.scan.boxes, seed: state.scan.seed, anim: state.scan.anim };
+            /* свои значки остаются, а значки прошлого набора уходят вместе с ним */
+            const was = Scanner.presetById(state.scan.preset);
+            if (JSON.stringify(state.scan.icons) !== JSON.stringify((was && was.set.icons) || [])) keep.icons = state.scan.icons;
+            /* копия набора: правки досье и значков не должны менять сам набор */
+            state.scan = { ...Scanner.defaults(), ...JSON.parse(JSON.stringify(p.set)), ...keep, on: true, preset: p.id };
             syncScan();
             update();
           }
@@ -1649,6 +1680,45 @@
     Scanner.VARS.forEach((v) => chip(vars, v, false, () => setScan({ text: `${sc.text}${v}` })));
 
     fontSelect($('scanFont'), t('Моноширинный'), sc.font);
+
+    const packs = $('scanPacks');
+    packs.replaceChildren();
+    const mood = state.note.mood;
+    chip(packs, `${t('Под настроение')}${mood ? ': ' + mood : ''}`, false, () => setScan({ text: Scanner.moodPack(mood) }));
+    Scanner.PACKS.forEach(([, name, text]) => chip(packs, t(name), sc.text === text, () => setScan({ text })));
+
+    const dz = sc.dossier;
+    $('scanDossierTools').hidden = !dz.on;
+    const dStyles = $('scanDossierStyles');
+    dStyles.replaceChildren();
+    [['plates', 'Плашки'], ['card', 'Карточка'], ['terminal', 'Терминал']].forEach(([v, name]) => chip(dStyles, t(name), dz.style === v, () => setScan({ dossier: { ...dz, style: v } })));
+    $('scanDossierHome').disabled = dz.x == null;
+
+    const icons = $('scanIcons');
+    if (!icons.childElementCount || icons.dataset.color !== sc.color || icons.dataset.lang !== I18n.lang) {
+      icons.replaceChildren();
+      Scanner.ICONS.forEach(([k, name]) => {
+        const b = chip(icons, '', false, () => {
+          /* новый значок встаёт чуть в стороне от центра, чтобы не лечь на прошлый */
+          const n = state.scan.icons.length;
+          state.scan.icons = [...state.scan.icons, { k, x: 0.3 + ((n * 0.17) % 0.4), y: 0.3 + ((n * 0.13) % 0.4), s: 1 }];
+          selectedIcon = state.scan.icons.length - 1;
+          syncScan();
+          update();
+        });
+        b.title = t(name);
+        b.setAttribute('aria-label', t(name));
+        const c = canvas(68, 68);
+        const x = c.getContext('2d');
+        Scanner.drawIcon(x, k, k === 'cursor' ? 20 : 34, k === 'cursor' ? 10 : 34, 46, sc.color);
+        b.append(c);
+      });
+      icons.dataset.color = sc.color;
+      icons.dataset.lang = I18n.lang;
+    }
+    const ic = sc.icons[selectedIcon];
+    $('scanIconTools').hidden = !ic;
+    if (ic) $('scanIconSize').value = ic.s || 1;
     markSeg($('scanSub'), scanSub);
     document.querySelectorAll('[data-sub]').forEach((el) => { el.hidden = el.dataset.sub !== scanSub; });
     markSeg($('scanLensWhere'), sc.lensOut ? 'out' : 'in');
@@ -1698,8 +1768,33 @@
       if (!scanMode()) return;
       const [fx, fy, aspect] = toRect(e);
       if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
-      /* сначала увеличенные куски: их можно перетащить в другое место */
-      const inset = [...(Scanner.lastInsets || [])].reverse().find((s) => fx >= s.x && fx <= s.x + s.w && fy >= s.y && fy <= s.y + s.h);
+      const inside = (s) => s && fx >= s.x && fx <= s.x + s.w && fy >= s.y && fy <= s.y + s.h;
+      /* сверху вниз: значки, досье, увеличенные куски, рамки */
+      const iconHit = (Scanner.lastIcons || []).map((b, i) => [b, i]).reverse().find(([b]) => inside(b));
+      if (iconHit) {
+        const ic = state.scan.icons[iconHit[1]];
+        selectedIcon = iconHit[1];
+        selectedScan = -1;
+        drag = { id: e.pointerId, icon: true, fx, fy, start: { x: ic.x, y: ic.y } };
+        try { card.setPointerCapture(e.pointerId); } catch {}
+        syncScan();
+        invalidate();
+        return;
+      }
+      selectedIcon = -1;
+      if (state.scan.dossier.on && inside(Scanner.lastDossier)) {
+        const dz = Scanner.lastDossier;
+        drag = { id: e.pointerId, dossier: true, fx, fy, start: { ...dz } };
+        try { card.setPointerCapture(e.pointerId); } catch {}
+        syncScan();
+        invalidate();
+        return;
+      }
+      const inset = [...(Scanner.lastInsets || [])].reverse().find(inside);
+      /* на вкладках досье и значков пустое место не ставит новую рамку */
+      const canAdd = !['dossier', 'icons', 'hud'].includes(scanSub);
+      const hitsBox = (Scanner.lastBoxes || []).some(inside);
+      if (!inset && !hitsBox && !canAdd) { syncScan(); invalidate(); return; }
       const list = own();
       if (inset && list[inset.i]) {
         selectedScan = inset.i;
@@ -1730,6 +1825,20 @@
     card.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id || !scanMode()) return;
       const [fx, fy] = toRect(e);
+      if (drag.icon) {
+        const ic = state.scan.icons[selectedIcon];
+        if (!ic) return;
+        ic.x = clamp(drag.start.x + fx - drag.fx, 0, 1);
+        ic.y = clamp(drag.start.y + fy - drag.fy, 0, 1);
+        update();
+        return;
+      }
+      if (drag.dossier) {
+        const dz = drag.start;
+        state.scan.dossier = { ...state.scan.dossier, x: clamp(dz.x + fx - drag.fx, 0, 1 - dz.w), y: clamp(dz.y + fy - drag.fy, 0, 1 - dz.h) };
+        update();
+        return;
+      }
       const m = state.scan.boxes[selectedScan];
       if (!m) return;
       const dx = fx - drag.fx;
@@ -1746,7 +1855,11 @@
       }
       update();
     });
-    const end = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+    const end = (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (drag.dossier) syncScan();
+      drag = null;
+    };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
 
@@ -1774,6 +1887,24 @@
     };
     $('scanFind').onclick = () => findThings('scanFind', (boxes) => { selectedScan = -1; setScan({ boxes }); });
     $('scanFont').onchange = (e) => setScan({ font: e.target.value });
+    $('scanDossierHome').onclick = () => setScan({ dossier: { ...state.scan.dossier, x: null, y: null } });
+    $('scanIconSize').addEventListener('input', (e) => {
+      const ic = state.scan.icons[selectedIcon];
+      if (!ic) return;
+      ic.s = Number(e.target.value);
+      update();
+    });
+    $('scanIconDelete').onclick = () => {
+      if (!state.scan.icons[selectedIcon]) return;
+      state.scan.icons = state.scan.icons.filter((_, i) => i !== selectedIcon);
+      selectedIcon = -1;
+      syncScan();
+      update();
+    };
+    $('scanPlay').onclick = () => {
+      scanPlay = performance.now();
+      invalidate();
+    };
     $('scanSub').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (!b) return;
@@ -2465,6 +2596,7 @@
         const value = el.type === 'checkbox' ? el.checked : el.type === 'range' ? Number(el.value) : el.value;
         setPath(el.dataset.bind, value);
         if (el.dataset.bind === 'note.mood') syncNote();
+        if (el.dataset.bind.startsWith('scan.')) syncScan();
         if (el.dataset.bind === 'note.title' || el.dataset.bind === 'note.font') syncSlotCount();
       });
     });

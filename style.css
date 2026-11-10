@@ -348,7 +348,12 @@ button { cursor: pointer; }
 }
 .field select { appearance: auto; }
 /* внутренние вкладки внутри панели */
-.subtabs { position: sticky; top: 0; z-index: 2; background: var(--surface1); }
+.subtabs { position: sticky; top: 0; z-index: 2; background: var(--surface1); overflow-x: auto; scrollbar-width: none; }
+.subtabs::-webkit-scrollbar { display: none; }
+.subtabs button { flex: 1 0 auto; padding-inline: 10px; }
+.chips.icons button { padding: 4px; line-height: 0; }
+.chips.icons canvas { width: 34px; height: 34px; }
+.check.grow { flex: 1; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 14px; }
 .check input { width: 18px; height: 18px; accent-color: var(--accent); }
 .group { display: flex; flex-direction: column; gap: 8px; }

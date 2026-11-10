@@ -96,7 +96,13 @@
     function frame(t) {
       const a = (t / CLIP_MS) * Math.PI * 2;
       x.drawImage(back, 0, 0);
-      if (moving) renderCard(still.getContext('2d'), s, slots, assets);
+      /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
+      const live = window.Scanner && window.Scanner.animates(s);
+      if (moving || live) {
+        if (live) window.Scanner.time = t / 1000;
+        renderCard(still.getContext('2d'), s, slots, assets);
+        if (live) window.Scanner.time = null;
+      }
       placeCard(x, still, W, H, {
         squeeze: Math.cos(Math.sin(a) * 0.42),
         tilt: Math.sin(a * 2) * 0.022,

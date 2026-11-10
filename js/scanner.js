@@ -14,18 +14,29 @@ window.Scanner = (function () {
     zoom: 0, zoomLook: 'same', zoomLine: 'one', zoomText: '#{hex}',
     links: 'none',
     hud: [], cam: 'CAM#3', status: 'Biometric identification ON, Behavior analysis ON, Style analysis ON',
+    anim: true, icons: [], dossier: dossierDefaults(),
   });
+  function dossierDefaults() {
+    return { on: false, style: 'plates', title: 'OFFLINE ACTIVITY DETECTED', rows: 'ID: {id}\nSOCIAL SYNC RATE: {%}\nINTERACTION FREQUENCY: RARE\nEMOTIONAL OUTPUT: CONTROLLED', x: null, y: null };
+  }
+  const D = (o) => ({ ...dossierDefaults(), on: true, ...o });
 
   /* Готовые наборы: с них удобно начать, дальше любую деталь можно поменять. */
   const PRESETS = [
-    { id: 'cctv', name: 'CCTV', set: { color: '#3d4bff', shape: 'full', label: 'flag', text: 'FEMALE, #{hex}, UNDER, #{hex}', zoom: 1, zoomLook: 'bw', zoomLine: 'funnel', links: 'none', lens: 'none', glow: false, hud: ['corners', 'cam', 'time', 'rec'], cam: 'CCTV 01', amount: 0.6 } },
+    { id: 'cctv', name: 'CCTV', set: { color: '#3d4bff', shape: 'full', label: 'flag', text: 'FEMALE, #{hex}, UNDER, #{hex}', zoom: 1, zoomLook: 'bw', zoomLine: 'funnel', links: 'none', lens: 'none', glow: false, hud: ['corners', 'cam', 'time', 'rec'], cam: 'CCTV 01', amount: 0.6,
+      icons: [{ k: 'cursor', x: 0.55, y: 0.3, s: 1 }, { k: 'folder', x: 0.12, y: 0.46, s: 1 }, { k: 'folder', x: 0.24, y: 0.58, s: 0.8 }, { k: 'warning', x: 0.86, y: 0.26, s: 0.8 }] } },
     { id: 'person', name: 'Распознавание', set: { color: '#39ff6a', shape: 'full', label: 'plate', text: 'person: {0.}', lens: 'tint', lensOut: false, zoom: 0, links: 'none', glow: false, hud: [], amount: 0.8 } },
     { id: 'windows', name: 'Окна', set: { color: '#39ff6a', shape: 'full', label: 'below', text: 'online, AFK, searching…, online, where am i, a way out ???', line: 2.2, glow: true, lens: 'none', zoom: 0, links: 'none', hud: [], amount: 0.9 } },
     { id: 'botany', name: 'Ботаника', set: { color: '#ffffff', shape: 'nodes', label: 'corner', text: '#{hex}', zoom: 2, zoomLook: 'same', zoomLine: 'funnel', zoomText: '', links: 'net', lens: 'none', glow: true, hud: [], amount: 0.7 } },
     { id: 'thermal', name: 'Тепловизор', set: { color: '#ffffff', shape: 'cross', label: 'corner', text: '{t}°C', lens: 'thermal', lensOut: false, zoom: 0, links: 'none', glow: false, hud: ['corners', 'rec', 'time', 'scan'], amount: 0.7 } },
     { id: 'noir', name: 'Нуар', set: { color: '#ff5a1f', shape: 'nodes', label: 'none', text: '', lens: 'bw', lensOut: true, zoom: 0, links: 'hub', glow: true, hud: ['noise'], amount: 0.5 } },
+    { id: 'terminal', name: 'Терминал', set: { color: '#3dff7a', shape: 'full', label: 'corner', text: '{label}, product, #{hex}', lens: 'none', zoom: 1, zoomLook: 'same', zoomLine: 'elbow', zoomText: '', links: 'none', glow: false, hud: [], amount: 0.5,
+      dossier: D({ style: 'terminal', title: '//// DETECTION:', rows: 'PRODUCT: {label}\nmood: {mood}\nLIFE LEVEL\nprocessing… [70%]' }) } },
     { id: 'objects', name: 'Объекты', set: { color: '#ffffff', shape: 'full', label: 'plate', text: 'Object {n}', lens: 'none', zoom: 0, links: 'net', glow: false, hud: ['noise'], amount: 1.4 } },
-    { id: 'dossier', name: 'Досье', set: { color: '#2bd94a', shape: 'cross', label: 'corner', text: 'person 0.{nn}', zoom: 1, zoomLook: 'bw', zoomLine: 'elbow', zoomText: 'OFFLINE ACTIVITY DETECTED', lens: 'none', links: 'none', glow: false, hud: ['frame', 'ruler', 'status'], status: 'signal strength: 92%, noise level: internal, output filter: active', amount: 0.5 } },
+    { id: 'dossier', name: 'Досье', set: { color: '#2bd94a', shape: 'cross', label: 'corner', text: 'person 0.{nn}', zoom: 1, zoomLook: 'bw', zoomLine: 'elbow', zoomText: '', lens: 'none', links: 'none', glow: false, hud: ['frame', 'ruler', 'status'], status: 'signal strength: 92%, noise level: internal, output filter: active', amount: 0.5,
+      dossier: D({}) } },
+    { id: 'feelings', name: 'Детектор чувств', set: { color: '#f472b6', shape: 'corners', label: 'plate', text: 'longing {0.}, nostalgia {%}, tenderness {%}, quiet joy {0.}, butterflies {%}', lens: 'none', zoom: 1, zoomLook: 'duo', zoomLine: 'one', zoomText: 'SUBJECT #{hex}', links: 'none', glow: true, hud: ['corners', 'rec', 'time'], amount: 0.6,
+      dossier: D({ style: 'card', title: 'EMOTION SCAN', rows: 'SUBJECT: {id}\nMOOD: {mood}\nTENDERNESS: {%}\nUntil the weekend [62%]' }) } },
     { id: 'surf', name: 'Флажки', set: { color: '#ff2020', shape: 'full', label: 'flag', text: '', line: 0.8, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1 } },
     /* бывшие эффекты с рамками из вкладки «Эффекты» */
     { id: 'detect', name: 'Плашки', set: { color: '#f5c518', shape: 'full', label: 'plate', text: 'Person {%}', line: 1.1, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1.4 } },
@@ -56,7 +67,7 @@ window.Scanner = (function () {
   function fromEffect(f) {
     if (!f || !MOVED[f.id]) return null;
     const p = presetById(MOVED[f.id](f));
-    const out = { ...defaults(), ...p.set, on: true, preset: p.id, seed: f.seed || 5, boxes: (f.boxes || []).map((b) => ({ ...b })) };
+    const out = { ...defaults(), ...JSON.parse(JSON.stringify(p.set)), on: true, preset: p.id, seed: f.seed || 5, boxes: (f.boxes || []).map((b) => ({ ...b })) };
     if (f.color) out.color = f.color;
     if (f.text) out.text = f.id === 'detect' ? f.text.split(',').map((w) => w.trim()).filter(Boolean).map((w) => `${w} {%}`).join(', ') : f.text;
     return out;
@@ -153,10 +164,11 @@ window.Scanner = (function () {
     return () => { a ^= a << 13; a >>>= 0; a ^= a >> 17; a ^= a << 5; a >>>= 0; return a / 4294967296; };
   }
   const LETTERS = 'ABCDEFGHJKLMNPRSTUVWXYZ';
-  function fill(tpl, b, i, W, H, seed, note) {
+  function fill(tpl, b, i, W, H, seed, note, tick) {
     if (!tpl) return '';
     const r = rngFor(seed, i);
-    const score = b.score != null ? b.score : 0.21 + r() * 0.78;
+    const base = 0.21 + r() * 0.78;
+    const score = tick != null ? 0.05 + rngFor(seed + tick * 13, i)() * 0.94 : b.score != null ? b.score : base;
     const digit = () => String(Math.floor(r() * 10));
     const letter = () => LETTERS[Math.floor(r() * LETTERS.length)];
     const date = String((note && note.date) || '').replace(/-/g, '.');
@@ -441,7 +453,7 @@ window.Scanner = (function () {
   }
 
   /* ---------- интерфейс камеры по краям ---------- */
-  function hud(ctx, sc, W, H, u, col, rng, note) {
+  function hud(ctx, sc, W, H, u, col, rng, note, T) {
     const on = (k) => sc.hud.includes(k);
     const ink = '#ffffff';
     const m = Math.min(W, H) * 0.04;
@@ -450,7 +462,8 @@ window.Scanner = (function () {
     ctx.fillStyle = ink;
     ctx.lineWidth = 2 * u;
     if (on('scan')) {
-      const y = H * (0.2 + rng() * 0.6);
+      const y0 = H * (0.2 + rng() * 0.6);
+      const y = T == null ? y0 : ((T * 0.32) % 1.15) * H;
       const g = ctx.createLinearGradient(0, y - 60 * u, 0, y + 4 * u);
       const [r, gg, b] = hexRgb(col);
       g.addColorStop(0, `rgba(${r},${gg},${b},0)`);
@@ -504,7 +517,7 @@ window.Scanner = (function () {
       ctx.textBaseline = 'middle';
       const tw = ctx.measureText('REC').width;
       ctx.fillText('REC', W - m - 14 * u - tw, right + 12 * u);
-      ctx.fillStyle = '#ff2a2a';
+      ctx.fillStyle = T != null && Math.floor(T * 2) % 2 ? 'rgba(255,42,42,0)' : '#ff2a2a';
       ctx.beginPath();
       ctx.arc(W - m - 14 * u - tw - 16 * u, right + 12 * u, 8 * u, 0, TAU);
       ctx.fill();
@@ -513,7 +526,8 @@ window.Scanner = (function () {
     }
     if (on('time')) {
       const pad = (n) => String(n).padStart(2, '0');
-      const clock = `${pad(Math.floor(rng() * 24))}:${pad(Math.floor(rng() * 60))}:${pad(Math.floor(rng() * 60))}`;
+      const hh = Math.floor(rng() * 24), mm = Math.floor(rng() * 60), ss = Math.floor(rng() * 50) + Math.floor(T || 0);
+      const clock = `${pad(hh)}:${pad(mm)}:${pad(ss % 60)}`;
       const date = String((note && note.date) || '').replace(/-/g, '.');
       ctx.font = `500 ${24 * u}px ${MONO}`;
       ctx.textBaseline = 'top';
@@ -567,10 +581,289 @@ window.Scanner = (function () {
     ctx.restore();
   }
 
-  /* ---------- сборка ---------- */
-  const api = { fromEffect, PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, defaults, presetById, lastBoxes: [], lastInsets: [] };
+  /* ---------- досье: панель с полями ---------- */
+  /* Строка вида «Until the weekend [62%]» становится полосой прогресса с подписью. */
+  const BAR = /^(.*?)\s*\[(\d{1,3})%\]\s*$/;
+  function dossierLayout(d, W, H, u, f, note, seed) {
+    const size = 15 * u;
+    const rows = String(d.rows || '').split('\n').map((s) => s.trim()).filter(Boolean)
+      .map((s, k) => {
+        const m = s.match(BAR);
+        const text = fill(m ? m[1] : s, { x: 0, y: 0, w: 0, h: 0 }, k, W, H, seed + k, note);
+        return m ? { text, bar: Math.min(100, Number(m[2])) / 100 } : { text };
+      });
+    const title = fill(d.title || '', { x: 0, y: 0, w: 0, h: 0 }, 0, W, H, seed + 40, note);
+    return { size, rows, title };
+  }
 
-  /* rect: где лежит фото на карточке. Всё рисуется только внутри него. */
+  function drawDossier(ctx, d, L, x0, y0, u, col, f, T, t0) {
+    const { size, rows, title } = L;
+    const ink = isLight(col) ? '#0d0d0d' : '#ffffff';
+    const pad = 9 * u;
+    ctx.font = `${f.weight} ${size}px ${f.css}`;
+    const tag = d.style === 'terminal' ? ctx.measureText('  [SCANNING]').width : 0;
+    const tw = Math.max(title ? ctx.measureText(title).width + tag : 0, ...rows.map((r) => ctx.measureText(r.text).width + (r.bar != null ? 120 * u : 0)), 200 * u);
+    const w = tw + pad * 2;
+    /* при анимации строки печатаются по очереди, полосы заполняются */
+    let budget = T == null ? Infinity : Math.max(0, (T - t0) * 45);
+    const typed = (s) => {
+      if (budget === Infinity) return s;
+      const out = s.slice(0, Math.max(0, Math.floor(budget)));
+      budget = Math.max(0, budget - s.length - 4);
+      return out;
+    };
+    const fillOf = (r, k) => (T == null ? r.bar : r.bar * Math.min(1, Math.max(0, (T - t0 - 0.4 - k * 0.3) / 0.9)));
+    const line = size * 1.75;
+    let y = y0;
+    ctx.textBaseline = 'middle';
+
+    if (d.style === 'card') {
+      const h = (title ? line * 1.2 : 0) + rows.length * line + pad * 2;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(x0, y0, w, h);
+      ctx.globalAlpha = 1;
+      y += pad;
+      if (title) {
+        ctx.fillStyle = ink;
+        ctx.font = `700 ${size * 1.05}px ${f.css}`;
+        ctx.fillText(typed(title), x0 + pad, y + line * 0.55);
+        ctx.fillRect(x0 + pad, y + line * 1.1, w - pad * 2, 1.2 * u);
+        y += line * 1.2;
+        ctx.font = `${f.weight} ${size}px ${f.css}`;
+      }
+      rows.forEach((r, k) => {
+        const cy = y + line / 2;
+        ctx.fillStyle = ink;
+        const s = typed(r.text);
+        ctx.fillText(s, x0 + pad, cy);
+        if (r.bar != null) {
+          const bx = x0 + pad + ctx.measureText(r.text).width + 10 * u;
+          const bw = x0 + w - pad - bx - 42 * u;
+          ctx.fillStyle = '#111';
+          ctx.fillRect(bx, cy - 6 * u, bw, 12 * u);
+          ctx.fillStyle = '#fff';
+          ctx.fillRect(bx, cy - 6 * u, bw * fillOf(r, k), 12 * u);
+          ctx.fillStyle = ink;
+          ctx.fillText(`${Math.round(fillOf(r, k) * 100)}%`, bx + bw + 6 * u, cy);
+        }
+        y += line;
+      });
+      return { x: x0, y: y0, w, h };
+    }
+
+    if (d.style === 'terminal') {
+      const h = (title ? line : 0) + rows.length * line + 2 * u;
+      ctx.fillStyle = 'rgba(8,8,8,.84)';
+      ctx.fillRect(x0, y0, w, h);
+      ctx.strokeStyle = col;
+      ctx.lineWidth = 1.5 * u;
+      ctx.strokeRect(x0, y0, w, h);
+      if (title) {
+        ctx.fillStyle = '#fff';
+        ctx.fillText(typed(title), x0 + pad, y + line / 2);
+        ctx.fillStyle = col;
+        const tag = '[SCANNING]';
+        ctx.fillText(tag, x0 + w - pad - ctx.measureText(tag).width, y + line / 2);
+        y += line;
+      }
+      rows.forEach((r, k) => {
+        ctx.strokeStyle = col;
+        ctx.lineWidth = 1 * u;
+        ctx.beginPath();
+        ctx.moveTo(x0, y);
+        ctx.lineTo(x0 + w, y);
+        ctx.stroke();
+        const cy = y + line / 2;
+        if (r.bar != null) {
+          /* полоса-пилюля с подписью внутри */
+          const bh = line * 0.62;
+          const bw = w - pad * 2;
+          ctx.beginPath();
+          ctx.roundRect(x0 + pad, cy - bh / 2, bw, bh, bh / 2);
+          ctx.stroke();
+          ctx.save();
+          ctx.clip();
+          ctx.fillStyle = col;
+          ctx.globalAlpha = 0.85;
+          ctx.fillRect(x0 + pad, cy - bh / 2, bw * fillOf(r, k), bh);
+          ctx.restore();
+          ctx.fillStyle = '#fff';
+          const s = typed(r.text || 'processing…');
+          ctx.fillText(s, x0 + pad + (bw - ctx.measureText(s).width) / 2, cy);
+        } else {
+          ctx.fillStyle = '#fff';
+          ctx.fillText(typed(r.text), x0 + pad, cy);
+        }
+        y += line;
+      });
+      return { x: x0, y: y0, w, h };
+    }
+
+    /* плашки: заголовок и каждая строка отдельной залитой полосой */
+    const gap = 6 * u;
+    const all = [...(title ? [{ text: title, head: true }] : []), ...rows];
+    all.forEach((r, k) => {
+      const ph = line * (r.head ? 1.05 : 0.95);
+      ctx.fillStyle = col;
+      if (r.bar != null) {
+        ctx.fillRect(x0, y, w, ph);
+        ctx.fillStyle = ink;
+        ctx.fillText(typed(r.text), x0 + pad, y + ph / 2);
+        const bx = x0 + pad + ctx.measureText(r.text).width + 10 * u;
+        const bw = x0 + w - pad - bx;
+        ctx.globalAlpha = 0.35;
+        ctx.fillRect(bx, y + ph * 0.3, bw, ph * 0.4);
+        ctx.globalAlpha = 1;
+        ctx.fillRect(bx, y + ph * 0.3, bw * fillOf(r, k), ph * 0.4);
+      } else {
+        ctx.fillRect(x0, y, w, ph);
+        ctx.fillStyle = ink;
+        if (r.head) ctx.font = `700 ${size}px ${f.css}`;
+        ctx.fillText(typed(r.text), x0 + pad, y + ph / 2 + size * 0.05);
+        ctx.font = `${f.weight} ${size}px ${f.css}`;
+      }
+      y += ph + gap;
+    });
+    return { x: x0, y: y0, w, h: y - y0 - gap };
+  }
+
+  /* ---------- значки ---------- */
+  const SPRITES = {
+    cursor: ['X...........', 'XX..........', 'XWX.........', 'XWWX........', 'XWWWX.......', 'XWWWWX......', 'XWWWWWX.....', 'XWWWWWWX....', 'XWWWWWWWX...', 'XWWWWWWWWX..', 'XWWWWWWWWWX.', 'XWWWWWWXXXXX', 'XWWWXWWX....', 'XWWX.XWWX...', 'XWX..XWWX...', 'XX....XWWX..', 'X.....XWWX..', '.......XX...'],
+    folder: ['.XXXXX..........', 'XYYYYYX.........', 'XYYYYYYXXXXXXXX.', 'XYYYYYYYYYYYYYYX', 'XYYYYYYYYYYYYYYX', 'XYYYYYYYYYYYYYYX', 'XYYYYYYYYYYYYYYX', 'XYYYYYYYYYYYYYYX', 'XyyyyyyyyyyyyyyX', 'XyyyyyyyyyyyyyyX', '.XXXXXXXXXXXXXX.'],
+    file: ['XXXXXXX....', 'XWWWWWXX...', 'XWWWWWXWX..', 'XWWWWWXXXX.', 'XWWWWWWWWX.', 'XWGGGGGWWX.', 'XWWWWWWWWX.', 'XWGGGGGGWX.', 'XWWWWWWWWX.', 'XWGGGGGWWX.', 'XWWWWWWWWX.', 'XWWWWWWWWX.', 'XXXXXXXXXX.'],
+  };
+  const PIX = { X: '#141414', W: '#ffffff', Y: '#f7d64a', y: '#d9ad22', G: '#9a9a9a' };
+  const ICONS = [['cursor', 'Курсор'], ['folder', 'Папка'], ['file', 'Файл'], ['warning', 'Внимание'], ['question', 'Вопрос'], ['disc', 'Диск'], ['error', 'Ошибка'], ['up', 'Вверх'], ['right', 'Вправо'], ['down', 'Вниз'], ['left', 'Влево']];
+
+  function drawIcon(ctx, k, cx, cy, size, col) {
+    ctx.save();
+    const rows = SPRITES[k];
+    if (rows) {
+      const cell = size / rows.length;
+      const w = rows[0].length * cell;
+      const x0 = k === 'cursor' ? cx : cx - w / 2;
+      const y0 = k === 'cursor' ? cy : cy - size / 2;
+      ctx.shadowBlur = 0;
+      rows.forEach((row, ry) => [...row].forEach((ch, rx) => {
+        if (!PIX[ch]) return;
+        ctx.fillStyle = PIX[ch];
+        ctx.fillRect(Math.round(x0 + rx * cell), Math.round(y0 + ry * cell), Math.ceil(cell), Math.ceil(cell));
+      }));
+      ctx.restore();
+      return;
+    }
+    const s = size;
+    ctx.lineJoin = 'round';
+    if (k === 'warning' || k === 'question') {
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - s * 0.48);
+      ctx.lineTo(cx + s * 0.55, cy + s * 0.45);
+      ctx.lineTo(cx - s * 0.55, cy + s * 0.45);
+      ctx.closePath();
+      if (k === 'warning') {
+        ctx.fillStyle = '#ffd21f';
+        ctx.fill();
+        ctx.lineWidth = s * 0.06;
+        ctx.strokeStyle = '#141414';
+        ctx.stroke();
+        ctx.fillStyle = '#141414';
+      } else {
+        ctx.lineWidth = s * 0.07;
+        ctx.strokeStyle = col;
+        ctx.stroke();
+        ctx.fillStyle = col;
+      }
+      ctx.font = `900 ${s * 0.55}px ${SANS}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(k === 'warning' ? '!' : '?', cx, cy + s * 0.14);
+    } else if (k === 'disc') {
+      const g = ctx.createConicGradient ? ctx.createConicGradient(0, cx, cy) : null;
+      if (g) ['#d9d9e8', '#b6f0ff', '#f0c6ff', '#fff6b0', '#d9d9e8'].forEach((c, i) => g.addColorStop(i / 4, c));
+      ctx.fillStyle = g || '#d9d9e8';
+      ctx.beginPath();
+      ctx.arc(cx, cy, s * 0.48, 0, TAU);
+      ctx.arc(cx, cy, s * 0.1, 0, TAU, true);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(0,0,0,.45)';
+      ctx.lineWidth = s * 0.03;
+      ctx.stroke();
+    } else if (k === 'error') {
+      const w = s * 0.9, h = s * 1.05;
+      ctx.fillStyle = col;
+      ctx.globalAlpha = 0.9;
+      ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+      ctx.globalAlpha = 1;
+      const ink = isLight(col) ? '#141414' : '#ffffff';
+      ctx.fillStyle = ink;
+      ctx.fillRect(cx - w / 2, cy - h / 2 + h * 0.26, w, s * 0.02);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.font = `600 ${s * 0.17}px ${MONO}`;
+      ctx.fillText('ERROR', cx, cy - h / 2 + h * 0.13);
+      ctx.font = `500 ${s * 0.36}px ${MONO}`;
+      ctx.fillText(': (', cx, cy + h * 0.14);
+    } else {
+      /* стрелка: толстый стержень и наконечник, повёрнута по направлению */
+      const rot = { up: -Math.PI / 2, right: 0, down: Math.PI / 2, left: Math.PI }[k] || 0;
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.moveTo(s * 0.5, 0);
+      ctx.lineTo(s * 0.05, -s * 0.36);
+      ctx.lineTo(s * 0.05, -s * 0.13);
+      ctx.lineTo(-s * 0.5, -s * 0.13);
+      ctx.lineTo(-s * 0.5, s * 0.13);
+      ctx.lineTo(s * 0.05, s * 0.13);
+      ctx.lineTo(s * 0.05, s * 0.36);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+  /* рамка значка в долях фото: для выбора и перетаскивания */
+  function iconBox(k, cx, cy, size) {
+    const rows = SPRITES[k];
+    if (rows) {
+      const w = (rows[0].length / rows.length) * size;
+      return k === 'cursor' ? { x: cx, y: cy, w, h: size } : { x: cx - w / 2, y: cy - size / 2, w, h: size };
+    }
+    return { x: cx - size * 0.55, y: cy - size * 0.55, w: size * 1.1, h: size * 1.1 };
+  }
+
+  /* ---------- готовые слова: детектор чувств и другие ---------- */
+  const PACKS = [
+    ['feel', 'Чувства', 'longing {0.}, nostalgia {%}, tenderness {%}, quiet joy {0.}, déjà vu {%}, butterflies {%}'],
+    ['moments', 'Моменты', 'first coffee 100% MATCH, golden hour {%}, inside joke {0.}, home {%} MATCH, sunday morning {%}'],
+    ['love', 'Любовь', 'my person 100% MATCH, miss you {%}, safe place {0.}, heartbeat ↑ {%}'],
+    ['status', 'Статусы', 'online, AFK, searching…, where am i, a way out ???, low battery'],
+    ['absurd', 'Абсурд', 'cloud: suspicious {%}, pigeon.exe, very good dog {%}, main character {0.}, NPC {%}'],
+    ['tech', 'Техника', 'person {%}, object {0.}, unknown {%}, face.{n}'],
+  ];
+  const MOOD_PACKS = {
+    warm: 'warmth {%}, soft light {0.}, hug detected, cosy {%}',
+    calm: 'calm {0.}, slow breath {%}, nothing urgent, still water {%}',
+    funny: 'laughter {%}, chaos {0.}, inside joke detected, snort.wav',
+    'miss you': 'missing: you, distance {x} km, signal lost, searching… {%}',
+    yay: 'joy {%} MATCH, yay!!!, serotonin {0.}, best day {%}',
+    sleepy: 'sleepy {%}, battery 3%, nap.exe, dreaming {0.}',
+  };
+  const moodPack = (mood) => MOOD_PACKS[String(mood || '').toLowerCase()] || (mood ? `${mood} {%} MATCH, ${mood} detected, ${mood}.exe` : MOOD_PACKS.warm);
+
+  /* ---------- сборка ---------- */
+  const api = { fromEffect, PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, ICONS, PACKS, moodPack, drawIcon, defaults, presetById, time: null, lastBoxes: [], lastInsets: [], lastIcons: [], lastDossier: null };
+  /* анимация нужна, только если сканер включён и живое сканирование не выключено */
+  api.animates = (s) => !!(s && s.scan && s.scan.on && s.scan.anim !== false);
+  api.DURATION = 5;
+
+  const clamp01 = (v) => Math.max(0, Math.min(1, v));
+  const easeOut = (v) => 1 - (1 - v) * (1 - v) * (1 - v);
+
+  /* rect: где лежит фото на карточке. Всё рисуется только внутри него.
+     api.time в секундах: кадр анимации для видео; null значит готовая картинка. */
   api.draw = function (ctx, state, CW, CH, rect) {
     const sc = state.scan;
     if (!sc || !sc.on) return;
@@ -580,14 +873,23 @@ window.Scanner = (function () {
     const u = Math.min(CW, CH) / 1080;
     const col = sc.color || '#39ff6a';
     const hudList = sc.hud || [];
+    const T = sc.anim === false ? null : api.time;
+    const seed = sc.seed || 1;
 
     let boxes = sc.boxes && sc.boxes.length ? sc.boxes : null;
     if (!boxes) {
       const A = E.analyze(ctx, W, H, r);
-      boxes = E.autoBoxes(A, Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(sc.seed || 1), W, H, sc.label === 'below' ? 0.05 : 0.02);
+      boxes = E.autoBoxes(A, Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' ? 0.05 : 0.02);
     }
     api.lastBoxes = boxes;
     const px = boxes.map((b) => ({ x: b.x * W, y: b.y * H, w: b.w * W, h: b.h * H }));
+
+    /* время появления рамок: по одной, сверху вниз по списку */
+    const step = Math.min(0.35, 2.2 / Math.max(1, px.length));
+    const appear = (i) => 0.3 + i * step;
+    const prog = (i, d = 0.25) => (T == null ? 1 : clamp01((T - appear(i)) / d));
+    const shown = px.map((_, i) => prog(i) > 0);
+    const boxesDone = appear(px.length) + 0.4;
 
     /* снимок кадра до обработки: из него берутся лупа и «чистые» рамки при линзе снаружи */
     const needSrc = (sc.lens && sc.lens !== 'none') || sc.zoom > 0 || hudList.includes('noise');
@@ -613,7 +915,7 @@ window.Scanner = (function () {
     if (hudList.includes('noise')) {
       const n = buf('scan-noise', W, H);
       n.x.drawImage(src.c, 0, 0);
-      process(n.c, n.x, 'noise', col, sc.seed || 1);
+      process(n.c, n.x, 'noise', col, seed);
       ctx.drawImage(n.c, 0, 0);
     }
 
@@ -622,9 +924,10 @@ window.Scanner = (function () {
       if (sc.lensOut) {
         const all = buf('scan-lens', W, H);
         all.x.drawImage(ctx.canvas, r.x, r.y, r.w, r.h, 0, 0, W, H);
-        process(all.c, all.x, sc.lens, col, sc.seed || 1);
+        process(all.c, all.x, sc.lens, col, seed);
         ctx.drawImage(all.c, 0, 0);
-        px.forEach((b) => {
+        px.forEach((b, i) => {
+          if (!shown[i]) return;
           ctx.save();
           clipShape(b);
           ctx.clip();
@@ -633,13 +936,15 @@ window.Scanner = (function () {
         });
       } else {
         px.forEach((b, i) => {
+          if (!shown[i]) return;
           const bx = Math.max(0, Math.floor(b.x)), by = Math.max(0, Math.floor(b.y));
           const bw = Math.min(W - bx, Math.ceil(b.w)), bh = Math.min(H - by, Math.ceil(b.h));
           if (bw < 2 || bh < 2) return;
           const p = buf('scan-piece', bw, bh);
           p.x.drawImage(src.c, bx, by, bw, bh, 0, 0, bw, bh);
-          process(p.c, p.x, sc.lens, col, (sc.seed || 1) + i);
+          process(p.c, p.x, sc.lens, col, seed + i);
           ctx.save();
+          ctx.globalAlpha = prog(i);
           clipShape(b);
           ctx.clip();
           ctx.drawImage(p.c, bx, by);
@@ -653,13 +958,13 @@ window.Scanner = (function () {
       const c = sc.font && E.fonts().find((x) => x.id === sc.font);
       return c ? { css: c.css, weight: c.weight || 400 } : { css: MONO, weight: 600 };
     })();
-    const rng = rngFor(sc.seed || 1, 999);
+    const rng = rngFor(seed, 999);
     ctx.strokeStyle = col;
     ctx.fillStyle = col;
     ctx.lineWidth = lw;
     if (sc.glow) { ctx.shadowColor = col; ctx.shadowBlur = 14 * u; }
 
-    links(ctx, sc.links || 'none', px, W, H, u, rng, lw);
+    links(ctx, sc.links || 'none', px.filter((_, i) => prog(i) >= 1), W, H, u, rng, lw);
 
     /* лупа: увеличенный кусок кадра в свободном месте и линия к рамке */
     api.lastInsets = [];
@@ -668,24 +973,35 @@ window.Scanner = (function () {
       /* сначала рамки, отмеченные рукой, остальное добирают самые крупные */
       const big = px.map((b, i) => [i, b.w * b.h]).sort((a, b) => b[1] - a[1]).map(([i]) => i).filter((i) => !flagged.includes(i));
       const picks = [...flagged, ...big].slice(0, Math.max(sc.zoom, flagged.length));
-      const insets = placeInsets(boxes, picks, W, H, u, rngFor(sc.seed || 1, 77));
+      const insets = placeInsets(boxes, picks, W, H, u, rngFor(seed, 77));
       insets.forEach((s, k) => {
+        api.lastInsets.push({ i: s.i, x: s.x / W, y: s.y / H, w: s.w / W, h: s.h / H });
+        const p = T == null ? 1 : easeOut(clamp01((T - appear(s.i) - 0.5) / 0.35));
+        if (p <= 0) return;
         const b = px[s.i];
+        ctx.save();
+        ctx.globalAlpha = p;
+        ctx.translate(s.x + s.w / 2, s.y + s.h / 2);
+        ctx.scale(0.6 + 0.4 * p, 0.6 + 0.4 * p);
+        ctx.translate(-(s.x + s.w / 2), -(s.y + s.h / 2));
         ctx.save();
         ctx.shadowBlur = 0;
         const sw = Math.max(2, Math.round(b.w)), sh = Math.max(2, Math.round(b.h));
         const z = buf('scan-zoom', s.w, s.h);
         z.x.drawImage(src.c, b.x, b.y, sw, sh, 0, 0, s.w, s.h);
-        process(z.c, z.x, sc.zoomLook, col, (sc.seed || 1) + 50 + k);
+        process(z.c, z.x, sc.zoomLook, col, seed + 50 + k);
         ctx.drawImage(z.c, s.x, s.y, s.w, s.h);
         ctx.restore();
         ctx.lineWidth = lw * 1.1;
         ctx.strokeRect(s.x, s.y, s.w, s.h);
+        ctx.restore();
+        ctx.save();
+        ctx.globalAlpha = p;
         ctx.lineWidth = lw * 0.8;
         insetLine(ctx, sc.zoomLine, b, s);
-        ctx.lineWidth = lw;
-        const cap = fill(sc.zoomText, boxes[s.i], s.i, W, H, (sc.seed || 1) + 300, state.note);
-        if (cap) {
+        ctx.restore();
+        const cap = fill(sc.zoomText, boxes[s.i], s.i, W, H, seed + 300, state.note);
+        if (cap && p >= 1) {
           ctx.save();
           ctx.shadowBlur = 0;
           const size = 15 * u;
@@ -693,21 +1009,93 @@ window.Scanner = (function () {
           textBox(ctx, cap, s.x, ty, size, col, isLight(col) ? '#0d0d0d' : '#ffffff', 6 * u, f.css, f.weight);
           ctx.restore();
         }
-        api.lastInsets.push({ i: s.i, x: s.x / W, y: s.y / H, w: s.w / W, h: s.h / H });
       });
     }
 
     const list = words(sc.text);
     px.forEach((b, i) => {
+      const p = prog(i);
+      if (p <= 0) return;
+      ctx.save();
+      if (p < 1) {
+        /* рамка наезжает и сжимается до места */
+        const k = 1 + (1 - easeOut(p)) * 0.4;
+        ctx.globalAlpha = p;
+        ctx.translate(b.x + b.w / 2, b.y + b.h / 2);
+        ctx.scale(k, k);
+        ctx.translate(-(b.x + b.w / 2), -(b.y + b.h / 2));
+      }
       ctx.strokeStyle = col;
       ctx.lineWidth = lw;
       shapePath(ctx, sc.shape, b.x, b.y, b.w, b.h, u, lw);
+      ctx.restore();
       const tpl = list.length ? list[i % list.length] : '';
-      drawLabel(ctx, sc, fill(tpl, boxes[i], i, W, H, sc.seed || 1, state.note), b.x, b.y, b.w, b.h, W, H, u, col, f);
+      /* пока рамка «думает», проценты перебираются, потом застывают */
+      const settled = T == null || T > appear(i) + 1.3;
+      let text = fill(tpl, boxes[i], i, W, H, seed, state.note, settled ? null : Math.floor(T * 12));
+      if (T != null) text = text.slice(0, Math.max(0, Math.floor((T - appear(i) - 0.15) * 32)));
+      drawLabel(ctx, sc, text, b.x, b.y, b.w, b.h, W, H, u, col, f);
     });
     ctx.shadowBlur = 0;
 
-    hud(ctx, { ...sc, hud: hudList }, W, H, u, col, rngFor(sc.seed || 1, 555), state.note);
+    hud(ctx, { ...sc, hud: hudList }, W, H, u, col, rngFor(seed, 555), state.note, T);
+
+    /* досье */
+    api.lastDossier = null;
+    const d = sc.dossier;
+    if (d && d.on) {
+      const L = dossierLayout(d, W, H, u, f, state.note, seed + 900);
+      /* размер считаем заранее на скрытом холсте, чтобы выбрать свободный угол */
+      const probe = buf('scan-measure', 4, 4);
+      const box = drawDossier(probe.x, d, L, -1e5, -1e5, u, col, f, null, 0);
+      let x0, y0;
+      if (d.x != null && d.y != null) {
+        x0 = d.x * W;
+        y0 = d.y * H;
+      } else {
+        const m = 0.05 * W;
+        const corners = [[m, H * 0.12], [W - box.w - m, H * 0.12], [m, H - box.h - H * 0.08], [W - box.w - m, H - box.h - H * 0.08]];
+        let best = Infinity;
+        corners.forEach(([cx, cy]) => {
+          let o = 0;
+          px.forEach((b) => { o += Math.max(0, Math.min(cx + box.w, b.x + b.w) - Math.max(cx, b.x)) * Math.max(0, Math.min(cy + box.h, b.y + b.h) - Math.max(cy, b.y)); });
+          if (o < best) { best = o; x0 = cx; y0 = cy; }
+        });
+      }
+      x0 = Math.max(0, Math.min(W - box.w, x0));
+      y0 = Math.max(0, Math.min(H - box.h, y0));
+      if (T == null || T >= boxesDone) {
+        ctx.save();
+        if (T != null) ctx.globalAlpha = clamp01((T - boxesDone) / 0.25);
+        drawDossier(ctx, d, L, x0, y0, u, col, f, T, boxesDone);
+        ctx.restore();
+      }
+      api.lastDossier = { x: x0 / W, y: y0 / H, w: box.w / W, h: box.h / H };
+    }
+
+    /* значки поверх всего: появляются по одному, курсор подъезжает */
+    api.lastIcons = [];
+    (sc.icons || []).forEach((ic, j) => {
+      const size = 64 * u * (ic.s || 1);
+      let cx = ic.x * W, cy = ic.y * H;
+      const b = iconBox(ic.k, cx, cy, size);
+      api.lastIcons.push({ x: b.x / W, y: b.y / H, w: b.w / W, h: b.h / H });
+      if (T != null) {
+        const p = clamp01((T - 0.6 - j * 0.35) / 0.8);
+        if (p <= 0) return;
+        if (ic.k === 'cursor') {
+          const e = easeOut(p);
+          cx += (1 - e) * W * 0.25;
+          cy += (1 - e) * H * 0.18;
+        }
+        ctx.save();
+        ctx.globalAlpha = ic.k === 'cursor' ? 1 : p;
+        drawIcon(ctx, ic.k, cx, cy, size, col);
+        ctx.restore();
+        return;
+      }
+      drawIcon(ctx, ic.k, cx, cy, size, col);
+    });
     ctx.restore();
   };
 
