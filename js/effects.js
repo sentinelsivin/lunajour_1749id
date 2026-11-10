@@ -1495,7 +1495,7 @@ window.Effects = (function () {
   }
 
   /* lastBoxes помнит рамки, показанные на карточке, чтобы их можно было сразу двигать рукой. */
-  const api = { EFFECTS, byId, usesBoxes, fonts, styleOf, lastBoxes: {} };
+  const api = { EFFECTS, byId, usesBoxes, fonts, styleOf, analyze, autoBoxes, makeRng, lastBoxes: {} };
 
   /* rect: где лежит фото на карточке. Эффект рисуется только там, рамки в долях этой области. */
   api.draw = function (ctx, state, CW, CH, rect, key = 'fx') {

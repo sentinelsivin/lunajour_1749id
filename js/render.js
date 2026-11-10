@@ -963,6 +963,7 @@
     if (s.collage && window.Collages.byId(s.collage)) {
       renderCollage(ctx, s, slots, W, H, u, paper);
       if (window.Effects) { window.Effects.draw(ctx, s, W, H); window.Effects.draw(ctx, s, W, H, null, 'fx2'); }
+      if (window.Scanner) window.Scanner.draw(ctx, s, W, H);
       drawLayers(ctx, s, assets, W, H);
       return;
     }
@@ -1011,6 +1012,7 @@
     }
 
     if (window.Effects) { window.Effects.draw(ctx, s, W, H, fxRect(s, W, H)); window.Effects.draw(ctx, s, W, H, fxRect(s, W, H), 'fx2'); }
+    if (window.Scanner) window.Scanner.draw(ctx, s, W, H, fxRect(s, W, H));
     drawNote(ctx, s, L, W, H);
     drawLayers(ctx, s, assets, W, H);
   }

@@ -3,7 +3,7 @@
   const { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, makeRng, byId } = window.Motifs;
   const Render = window.Render;
   const { RATIOS, PAPERS, FONTS, renderCard, sampleScene, layout, slotFrame, canvas, clearMasks, paintPaper, drawCover, luminance } = window.Render;
-  const { Camera, Export, Store, Templates, I18n, Collages } = window;
+  const { Camera, Export, Store, Templates, I18n, Collages, Scanner } = window;
   const { t } = I18n;
 
   const $ = (id) => document.getElementById(id);
@@ -21,6 +21,7 @@
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
     fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [] },
     fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [] },
+    scan: Scanner.defaults(),
     adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
   });
@@ -214,6 +215,22 @@
 
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
+    if (scanMode()) {
+      const b = state.scan.boxes[selectedScan];
+      if (!b) return;
+      const r = window.Render.fxRect(state, card.width, card.height);
+      const x = r.x + b.x * r.w, y = r.y + b.y * r.h, w = b.w * r.w, h = b.h * r.h;
+      ctx.save();
+      ctx.strokeStyle = '#6c9fe0';
+      ctx.lineWidth = 2.5;
+      ctx.setLineDash([8, 6]);
+      ctx.strokeRect(x - 5, y - 5, w + 10, h + 10);
+      ctx.setLineDash([]);
+      ctx.fillStyle = '#6c9fe0';
+      ctx.fillRect(x + w - 7, y + h - 7, 14, 14);
+      ctx.restore();
+      return;
+    }
     if (tab === 'layers') {
       /* в режиме выбора нескольких обводим все отмеченные, иначе один выбранный */
       const list = multiMode ? [...multi] : [selectedLayer];
@@ -625,6 +642,7 @@
     state.note = { ...defaults().note, ...draft.state.note };
     state.fx = { ...defaults().fx, ...(draft.state.fx || {}) };
     state.fx2 = { ...defaults().fx2, ...(draft.state.fx2 || {}) };
+    state.scan = { ...Scanner.defaults(), ...(draft.state.scan || {}) };
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];
@@ -819,7 +837,7 @@
 
   /* ---------- ручная расстановка ---------- */
   const handMode = () => tab === 'motif' && !!byId(state.motif).usesPieces;
-  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || fxBoxMode() || handMode() || (tab === 'collage' && !!collageTpl()));
+  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || fxBoxMode() || scanMode() || handMode() || (tab === 'collage' && !!collageTpl()));
 
   function syncPieceTools() {
     const p = state.pieces[selected];
@@ -1491,29 +1509,30 @@
       syncFx();
       update();
     };
-    $('fxFind').onclick = findThings;
+    $('fxFind').onclick = () => findThings();
   }
 
-  /* Ищем людей и вещи на чистой карточке, без эффекта и стикеров сверху. */
-  async function findThings() {
-    const btn = $('fxFind');
+  /* Ищем людей и вещи на чистой карточке, без эффекта, сканера и стикеров сверху. */
+  async function findThings(btnId = 'fxFind', put) {
+    const btn = $(btnId);
     btn.disabled = true;
     btn.textContent = t('Ищу…');
     try {
       await loadDetector();
       const c = canvas(card.width, card.height);
-      renderCard(c.getContext('2d'), { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, layers: [] }, slots, assets);
+      renderCard(c.getContext('2d'), { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false }, layers: [] }, slots, assets);
       const found = await detector.detect(c, 40, 0.3);
       const r = window.Render.fxRect(state, c.width, c.height);
       if (!found.length) return toast(t('Ничего не нашлось. Поставь рамки пальцем.'));
       const name = (k) => k.charAt(0).toUpperCase() + k.slice(1);
-      state[fxSlot] = {
-        ...state[fxSlot],
-        boxes: found.map(({ bbox: [x, y, w, h], class: k, score }) => ({ x: (x - r.x) / r.w, y: (y - r.y) / r.h, w: w / r.w, h: h / r.h, label: name(k), score }))
-          .filter((b) => b.x < 1 && b.y < 1 && b.x + b.w > 0 && b.y + b.h > 0),
-      };
-      selectedBox = -1;
-      syncFx();
+      const boxes = found.map(({ bbox: [x, y, w, h], class: k, score }) => ({ x: (x - r.x) / r.w, y: (y - r.y) / r.h, w: w / r.w, h: h / r.h, label: name(k), score }))
+        .filter((b) => b.x < 1 && b.y < 1 && b.x + b.w > 0 && b.y + b.h > 0);
+      if (put) put(boxes);
+      else {
+        state[fxSlot] = { ...state[fxSlot], boxes };
+        selectedBox = -1;
+        syncFx();
+      }
       update();
       toast(`${t('Нашлось')}: ${found.length}`);
     } catch (err) {
@@ -1523,6 +1542,191 @@
       btn.disabled = false;
       btn.textContent = t('Найти людей и вещи');
     }
+  }
+
+  /* ---------- сканер: рамки, подписи, линза, лупа, связи, интерфейс камеры ---------- */
+  let selectedScan = -1;
+  const scanMode = () => tab === 'scan' && !!state.scan.on;
+  const setScan = (patch) => { state.scan = { ...state.scan, ...patch }; syncScan(); update(); };
+
+  function syncScan() {
+    const sc = state.scan;
+    const grid = $('scanGrid');
+    if (!grid.childElementCount) {
+      [{ id: '', name: 'Выключен' }, ...Scanner.PRESETS].forEach((p, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'thumb';
+        b.dataset.scan = p.id;
+        const c = canvas(120, 150);
+        b.append(c, document.createElement('span'));
+        b.onclick = () => {
+          selectedScan = -1;
+          if (!p.id) setScan({ on: false, preset: '' });
+          else {
+            /* свои рамки и сид остаются: набор меняет только вид */
+            const keep = { boxes: state.scan.boxes, seed: state.scan.seed };
+            state.scan = { ...Scanner.defaults(), ...p.set, ...keep, on: true, preset: p.id };
+            syncScan();
+            update();
+          }
+          syncGrab();
+        };
+        grid.append(b);
+        /* превью рисуются по одной, чтобы вкладка открывалась сразу */
+        setTimeout(() => {
+          const x = c.getContext('2d');
+          drawCover(x, sample, sample.width, sample.height, c.width, c.height);
+          if (p.id) Scanner.draw(x, { scan: { ...Scanner.defaults(), ...p.set, on: true, seed: 4 }, note: state.note }, c.width, c.height);
+        }, 40 * i);
+      });
+    }
+    grid.querySelectorAll('[data-scan]').forEach((b) => {
+      const p = Scanner.presetById(b.dataset.scan);
+      b.classList.toggle('on', sc.on ? b.dataset.scan === sc.preset : !b.dataset.scan);
+      b.querySelector('span').textContent = t(p ? p.name : 'Выключен');
+    });
+    $('scanTools').hidden = !sc.on;
+    if (!sc.on) return;
+
+    const choose = (id, items, key) => {
+      const el = $(id);
+      el.replaceChildren();
+      items.forEach(([v, name]) => chip(el, t(name), sc[key] === v, () => setScan({ [key]: v })));
+    };
+    swatches($('scanSwatches'), FX_COLORS, sc.color, (v) => setScan({ color: v }));
+    choose('scanShapes', Scanner.SHAPES, 'shape');
+    choose('scanLabels', Scanner.LABELS, 'label');
+    choose('scanLenses', Scanner.LENSES, 'lens');
+    choose('scanLooks', Scanner.LOOKS, 'zoomLook');
+    choose('scanZoomLines', Scanner.ZOOM_LINES, 'zoomLine');
+    choose('scanLinks', Scanner.LINKS, 'links');
+    choose('scanZoom', [[0, 'Нет'], [1, '1'], [2, '2'], [3, '3']], 'zoom');
+    $('scanZoomTools').hidden = !sc.zoom;
+
+    const vars = $('scanVars');
+    vars.replaceChildren();
+    Scanner.VARS.forEach((v) => chip(vars, v, false, () => setScan({ text: `${sc.text}${v}` })));
+
+    const fonts = $('scanFonts');
+    fonts.replaceChildren();
+    chip(fonts, t('Моноширинный'), !sc.font, () => setScan({ font: '' }));
+    Effects.fonts().forEach((f) => { chip(fonts, t(f.name), f.id === sc.font, () => setScan({ font: f.id })).style.fontFamily = f.css; });
+
+    const hud = $('scanHud');
+    hud.replaceChildren();
+    Scanner.HUD.forEach(([v, name]) => chip(hud, t(name), sc.hud.includes(v), () => {
+      setScan({ hud: sc.hud.includes(v) ? sc.hud.filter((x) => x !== v) : [...sc.hud, v] });
+    }));
+    $('scanCamField').hidden = !sc.hud.includes('cam');
+    $('scanStatusField').hidden = !sc.hud.includes('status');
+
+    document.querySelectorAll('[data-bind^="scan."]').forEach((el) => {
+      const v = getPath(el.dataset.bind);
+      if (el.type === 'checkbox') el.checked = !!v;
+      else if (document.activeElement !== el) el.value = v;
+    });
+    const own = sc.boxes[selectedScan];
+    $('scanBoxDelete').disabled = !own;
+    $('scanZoomPick').disabled = !own;
+    $('scanZoomPick').textContent = t(own && own.zoom ? 'Убрать лупу' : 'Лупа на эту рамку');
+    $('scanBoxAuto').disabled = !sc.boxes.length;
+  }
+
+  function bindScan() {
+    let drag = null;
+    /* в доли области фото, где лежит сканер */
+    const toRect = (e) => {
+      const box = card.getBoundingClientRect();
+      const r = window.Render.fxRect(state, card.width, card.height);
+      const px = ((e.clientX - box.left) / box.width) * card.width;
+      const py = ((e.clientY - box.top) / box.height) * card.height;
+      return [(px - r.x) / r.w, (py - r.y) / r.h, r.w / r.h];
+    };
+    /* первая правка превращает рамки «сами» в свои, чтобы их можно было двигать */
+    const own = () => {
+      if (!state.scan.boxes.length) state.scan.boxes = (Scanner.lastBoxes || []).map((b) => ({ ...b }));
+      return state.scan.boxes;
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (!scanMode()) return;
+      const [fx, fy, aspect] = toRect(e);
+      if (fx < 0 || fy < 0 || fx > 1 || fy > 1) return;
+      /* сначала увеличенные куски: их можно перетащить в другое место */
+      const inset = [...(Scanner.lastInsets || [])].reverse().find((s) => fx >= s.x && fx <= s.x + s.w && fy >= s.y && fy <= s.y + s.h);
+      const list = own();
+      if (inset && list[inset.i]) {
+        selectedScan = inset.i;
+        drag = { id: e.pointerId, inset: true, fx, fy, start: { ...inset } };
+      } else {
+        const gx = 0.03;
+        const gy = gx * aspect;
+        let hit = -1;
+        let mode = 'move';
+        for (let i = list.length - 1; i >= 0; i--) {
+          const b = list[i];
+          if (Math.abs(fx - (b.x + b.w)) < gx && Math.abs(fy - (b.y + b.h)) < gy) { hit = i; mode = 'size'; break; }
+          if (fx >= b.x && fx <= b.x + b.w && fy >= b.y && fy <= b.y + b.h) { hit = i; break; }
+        }
+        if (hit < 0) {
+          const w = 0.16;
+          const h = 0.16 * aspect * 1.2;
+          list.push({ x: clamp(fx - w / 2, 0, 1 - w), y: clamp(fy - h / 2, 0, 1 - h), w, h });
+          hit = list.length - 1;
+        }
+        selectedScan = hit;
+        drag = { id: e.pointerId, mode, fx, fy, start: { ...list[hit] } };
+      }
+      try { card.setPointerCapture(e.pointerId); } catch {}
+      syncScan();
+      update();
+    });
+    card.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id || !scanMode()) return;
+      const [fx, fy] = toRect(e);
+      const m = state.scan.boxes[selectedScan];
+      if (!m) return;
+      const dx = fx - drag.fx;
+      const dy = fy - drag.fy;
+      if (drag.inset) {
+        m.zx = clamp(drag.start.x + dx, 0, 1 - drag.start.w);
+        m.zy = clamp(drag.start.y + dy, 0, 1 - drag.start.h);
+      } else if (drag.mode === 'size') {
+        m.w = clamp(drag.start.w + dx, 0.02, 1 - m.x);
+        m.h = clamp(drag.start.h + dy, 0.02, 1 - m.y);
+      } else {
+        m.x = clamp(drag.start.x + dx, 0, 1 - m.w);
+        m.y = clamp(drag.start.y + dy, 0, 1 - m.h);
+      }
+      update();
+    });
+    const end = (e) => { if (drag && e.pointerId === drag.id) drag = null; };
+    card.addEventListener('pointerup', end);
+    card.addEventListener('pointercancel', end);
+
+    $('scanShuffle').onclick = () => {
+      /* новые случайные числа, а у лупы ещё и новое место */
+      state.scan.boxes.forEach((b) => { delete b.zx; delete b.zy; });
+      setScan({ seed: Math.floor(Math.random() * 1e6) });
+    };
+    $('scanBoxDelete').onclick = () => {
+      if (!state.scan.boxes[selectedScan]) return;
+      state.scan.boxes.splice(selectedScan, 1);
+      selectedScan = -1;
+      syncScan();
+      update();
+    };
+    $('scanBoxAuto').onclick = () => { selectedScan = -1; setScan({ boxes: [] }); };
+    /* лупа на выбранную рамку: отмеченные рамки идут в лупу первыми */
+    $('scanZoomPick').onclick = () => {
+      const b = state.scan.boxes[selectedScan];
+      if (!b) return;
+      b.zoom = !b.zoom;
+      if (!b.zoom) { delete b.zx; delete b.zy; }
+      const flagged = state.scan.boxes.filter((x) => x.zoom).length;
+      setScan({ zoom: flagged ? Math.min(3, Math.max(flagged, state.scan.zoom)) : state.scan.zoom });
+    };
+    $('scanFind').onclick = () => findThings('scanFind', (boxes) => { selectedScan = -1; setScan({ boxes }); });
   }
 
   /* ---------- стикеры и текст поверх карточки ---------- */
@@ -2352,6 +2556,7 @@
     bindPieces();
     bindMarks();
     bindFx();
+    bindScan();
     bindLayers();
     bindHistory();
     bindFullscreen();
@@ -2378,11 +2583,13 @@
     syncGrab();
     if (next === 'layers') syncLayerTools();
     if (next === 'fx') syncFx();
+    if (next === 'scan') syncScan();
     invalidate();
   }
 
   function syncAll() {
     syncFx();
+    syncScan();
     syncStickers();
     syncInputs();
     syncMotifs();

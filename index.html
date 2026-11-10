@@ -85,6 +85,7 @@
       <button type="button" role="tab" data-tab="photo" data-g="photo">Кадр</button>
       <button type="button" role="tab" data-tab="color" data-g="photo">Цвет</button>
       <button type="button" role="tab" data-tab="fx" data-g="photo">Эффекты</button>
+      <button type="button" role="tab" data-tab="scan" data-g="photo">Сканер</button>
       <button type="button" role="tab" data-tab="layers" data-g="over">Стикеры</button>
       <button type="button" role="tab" data-tab="note" data-g="over">Подпись</button>
       <button type="button" role="tab" data-tab="paper" data-g="bg">Бумага</button>
@@ -290,6 +291,48 @@
         </div>
       </section>
 
+      <section class="panel" data-panel="scan" hidden>
+        <div class="thumbs" id="scanGrid"></div>
+        <div class="group" id="scanTools" hidden>
+          <div class="group"><span class="label">Цвет</span><div class="swatches" id="scanSwatches"></div></div>
+          <div class="group"><span class="label">Рамки</span><div class="chips" id="scanShapes"></div></div>
+          <label class="slider">Сколько рамок<input id="scanAmount" type="range" min="0.2" max="2.5" step="0.05" data-bind="scan.amount"></label>
+          <label class="slider">Толщина линий<input type="range" min="0.4" max="3" step="0.05" data-bind="scan.line"></label>
+          <label class="check"><input type="checkbox" data-bind="scan.glow">Свечение</label>
+          <p class="hint">Нажми на фото, чтобы поставить рамку. Рамку можно двигать, а за правый нижний угол тянуть. Увеличенный кусок тоже можно перетащить.</p>
+          <div class="row">
+            <button class="btn small" id="scanFind" type="button">Найти людей и вещи</button>
+            <button class="btn small" id="scanShuffle" type="button">Перемешать</button>
+          </div>
+          <div class="row">
+            <button class="btn small" id="scanZoomPick" type="button">Лупа на эту рамку</button>
+            <button class="btn small" id="scanBoxDelete" type="button">Удалить</button>
+            <button class="btn small" id="scanBoxAuto" type="button">Сами</button>
+          </div>
+
+          <div class="group"><span class="label">Подписи</span><div class="chips" id="scanLabels"></div></div>
+          <label class="field">Текст подписей<input id="scanText" type="text" maxlength="300" data-bind="scan.text" placeholder="person {%}, eye.{n}, #{hex}"></label>
+          <p class="hint">Через запятую: подписи пойдут по очереди. Нажми на подстановку, чтобы добавить её в текст.</p>
+          <div class="chips" id="scanVars"></div>
+          <div class="group"><span class="label">Шрифт</span><div class="chips" id="scanFonts"></div></div>
+
+          <div class="group"><span class="label">Линза</span><div class="chips" id="scanLenses"></div></div>
+          <label class="check"><input type="checkbox" data-bind="scan.lensOut">Линза снаружи рамок, а внутри фото как есть</label>
+
+          <div class="group"><span class="label">Лупа</span><div class="chips" id="scanZoom"></div></div>
+          <div class="group" id="scanZoomTools">
+            <span class="label">Вид</span><div class="chips" id="scanLooks"></div>
+            <span class="label">Линия к рамке</span><div class="chips" id="scanZoomLines"></div>
+            <label class="field">Подпись лупы<input type="text" maxlength="60" data-bind="scan.zoomText" placeholder="#{hex}"></label>
+          </div>
+
+          <div class="group"><span class="label">Связи между рамками</span><div class="chips" id="scanLinks"></div></div>
+
+          <div class="group"><span class="label">Интерфейс камеры</span><div class="chips" id="scanHud"></div></div>
+          <label class="field" id="scanCamField">Название камеры<input type="text" maxlength="30" data-bind="scan.cam" placeholder="CAM#3"></label>
+          <label class="field" id="scanStatusField">Статусы внизу<input type="text" maxlength="200" data-bind="scan.status" placeholder="Biometric identification ON"></label>
+        </div>
+      </section>
       <section class="panel" data-panel="note" hidden>
         <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
         <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
@@ -351,6 +394,7 @@
 <script src="js/motifs.js"></script>
 <script src="js/collages.js"></script>
 <script src="js/effects.js"></script>
+<script src="js/scanner.js"></script>
 <script src="js/render.js"></script>
 <script src="js/decor.js"></script>
 <script src="js/templates.js"></script>
