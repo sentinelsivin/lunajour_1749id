@@ -234,7 +234,6 @@ window.I18n = (function () {
     'Куда отправить карточку': 'Where should the card go?',
     'Закрыть': 'Close',
     'Сохранить карточку': 'Save card',
-    'Сохранить для сторис 9:16': 'Save for Stories 9:16',
     'Сохранить видео 5 с': 'Save 5 s video',
     'Сохранить видео': 'Save video',
     'Коллаж': 'Collage',

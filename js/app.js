@@ -2819,7 +2819,7 @@
 
   /* ---------- экспорт ---------- */
   function exportButtons(disabled) {
-    ['saveCard', 'saveStory', 'saveVideo', 'shareCard'].forEach((id) => { $(id).disabled = disabled; });
+    ['saveCard', 'saveVideo', 'shareCard'].forEach((id) => { $(id).disabled = disabled; });
   }
 
   async function runExport(make, label) {
@@ -2837,7 +2837,7 @@
   }
 
   async function shareCard() {
-    const blob = await Export.storyBlob(state, slots, assets);
+    const blob = await Export.cardBlob(state, slots, assets);
     const file = new File([blob], 'lunajour.png', { type: 'image/png' });
     try {
       await navigator.share({ files: [file] });
@@ -2934,7 +2934,6 @@
     };
     $('exportClose').onclick = () => $('exportSheet').close();
     $('saveCard').onclick = () => runExport(() => Export.cardBlob(state, slots, assets), 'card');
-    $('saveStory').onclick = () => runExport(() => Export.storyBlob(state, slots, assets), 'story');
     $('saveVideo').onclick = () => runExport(() => Export.videoBlob(state, slots, assets, (p) => {
       $('exportStatus').textContent = `${t('Записываю видео')}: ${Math.round(p * 100)}%`;
     }), 'video');

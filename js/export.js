@@ -1,7 +1,6 @@
-/* Экспорт: PNG карточки, кадр для сторис и пятисекундное видео. */
+/* Экспорт: PNG карточки и видео. */
 (function () {
-  const { RATIOS, canvas, renderCard, drawCover } = window.Render;
-  const STORY = [1080, 1920];
+  const { RATIOS, canvas, renderCard } = window.Render;
   const CLIP_MS = 5000;
 
   function fullCard(s, slots, assets, width) {
@@ -12,51 +11,12 @@
     return c;
   }
 
-  /* Размытый фон без ctx.filter: сжимаем снимок почти в точку и растягиваем обратно. */
-  function backdrop(card, W, H) {
-    const tiny = canvas(18, 32);
-    drawCover(tiny.getContext('2d'), card, card.width, card.height, 18, 32);
-    const c = canvas(W, H);
-    const x = c.getContext('2d');
-    x.imageSmoothingQuality = 'high';
-    x.drawImage(tiny, 0, 0, W, H);
-    x.fillStyle = 'rgba(0,0,0,.28)';
-    x.fillRect(0, 0, W, H);
-    return c;
-  }
-
-  function placeCard(ctx, card, W, H, motion) {
-    const k = Math.min((W * 0.84) / card.width, (H * 0.8) / card.height);
-    const w = card.width * k;
-    const h = card.height * k;
-    const m = motion || { squeeze: 1, tilt: 0, lift: 0 };
-    ctx.save();
-    ctx.translate(W / 2, H / 2 + m.lift * H);
-    ctx.rotate(m.tilt);
-    ctx.scale(m.squeeze, 1);
-    ctx.shadowColor = 'rgba(0,0,0,.45)';
-    ctx.shadowBlur = W * 0.05;
-    ctx.shadowOffsetY = W * 0.025;
-    ctx.drawImage(card, -w / 2, -h / 2, w, h);
-    ctx.restore();
-  }
-
   function toBlob(c) {
     return new Promise((r) => c.toBlob(r, 'image/png'));
   }
 
   function cardBlob(s, slots, assets) {
     return toBlob(fullCard(s, slots, assets));
-  }
-
-  function storyBlob(s, slots, assets) {
-    const card = fullCard(s, slots, assets);
-    if (s.ratio === '9:16') return toBlob(card);
-    const c = canvas(...STORY);
-    const x = c.getContext('2d');
-    x.drawImage(backdrop(card, ...STORY), 0, 0);
-    placeCard(x, card, ...STORY);
-    return toBlob(c);
   }
 
   /* Видео: сама карточка во весь кадр, в её пропорциях, без фона и покачивания.
@@ -143,5 +103,5 @@
     return blob.type.includes('mp4') ? 'mp4' : blob.type.includes('webm') ? 'webm' : 'png';
   }
 
-  window.Export = { cardBlob, storyBlob, videoBlob, save, extension };
+  window.Export = { cardBlob, videoBlob, save, extension };
 })();
