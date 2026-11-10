@@ -59,17 +59,19 @@
     return toBlob(c);
   }
 
-  /* Видео: карточка покачивается на размытом фоне. Клип внутри карточки продолжает играть. */
+  /* Видео: сама карточка во весь кадр, в её пропорциях, без фона и покачивания.
+     Клип внутри карточки продолжает играть, сканер оживает. Стороны чётные: так видео принимают все кодеки. */
   async function videoBlob(s, slots, assets, onProgress) {
+    const [RW, RH] = RATIOS[s.ratio];
     const W = 720;
-    const H = 1280;
+    const H = Math.round((W * RH) / RW / 2) * 2;
     const moving = slots.some((slot) => slot.src && slot.src.kind === 'video');
     const c = canvas(W, H);
     const x = c.getContext('2d');
-    const still = fullCard(s, slots, assets, 640);
-    const back = backdrop(still, W, H);
+    const still = canvas(W, H);
+    renderCard(still.getContext('2d'), s, slots, assets);
 
-    /* Длина ролика: целиком самое длинное загруженное видео, но не меньше одного покачивания.
+    /* Длина ролика: целиком самое длинное загруженное видео, но не меньше пяти секунд.
        У клипа, снятого в браузере, длина бывает неизвестна (Infinity), такой не считаем. */
     const longest = Math.max(0, ...slots
       .filter((slot) => slot.src && slot.src.kind === 'video')
@@ -94,8 +96,6 @@
     const finished = new Promise((r) => { rec.onstop = r; });
 
     function frame(t) {
-      const a = (t / CLIP_MS) * Math.PI * 2;
-      x.drawImage(back, 0, 0);
       /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
       const live = window.Scanner && window.Scanner.animates(s);
       if (moving || live) {
@@ -106,11 +106,8 @@
         renderCard(still.getContext('2d'), s, slots, assets);
         if (window.Scanner) { window.Scanner.time = null; window.Scanner.clock = null; }
       }
-      placeCard(x, still, W, H, {
-        squeeze: Math.cos(Math.sin(a) * 0.42),
-        tilt: Math.sin(a * 2) * 0.022,
-        lift: Math.sin(a) * 0.012,
-      });
+      /* рисуем кадр каждый раз, даже неподвижный: иначе запись может пропустить кадры */
+      x.drawImage(still, 0, 0);
     }
 
     frame(0);
