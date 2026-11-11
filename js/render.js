@@ -1072,7 +1072,7 @@
   /* Наклейка: картинку рисуем по кругу со сдвигом, перекрашенную в белый, — получается обводка по контуру;
      сверху сама картинка и мягкий блик в верхней части. Результат кешируем: жесты перерисовывают его часто. */
   const dieCache = lruCache(16);
-  function dieCut(art, w, h, stroke, key) {
+  function dieCut(art, w, h, stroke, key, color = '#ffffff') {
     return dieCache(key, () => {
       const pad = Math.ceil(stroke + 2);
       const c = canvas(w + pad * 2, h + pad * 2);
@@ -1084,7 +1084,7 @@
       }
       x.drawImage(art, pad, pad, w, h);
       x.globalCompositeOperation = 'source-in';
-      x.fillStyle = '#ffffff';
+      x.fillStyle = color || '#ffffff';
       x.fillRect(0, 0, c.width, c.height);
       x.globalCompositeOperation = 'source-over';
       x.drawImage(art, pad, pad, w, h);
@@ -1307,8 +1307,10 @@
       ctx.translate(l.x * W, l.y * H);
       ctx.rotate(l.rot || 0);
       if (l.flip) ctx.scale(-1, 1);
+      ctx.globalAlpha = l.opacity ?? 1;
       if (l.type === 'text') {
         const f = layerFont(l);
+        layerShadow(ctx, l, 'none', b.size * 1.6);
         if (l.style === 'plaque') {
           ctx.fillStyle = l.bg || '#ffffff';
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
@@ -1327,32 +1329,105 @@
           ctx.fillStyle = l.color || '#111111';
           ctx.fillText(ln, 0, y);
         });
-      } else if (l.die) {
-        /* эффект наклейки: белая обводка по контуру, блик сверху и тень под всей наклейкой */
-        const art = b.img || (l.vec ? vectorBitmap(l.vec, l.color || '#ff1a1a', Math.round(b.size)) : emojiBitmap(l.emoji, b.size));
-        const bmp = dieCut(art, b.w, b.h, (l.dieW ?? 0.05) * b.size, `${l.img || l.emoji || l.vec + l.color}|${Math.round(b.w)}|${Math.round(b.h)}|${l.dieW ?? 0.05}`);
-        ctx.shadowColor = 'rgba(0,0,0,.32)';
-        ctx.shadowBlur = b.size * 0.05;
-        ctx.shadowOffsetY = b.size * 0.03;
+      } else if (l.die || (l.fx && l.fx.id)) {
+        /* стикер с эффектом или эффектом наклейки рисуется картинкой: эффект только внутри контура,
+           потом обводка по контуру с бликом */
+        const key = `${l.img || l.emoji || l.vec + l.color}|${Math.round(b.w)}|${Math.round(b.h)}`;
+        let art = stickerArt(l, b);
+        if (l.fx && l.fx.id) art = stickerFx(art, l.fx, `${key}|${l.fx.id}|${l.fx.amount ?? 1}|${l.fx.seed ?? 1}`);
+        const bmp = l.die
+          ? dieCut(art, b.w, b.h, (l.dieW ?? 0.05) * b.size, `${key}|${l.dieW ?? 0.05}|${l.dieColor || '#ffffff'}|${l.fx ? l.fx.id + (l.fx.amount ?? 1) + (l.fx.seed ?? 1) : ''}`, l.dieColor)
+          : art;
+        layerShadow(ctx, l, l.die ? 'die' : b.img ? 'img' : l.emoji ? 'emoji' : 'none', b.size);
         ctx.drawImage(bmp, -bmp.width / 2, -bmp.height / 2);
       } else if (b.img) {
         /* своя картинка: мягкая тень, как у наклейки */
-        ctx.shadowColor = 'rgba(0,0,0,.28)';
-        ctx.shadowBlur = b.size * 0.04;
-        ctx.shadowOffsetY = b.size * 0.02;
+        layerShadow(ctx, l, 'img', b.size);
         ctx.drawImage(b.img, -b.w / 2, -b.h / 2, b.w, b.h);
       } else if (l.vec) {
+        layerShadow(ctx, l, 'none', b.size);
         drawVector(ctx, l.vec, 0, 0, b.size, l.color || '#ff1a1a');
       } else if (l.emoji) {
-        ctx.shadowColor = 'rgba(0,0,0,.22)';
-        ctx.shadowBlur = b.size * 0.05;
-        ctx.shadowOffsetY = b.size * 0.025;
+        layerShadow(ctx, l, 'emoji', b.size);
         ctx.font = `${b.size * 0.86}px ${EMOJI_FONT}`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.fillText(l.emoji, 0, b.size * 0.04);
       }
       ctx.restore();
+    });
+  }
+
+  /* Тень стикера. «Как было» у каждого вида своя (у значков её нет), можно выключить или сделать мягкой либо резкой. */
+  const SHADOWS = {
+    die: [0.32, 0.05, 0.03], img: [0.28, 0.04, 0.02], emoji: [0.22, 0.05, 0.025], none: null,
+    soft: [0.3, 0.09, 0.03], hard: [0.55, 0.008, 0.045],
+  };
+  function layerShadow(ctx, l, auto, size) {
+    const mode = l.shadow || 'auto';
+    const p = mode === 'auto' ? SHADOWS[auto] : mode === 'none' ? null : SHADOWS[mode];
+    if (!p) return;
+    ctx.shadowColor = `rgba(0,0,0,${p[0]})`;
+    ctx.shadowBlur = size * p[1];
+    ctx.shadowOffsetY = size * p[2];
+    if (mode === 'hard') ctx.shadowOffsetX = size * p[2] * 0.6;
+  }
+
+  /* картинка стикера ровно в его размер: своя картинка, значок или эмодзи */
+  function stickerArt(l, b) {
+    if (b.img) {
+      const c = canvas(Math.max(1, Math.round(b.w)), Math.max(1, Math.round(b.h)));
+      c.getContext('2d').drawImage(b.img, 0, 0, c.width, c.height);
+      return c;
+    }
+    if (l.vec) {
+      const n = Math.max(1, Math.round(b.size));
+      const c = canvas(n, n);
+      drawVector(c.getContext('2d'), l.vec, n / 2, n / 2, n, l.color || '#ff1a1a');
+      return c;
+    }
+    return emojiBitmap(l.emoji, b.size);
+  }
+
+  /* Эффекты для стикера. Простые (ч/б, два цвета, негатив) красят пиксели сами, остальные берутся из «Эффектов»
+     с подходящим видом. style: вид эффекта, который хорошо смотрится на маленькой картинке. */
+  const STICKER_FX = [
+    { id: 'bw', name: 'Ч/б' }, { id: 'duo', name: 'Два цвета' }, { id: 'invert', name: 'Негатив' },
+    { id: 'pixelate', name: 'Пикселизация', style: 'all' }, { id: 'lego', name: 'Лего', style: 'photo' },
+    { id: 'mosaic', name: 'Клетки', style: 'paper' }, { id: 'ascii', name: 'ASCII', style: 'full' },
+    { id: 'hatch', name: 'Штриховка', style: 'diag' }, { id: 'glitch', name: 'Глитч', style: 'shift' },
+    { id: 'blocks', name: 'Пиксельные блоки', style: 'plain' },
+  ];
+  const stickerFxCache = lruCache(32);
+  function stickerFx(art, fx, key) {
+    return stickerFxCache(key, () => {
+      const W = art.width, H = art.height;
+      const c = canvas(W, H);
+      const x = c.getContext('2d', { willReadFrequently: true });
+      x.drawImage(art, 0, 0);
+      const def = STICKER_FX.find((f) => f.id === fx.id);
+      if (fx.id === 'bw' || fx.id === 'duo' || fx.id === 'invert') {
+        const img = x.getImageData(0, 0, W, H);
+        const d = img.data;
+        /* два цвета: тени тёмно-синие, света розовые; сила сдвигает границу */
+        const k = fx.amount ?? 1;
+        for (let i = 0; i < d.length; i += 4) {
+          const v = Math.min(1, Math.max(0, ((0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]) / 255 - 0.5) * k + 0.5));
+          if (fx.id === 'bw') d[i] = d[i + 1] = d[i + 2] = v * 255;
+          else if (fx.id === 'invert') { d[i] = 255 - d[i]; d[i + 1] = 255 - d[i + 1]; d[i + 2] = 255 - d[i + 2]; }
+          else { d[i] = 31 + v * (255 - 31); d[i + 1] = 38 + v * (158 - 38); d[i + 2] = 138 + v * (199 - 138); }
+        }
+        x.putImageData(img, 0, 0);
+      } else if (def && window.Effects) {
+        /* клетки эффекта считаются от размера стикера: около дюжины клеток поперёк при силе 1 */
+        const unit = Math.max(W, H) * 2.7;
+        window.Effects.draw(x, { fx: { id: fx.id, style: def.style, amount: fx.amount ?? 1, seed: fx.seed ?? 1, color: '', text: '', boxes: [], mask: 'all' }, scan: { on: false } }, unit, unit, { x: 0, y: 0, w: W, h: H });
+      }
+      /* эффект остаётся только там, где есть сам стикер */
+      x.globalCompositeOperation = 'destination-in';
+      x.drawImage(art, 0, 0);
+      x.globalCompositeOperation = 'source-over';
+      return c;
     });
   }
 
@@ -1386,7 +1461,7 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, VECTORS, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
+    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
   };
 })();

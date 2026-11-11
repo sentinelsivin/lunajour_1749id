@@ -16,9 +16,10 @@
 
   const today = () => new Date().toLocaleDateString('sv-SE');
   const defaults = () => ({
-    motif: 'star-flock', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
+    /* новая карточка: фото на весь лист и без фигуры; фигуру и бумагу добавляют сами */
+    motif: 'none', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
-    paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'bottom', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
+    paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'photo', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
     fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     scan: Scanner.defaults(),
@@ -281,6 +282,16 @@
       return;
     }
     if (tab === 'layers') {
+      if (snapGuides.x || snapGuides.y) {
+        ctx.save();
+        ctx.strokeStyle = '#f472b6';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        if (snapGuides.x) { ctx.moveTo(card.width / 2, 0); ctx.lineTo(card.width / 2, card.height); }
+        if (snapGuides.y) { ctx.moveTo(0, card.height / 2); ctx.lineTo(card.width, card.height / 2); }
+        ctx.stroke();
+        ctx.restore();
+      }
       /* в режиме выбора нескольких обводим все отмеченные, иначе один выбранный */
       const list = multiMode ? [...multi] : [selectedLayer];
       list.forEach((i) => {
@@ -732,6 +743,263 @@
     resetHistory();
   }
 
+  /* ---------- недавние, мои стили, начать заново ---------- */
+  /* последние выбранные фигуры, эффекты и стикеры: раздел «Недавние» в начале каждого каталога */
+  let recent = {};
+  function remember(kind, id) {
+    if (!id || id === 'none') return;
+    recent = { ...recent, [kind]: [id, ...(recent[kind] || []).filter((x) => x !== id)].slice(0, 12) };
+    Store.set('recent', recent);
+  }
+  const recentOf = (kind) => recent[kind] || [];
+
+  /* Свой стиль: всё оформление карточки без снимков. Рамки вокруг людей, кисть и рамки сканера
+     привязаны к конкретному фото, поэтому в стиль не идут, свои картинки-стикеры тоже. */
+  let myStyles = [];
+  function styleState() {
+    const s = JSON.parse(JSON.stringify(state));
+    s.layers = s.layers.filter((l) => !l.img);
+    s.marks = {};
+    s.fx = { ...s.fx, boxes: [], brush: [] };
+    s.fx2 = { ...s.fx2, boxes: [], brush: [] };
+    s.scan = { ...s.scan, boxes: [] };
+    delete s.note.date;
+    return s;
+  }
+  function styleThumb() {
+    const [W, H] = RATIOS[state.ratio];
+    const c = canvas(120, Math.round((120 * H) / W));
+    try { renderCard(c.getContext('2d'), state, slots, assets); } catch { /* миниатюра просто будет пустой */ }
+    return c.toDataURL('image/jpeg', 0.75);
+  }
+  async function saveStyle() {
+    const n = myStyles.reduce((m, it) => Math.max(m, it.n || 0), 0) + 1;
+    myStyles = [{ id: `st${Date.now()}`, n, state: styleState(), thumb: styleThumb() }, ...myStyles].slice(0, 30);
+    await Store.set('styles', myStyles);
+    syncStyles();
+    toast(t('Стиль сохранён. Его можно применить к любым фото одним нажатием.'));
+  }
+  function applyStyle(item) {
+    commitHistory();
+    const s = JSON.parse(JSON.stringify(item.state));
+    const next = { ...defaults(), ...s };
+    next.note = { ...defaults().note, ...s.note, date: state.note.date };
+    next.fx = { ...defaults().fx, ...s.fx };
+    next.fx2 = { ...defaults().fx2, ...s.fx2 };
+    next.scan = { ...Scanner.defaults(), ...s.scan };
+    /* свои картинки-стикеры остаются на карточке */
+    next.layers = [...state.layers.filter((l) => l.img), ...(s.layers || [])];
+    const collage = next.collage;
+    next.collage = state.collage;
+    state = next;
+    selectedLayer = -1;
+    if (collage !== state.collage) setCollage(collage);
+    else syncSlotCount();
+    category = (MOTIFS.find((m) => m.id === state.motif) || MOTIFS[0]).cat;
+    syncAll();
+    syncLayerTools();
+    update();
+    toast(t('Стиль применён.'), { label: t('Отменить'), run: undo });
+  }
+  async function deleteStyle(item) {
+    myStyles = myStyles.filter((x) => x.id !== item.id);
+    await Store.set('styles', myStyles);
+    syncStyles();
+    toast(t('Стиль удалён.'), {
+      label: t('Вернуть'),
+      run: async () => {
+        myStyles = [item, ...myStyles];
+        await Store.set('styles', myStyles);
+        syncStyles();
+      },
+    });
+  }
+  function syncStyles() {
+    const grid = $('styleGrid');
+    grid.replaceChildren();
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'thumb style-add';
+    const plus = document.createElement('i');
+    plus.textContent = '+';
+    const label = document.createElement('span');
+    label.textContent = t('Сохранить этот');
+    add.append(plus, label);
+    add.onclick = saveStyle;
+    grid.append(add);
+    myStyles.forEach((it) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'thumb';
+      const img = document.createElement('img');
+      img.src = it.thumb;
+      img.alt = '';
+      const name = document.createElement('span');
+      name.textContent = `${t('Стиль')} ${it.n}`;
+      const del = document.createElement('i');
+      del.className = 'del';
+      del.textContent = '×';
+      del.title = t('Удалить стиль');
+      del.setAttribute('aria-label', t('Удалить стиль'));
+      del.onclick = (e) => { e.stopPropagation(); deleteStyle(it); };
+      b.append(img, name, del);
+      b.onclick = () => applyStyle(it);
+      grid.append(b);
+    });
+  }
+
+  /* Начать заново: всё оформление как у новой карточки, снимки и размер карточки остаются */
+  function resetCard() {
+    commitHistory();
+    const had = state.collage;
+    state = { ...defaults(), ratio: state.ratio, collage: had };
+    selectedLayer = -1;
+    multiMode = false;
+    multi = new Set();
+    setCollage('');
+    category = 'stars';
+    syncAll();
+    syncLayerTools();
+    update();
+    toast(t('Карточка начата заново, фото остались.'), { label: t('Отменить'), run: undo });
+  }
+
+  /* ---------- ползунки: двойной тап или двойной клик возвращает значение по умолчанию ---------- */
+  function bindSliderReset() {
+    let last = { el: null, t: 0 };
+    const defOf = (el) => {
+      if (el.dataset.def != null) return el.dataset.def;
+      if (el.dataset.bind) {
+        const v = el.dataset.bind.split('.').reduce((o, k) => (o == null ? o : o[k]), defaults());
+        if (v != null) return v;
+      }
+      return el.getAttribute('value');
+    };
+    document.addEventListener('pointerup', (e) => {
+      const el = e.target.closest && e.target.closest('input[type="range"]');
+      /* у ползунка сканера свой сброс */
+      if (!el || el.ondblclick) return;
+      const now = performance.now();
+      if (last.el === el && now - last.t < 350) {
+        last = { el: null, t: 0 };
+        const def = defOf(el);
+        if (def == null) return;
+        el.value = def;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        return;
+      }
+      last = { el, t: now };
+    });
+  }
+
+  /* ---------- компьютер: клавиши, перетаскивание файлов, вставка из буфера ---------- */
+  function bindDesk() {
+    const typing = () => {
+      const a = document.activeElement;
+      return !!a && (/TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && a.type !== 'range' && a.type !== 'checkbox'));
+    };
+    const cmpSet = (on) => { comparing = on; $('compareBtn').classList.toggle('primary', on); invalidate(); };
+    /* клавиши по месту на клавиатуре (e.code), чтобы работали и в русской раскладке */
+    document.addEventListener('keydown', (e) => {
+      if (typing()) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (mod && e.code === 'KeyS') {
+        e.preventDefault();
+        if (phase === 'edit' && !$('saveCard').disabled) $('saveCard').click();
+        return;
+      }
+      if (e.code === 'Space' && !mod && phase === 'edit') {
+        e.preventDefault();
+        if (!e.repeat) cmpSet(true);
+        return;
+      }
+      if (!layersMode()) return;
+      if (multiMode) {
+        if (multi.size && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); $('multiDelete').click(); }
+        return;
+      }
+      const l = layerAt(selectedLayer);
+      if (!l) return;
+      if (e.key === 'Delete' || e.key === 'Backspace') { e.preventDefault(); $('layerDelete').click(); }
+      else if (mod && e.code === 'KeyD') { e.preventDefault(); $('layerCopy').click(); }
+      else if (!mod && e.code === 'BracketRight') $('layerUp').click();
+      else if (!mod && e.code === 'BracketLeft') $('layerDown').click();
+      else if (e.key.startsWith('Arrow')) {
+        e.preventDefault();
+        const st = e.shiftKey ? 0.03 : 0.004;
+        const dx = e.key === 'ArrowLeft' ? -st : e.key === 'ArrowRight' ? st : 0;
+        const dy = e.key === 'ArrowUp' ? -st : e.key === 'ArrowDown' ? st : 0;
+        editLayer({ x: clamp(l.x + dx, 0, 1), y: clamp(l.y + dy, 0, 1) }, true);
+      }
+    });
+    document.addEventListener('keyup', (e) => {
+      if (e.code === 'Space' && comparing) cmpSet(false);
+    });
+    window.addEventListener('blur', () => { if (comparing) cmpSet(false); });
+
+    /* перетащить файлы на окно: фото ложится в карточку, с Shift или во вкладке «Стикеры» картинка становится стикером */
+    const isImage = (f) => (f.type || '').startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|heic)$/i.test(f.name || '');
+    const hasFiles = (e) => [...((e.dataTransfer && e.dataTransfer.types) || [])].includes('Files');
+    const hint = document.createElement('div');
+    hint.className = 'drop-hint';
+    hint.hidden = true;
+    document.body.append(hint);
+    let depth = 0;
+    const show = (on) => {
+      hint.hidden = !on;
+      if (on) hint.textContent = t(layersMode() ? 'Отпусти: картинка станет стикером.' : 'Отпусти: фото ляжет в карточку. С Shift станет стикером.');
+    };
+    document.addEventListener('dragenter', (e) => { if (!hasFiles(e)) return; e.preventDefault(); depth++; show(true); });
+    document.addEventListener('dragleave', () => { depth = Math.max(0, depth - 1); if (!depth) show(false); });
+    document.addEventListener('dragover', (e) => { if (!hasFiles(e)) return; e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+    document.addEventListener('drop', (e) => {
+      if (!hasFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      show(false);
+      const files = [...e.dataTransfer.files];
+      if (!files.length) return;
+      const images = files.filter(isImage);
+      if (phase === 'edit' && (e.shiftKey || layersMode()) && images.length) stickersFrom(images);
+      else handleFiles(files);
+    });
+
+    /* вставка: Ctrl+V на компьютере, кнопка «Вставить» там, где браузер даёт читать буфер */
+    document.addEventListener('paste', (e) => {
+      if (typing()) return;
+      const files = [...((e.clipboardData && e.clipboardData.files) || [])].filter(isImage);
+      if (!files.length) return;
+      e.preventDefault();
+      if (phase === 'edit') stickersFrom(files);
+      else handleFiles(files);
+    });
+    const paste = $('stickerPaste');
+    paste.hidden = !(navigator.clipboard && navigator.clipboard.read);
+    paste.onclick = async () => {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const it of items) {
+          const type = it.types.find((ty) => ty.startsWith('image/'));
+          if (!type) continue;
+          const blob = await it.getType(type);
+          await stickersFrom([new File([blob], `paste.${type.split('/')[1] || 'png'}`, { type })]);
+          return;
+        }
+        toast(t('В буфере нет картинки. Скопируй картинку и нажми ещё раз.'));
+      } catch {
+        toast(t('Браузер не дал прочитать буфер. Разреши вставку или загрузи картинку кнопкой «Своя картинка».'));
+      }
+    };
+    async function stickersFrom(files) {
+      await addStickerFiles(files);
+      if (tab !== 'layers') setTab('layers');
+      toast(t('Картинка добавлена стикером.'));
+    }
+
+    $('resetCard').onclick = resetCard;
+  }
+
   /* ---------- общие помощники интерфейса ---------- */
   function update() {
     invalidate();
@@ -858,11 +1126,17 @@
   function syncMotifs() {
     const cats = $('motifCats');
     cats.replaceChildren();
+    /* у «Без фигуры» нет своего раздела: тогда открываем все фигуры */
+    if (category !== 'recent' && !CATEGORIES.some((c) => c.id === category)) category = 'all';
+    const rec = recentOf('motif').map((id) => MOTIFS.find((m) => m.id === id)).filter(Boolean);
+    if (category === 'recent' && !rec.length) category = 'all';
+    if (rec.length) chip(cats, t('Недавние'), category === 'recent', () => { category = 'recent'; syncMotifs(); });
     CATEGORIES.forEach((c) => chip(cats, t(c.name), c.id === category, () => { category = c.id; syncMotifs(); }));
     const grid = $('motifGrid');
     grid.replaceChildren();
     thumbQueue = [];
-    MOTIFS.filter((m) => m.id === 'none' || category === 'all' || m.cat === category).forEach((m) => {
+    const shown = category === 'recent' ? [MOTIFS.find((m) => m.id === 'none'), ...rec] : MOTIFS.filter((m) => m.id === 'none' || category === 'all' || m.cat === category);
+    shown.forEach((m) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'thumb';
@@ -874,6 +1148,13 @@
       b.onclick = () => {
         state.motif = m.id;
         selected = -1;
+        remember('motif', m.id);
+        /* в формате «Только фото» фигуре негде лечь: кладём бумагу снизу */
+        if (m.id !== 'none' && state.paperPos === 'photo') {
+          state.paperPos = 'bottom';
+          syncInputs();
+          toast(t('Фигура ложится на бумагу, поэтому формат стал «Снизу». Его можно поменять во вкладке «Формат».'));
+        }
         if (m.usesPieces && !state.pieces.length) state.pieces = DEMO_PIECES.map((p) => ({ ...p }));
         syncMotifs();
         update();
@@ -1445,6 +1726,7 @@
         b.append(c, label);
         b.onclick = () => {
           if (state[fxSlot].id !== e.id) state[fxSlot] = { ...state[fxSlot], id: e.id, text: '', color: '', style: '', boxes: [] };
+          remember('fx', e.id);
           selectedBox = -1;
           syncFx();
           syncGrab();
@@ -1462,6 +1744,9 @@
     /* разделы, как у фигур: сканер открывает свои настройки вместо сетки эффектов */
     const cats = $('fxCats');
     cats.replaceChildren();
+    const fxRec = recentOf('fx').filter((id) => Effects.byId(id));
+    if (fxCat === 'recent' && !fxRec.length) fxCat = 'all';
+    if (fxRec.length) chip(cats, t('Недавние'), fxCat === 'recent', () => { fxCat = 'recent'; document.querySelector('.panels').scrollTop = 0; unselect(); syncFx(); syncGrab(); syncCtx(); invalidate(); });
     Effects.CATS.forEach((c) => chip(cats, t(c.name), c.id === fxCat, () => {
       fxCat = c.id;
       document.querySelector('.panels').scrollTop = 0;
@@ -1479,7 +1764,10 @@
     if (scan) { syncScan(); return; }
     grid.querySelectorAll('[data-fx]').forEach((b) => {
       const e = Effects.byId(b.dataset.fx);
-      b.hidden = !!e && fxCat !== 'all' && e.cat !== fxCat;
+      /* в «Недавних» порядок как выбирали, последний первым */
+      const r = fxRec.indexOf(b.dataset.fx);
+      b.hidden = fxCat === 'recent' ? !!e && r < 0 : !!e && fxCat !== 'all' && e.cat !== fxCat;
+      b.style.order = fxCat === 'recent' && e ? String(r + 1) : '';
     });
     /* переключатель слоёв: у каждого свой эффект, второй ложится поверх первого */
     const slotsBar = $('fxSlots');
@@ -2218,6 +2506,8 @@
   const EMOJIS = ['🌸', '🌷', '🌹', '🌼', '🌻', '💐', '🍀', '🌿', '🍒', '🍓', '🍰', '🧁', '🍩', '☕', '🎀', '💌', '💖', '💗', '💕', '💘', '🤍', '🦋', '🐚', '⭐', '🌟', '✨', '🌙', '☁️', '🌈', '🔮', '💿', '📷', '📼', '🎧', '🔒', '🗝️', '🕯️', '🪞', '🧸', '🐱', '🐰', '🫧', '💎', '👑', '🍓', '🎞️', '📌', '✂️'].filter((e, i, a) => a.indexOf(e) === i);
   const LAYER_COLORS = ['#111111', '#ffffff', '#f472b6', '#d64545', '#e8913a', '#ffe27a', '#86c96b', '#6c9fe0', '#1f3a8a', '#a78bfa'];
   let selectedLayer = -1;
+  /* линии середины, пока стикер к ней прилип */
+  let snapGuides = { x: false, y: false };
   /* выбор нескольких стикеров сразу: номера слоёв */
   let multiMode = false;
   let multi = new Set();
@@ -2268,29 +2558,37 @@
     /* вкладки набора: эмодзи или готовые рисованные значки */
     const tabs = $('stickerTabs');
     tabs.replaceChildren();
-    [['emoji', 'Эмодзи'], ['ready', 'Готовые']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
-    if (stickerSet === 'ready') {
-      Render.VECTORS.forEach((v) => {
-        const b = document.createElement('button');
-        b.type = 'button';
-        b.setAttribute('aria-label', t(v.name));
-        b.title = t(v.name);
-        const c = canvas(80, 80);
-        Render.drawVector(c.getContext('2d'), v.id, 40, 40, 64, v.color);
-        b.append(c);
-        b.onclick = () => addLayer({ type: 'sticker', vec: v.id, color: v.color, size: 0.4 });
-        grid.append(b);
-      });
-      return;
-    }
-    EMOJIS.forEach((e) => {
+    const stRec = recentOf('sticker').filter((k) => k.startsWith('e:') || Render.VECTORS.some((v) => `v:${v.id}` === k));
+    if (stickerSet === 'recent' && !stRec.length) stickerSet = 'emoji';
+    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['ready', 'Готовые']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    const vecButton = (v) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('aria-label', t(v.name));
+      b.title = t(v.name);
+      const c = canvas(80, 80);
+      Render.drawVector(c.getContext('2d'), v.id, 40, 40, 64, v.color);
+      b.append(c);
+      b.onclick = () => { const first = !recentOf('sticker').length; remember('sticker', `v:${v.id}`); if (first) syncStickers(); addLayer({ type: 'sticker', vec: v.id, color: v.color, size: 0.4 }); };
+      grid.append(b);
+    };
+    const emojiButton = (e) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.textContent = e;
       b.setAttribute('aria-label', `${t('Добавить')} ${e}`);
-      b.onclick = () => addLayer({ type: 'sticker', emoji: e, size: 0.22, rot: (Math.random() - 0.5) * 0.4 });
+      b.onclick = () => { const first = !recentOf('sticker').length; remember('sticker', `e:${e}`); if (first) syncStickers(); addLayer({ type: 'sticker', emoji: e, size: 0.22, rot: (Math.random() - 0.5) * 0.4 }); };
       grid.append(b);
-    });
+    };
+    if (stickerSet === 'recent') {
+      stRec.forEach((k) => (k.startsWith('e:') ? emojiButton(k.slice(2)) : vecButton(Render.VECTORS.find((v) => `v:${v.id}` === k))));
+      return;
+    }
+    if (stickerSet === 'ready') {
+      Render.VECTORS.forEach(vecButton);
+      return;
+    }
+    EMOJIS.forEach(emojiButton);
   }
 
   /* ---------- убрать фон у картинки-стикера ---------- */
@@ -2485,7 +2783,23 @@
       markSeg($('dieSeg'), l.die ? 'on' : 'off');
       $('dieWidthField').hidden = !l.die;
       $('dieWidth').value = l.dieW ?? 0.05;
+      $('dieColorField').hidden = !l.die;
+      if (l.die) swatches($('dieColor'), ['#ffffff', '#111111', '#f4c6cf', '#f472b6', '#ffe27a', '#86c96b', '#6c9fe0', '#a78bfa', '#d64545'], l.dieColor || '#ffffff', (c) => editLayer({ dieColor: c }));
     }
+    /* эффект стикера: только на сам стикер, не на фото */
+    $('lookTools').hidden = isText;
+    if (!isText) {
+      const fxRow = $('layerFx');
+      fxRow.replaceChildren();
+      const cur = (l.fx && l.fx.id) || '';
+      [{ id: '', name: 'Без эффекта' }, ...Render.STICKER_FX].forEach((f) => chip(fxRow, t(f.name), f.id === cur, () => {
+        editLayer({ fx: f.id ? { id: f.id, amount: (l.fx && l.fx.amount) ?? 1, seed: (l.fx && l.fx.seed) ?? 1 } : null });
+      }));
+      $('layerFxMore').hidden = !cur;
+      $('layerFxAmount').value = (l.fx && l.fx.amount) ?? 1;
+    }
+    markSeg($('layerShadow'), l.shadow || 'auto');
+    $('layerOpacity').value = l.opacity ?? 1;
     /* убрать фон можно только у своей картинки */
     const own = l.type === 'sticker' && !!l.img;
     $('cutTools').hidden = !own;
@@ -2608,7 +2922,17 @@
         update();
         return;
       }
-      editLayer({ x: clamp(px / card.width + drag.dx, 0, 1), y: clamp(py / card.height + drag.dy, 0, 1) }, true);
+      /* середина карточки притягивает стикер, Alt отключает; на телефоне короткая вибрация при прилипании */
+      let nx = clamp(px / card.width + drag.dx, 0, 1);
+      let ny = clamp(py / card.height + drag.dy, 0, 1);
+      const near = 0.012;
+      const sx = !e.altKey && Math.abs(nx - 0.5) < near;
+      const sy = !e.altKey && Math.abs(ny - 0.5) < near;
+      if (sx) nx = 0.5;
+      if (sy) ny = 0.5;
+      if ((sx && !snapGuides.x) || (sy && !snapGuides.y)) { try { if (navigator.vibrate) navigator.vibrate(8); } catch { /* без вибрации */ } }
+      snapGuides = { x: sx, y: sy };
+      editLayer({ x: nx, y: ny }, true);
     });
     const end = (e) => {
       /* короткий тап по уже выбранному стикеру снимает с него выбор */
@@ -2619,7 +2943,10 @@
       }
       pointers.delete(e.pointerId);
       if (pointers.size < 2) pinch = null;
-      if (!pointers.size) drag = null;
+      if (!pointers.size) {
+        drag = null;
+        if (snapGuides.x || snapGuides.y) { snapGuides = { x: false, y: false }; invalidate(); }
+      }
     };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
@@ -2649,6 +2976,34 @@
       if (b) editLayer({ die: b.dataset.v === 'on' });
     });
     $('dieWidth').oninput = (e) => editLayer({ dieW: Number(e.target.value) }, true);
+    $('layerFxAmount').oninput = (e) => {
+      const l = layerAt(selectedLayer);
+      if (l && l.fx) editLayer({ fx: { ...l.fx, amount: Number(e.target.value) } }, true);
+    };
+    $('layerFxShuffle').onclick = () => {
+      const l = layerAt(selectedLayer);
+      if (l && l.fx) editLayer({ fx: { ...l.fx, seed: Math.floor(Math.random() * 1e6) } });
+    };
+    $('layerShadow').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) editLayer({ shadow: b.dataset.v === 'auto' ? undefined : b.dataset.v });
+    });
+    $('layerOpacity').oninput = (e) => editLayer({ opacity: Number(e.target.value) }, true);
+    /* правая кнопка мыши по стикеру: выбрать его и открыть его эффекты */
+    card.addEventListener('contextmenu', (e) => {
+      if (phase !== 'edit') return;
+      const [px, py] = toCard(e);
+      const hit = hitLayer(px, py);
+      if (hit < 0) return;
+      e.preventDefault();
+      if (tab !== 'layers') setTab('layers');
+      multiMode = false;
+      selectedLayer = hit;
+      syncLayerTools();
+      invalidate();
+      const look = $('lookTools');
+      if (!look.hidden) document.querySelector('.panels').scrollTop = look.offsetTop - 8;
+    });
     $('layerCopy').onclick = () => {
       const l = layerAt(selectedLayer);
       if (l) addLayer({ ...l, x: clamp(l.x + 0.05, 0, 1), y: clamp(l.y + 0.05, 0, 1) });
@@ -2792,9 +3147,9 @@
     $('redoBtn').onclick = redo;
     document.addEventListener('keydown', (e) => {
       if (!(e.ctrlKey || e.metaKey) || /INPUT|TEXTAREA/.test(document.activeElement.tagName)) return;
-      const k = e.key.toLowerCase();
-      if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); }
-      if ((k === 'z' && e.shiftKey) || k === 'y') { e.preventDefault(); redo(); }
+      const z = e.code === 'KeyZ';
+      if (z && !e.shiftKey) { e.preventDefault(); undo(); }
+      if ((z && e.shiftKey) || e.code === 'KeyY') { e.preventDefault(); redo(); }
     });
   }
 
@@ -3094,6 +3449,8 @@
     bindHistory();
     bindFullscreen();
     bindStrips();
+    bindSliderReset();
+    bindDesk();
     buildPalette();
   }
 
@@ -3148,6 +3505,7 @@
 
   function syncAll() {
     syncFx();
+    syncStyles();
     syncScan();
     syncStickers();
     syncInputs();
@@ -3177,6 +3535,8 @@
     resetSlots();
     bindEvents();
     setTab('');
+    Store.get('recent').then((r) => { if (r && typeof r === 'object') { recent = r; syncMotifs(); syncFx(); syncStickers(); } }).catch(() => {});
+    Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
     markSeg($('modeSeg'), mode);
     syncAll();

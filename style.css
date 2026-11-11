@@ -589,3 +589,58 @@ button { cursor: pointer; }
   #scanSub { flex-wrap: wrap; }
   #scanSub button { flex: 0 0 calc(25% - 2px); }
 }
+
+/* ---------- мои стили ---------- */
+.thumb { position: relative; }
+.style-add i {
+  display: grid;
+  place-items: center;
+  aspect-ratio: 4 / 5;
+  border: 1px dashed var(--hairline);
+  border-radius: 4px;
+  font-style: normal;
+  font-size: 28px;
+  color: var(--muted);
+}
+.thumb .del {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(10, 10, 10, .72);
+  color: var(--bone);
+  font-style: normal;
+  font-size: 15px;
+  line-height: 1;
+}
+
+/* ---------- файл над окном: подсказка, куда он ляжет ---------- */
+.drop-hint {
+  position: fixed;
+  inset: 12px;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  border: 2px dashed var(--accent-light);
+  border-radius: 8px;
+  background: rgba(10, 10, 10, .7);
+  color: var(--bone);
+  font-size: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+.drop-hint[hidden] { display: none; }
+
+/* ---------- палец: кнопки и чипы крупнее, чтобы не промахиваться ---------- */
+@media (pointer: coarse) {
+  .btn.small { min-height: 40px; padding: 9px 12px; font-size: 12px; }
+  .chips button { min-height: 38px; }
+  .seg button { min-height: 40px; }
+  .thumb .del { width: 30px; height: 30px; font-size: 18px; }
+  input[type="range"] { min-height: 32px; }
+}

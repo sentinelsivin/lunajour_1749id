@@ -27,9 +27,9 @@
     <div class="top-side">
       <div class="history">
         <button class="btn small icon edit-only" id="retake" type="button" aria-label="Новый снимок" title="Новый снимок"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5h3l1.5-2h6l1.5 2h3v10h-15z"/><circle cx="10" cy="11" r="3.2"/></svg></button>
-        <button class="btn small" id="undoBtn" type="button" aria-label="Отменить" title="Отменить" disabled>↶</button>
-        <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть" disabled>↷</button>
-        <button class="btn small icon edit-only" id="compareBtn" type="button" aria-label="Удерживай, чтобы увидеть без эффектов" title="Удерживай, чтобы увидеть без эффектов"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg></button>
+        <button class="btn small" id="undoBtn" type="button" aria-label="Отменить" title="Отменить (Ctrl+Z)" disabled>↶</button>
+        <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть (Ctrl+Shift+Z)" disabled>↷</button>
+        <button class="btn small icon edit-only" id="compareBtn" type="button" aria-label="Удерживай, чтобы увидеть без эффектов" title="Удерживай, чтобы увидеть без эффектов (пробел)"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg></button>
         <button class="btn small primary edit-only" id="finish" type="button">Готово</button>
       </div>
       <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
@@ -103,7 +103,7 @@
           <div class="palette" id="palette"></div>
           <p class="hint">Перетаскивай фигуры прямо на карточке. Нажми на фигуру, чтобы изменить её размер и поворот.</p>
           <label class="slider">Размер фигуры<input id="pieceSize" type="range" min="0.05" max="1.2" step="0.01"></label>
-          <label class="slider">Поворот<input id="pieceRot" type="range" min="-180" max="180" step="1"></label>
+          <label class="slider">Поворот<input id="pieceRot" type="range" data-def="0" min="-180" max="180" step="1"></label>
           <div class="row">
             <button class="btn small" id="pieceCopy" type="button">Копия</button>
             <button class="btn small" id="pieceDelete" type="button">Удалить</button>
@@ -160,6 +160,7 @@
         <div class="stickers" id="stickerGrid"></div>
         <div class="row">
           <button class="btn" id="stickerUpload" type="button">Своя картинка</button>
+          <button class="btn" id="stickerPaste" type="button" hidden title="Вставить картинку (Ctrl+V)">Вставить</button>
           <button class="btn" id="textAdd" type="button">Добавить текст</button>
         </div>
         <p class="hint">Для своей картинки лучше всего PNG с прозрачным фоном.</p>
@@ -175,7 +176,7 @@
             <button class="btn small" id="multiDown" type="button">Ниже</button>
             <button class="btn small" id="multiDelete" type="button">Удалить</button>
           </div>
-          <label class="slider">Размер вместе<input id="multiSize" type="range" min="0.4" max="2" step="0.01" value="1"></label>
+          <label class="slider">Размер вместе<input id="multiSize" type="range" data-def="1" min="0.4" max="2" step="0.01" value="1"></label>
         </div>
         <div class="group" id="layerTools" hidden>
           <div class="group" id="textTools" hidden>
@@ -198,7 +199,8 @@
               <button type="button" data-v="off">Выключен</button>
               <button type="button" data-v="on">Включён</button>
             </div>
-            <label class="slider" id="dieWidthField">Толщина обводки<input id="dieWidth" type="range" min="0.015" max="0.12" step="0.005"></label>
+            <label class="slider" id="dieWidthField">Толщина обводки<input id="dieWidth" type="range" min="0.015" max="0.12" step="0.005" data-def="0.05"></label>
+            <div class="group" id="dieColorField"><span class="label">Цвет обводки</span><div class="swatches" id="dieColor"></div></div>
           </div>
           <div class="group" id="cutTools" hidden>
             <span class="label">Фон картинки</span>
@@ -207,8 +209,8 @@
               <button class="btn" id="bgRestore" type="button">Вернуть фон</button>
             </div>
             <div class="group" id="bgCutOptions" hidden>
-              <label class="slider">Сколько убрать<input id="bgTol" type="range" min="4" max="140" step="1"></label>
-              <label class="slider">Подрезать край<input id="bgEdge" type="range" min="0" max="4" step="1"></label>
+              <label class="slider">Сколько убрать<input id="bgTol" type="range" min="4" max="140" step="1" data-def="40"></label>
+              <label class="slider">Подрезать край<input id="bgEdge" type="range" min="0" max="4" step="1" data-def="1"></label>
               <div class="seg" id="bgMode">
                 <button type="button" data-v="edge">Фон вокруг</button>
                 <button type="button" data-v="all">Этот цвет везде</button>
@@ -216,14 +218,32 @@
               <p class="hint">«Фон вокруг» убирает цвет, который касается краёв картинки. «Этот цвет везде» убирает его и внутри, например в дырках буквы О.</p>
             </div>
           </div>
+          <div class="group" id="lookTools" hidden>
+            <span class="label">Эффект стикера</span>
+            <div class="chips" id="layerFx"></div>
+            <div class="group" id="layerFxMore" hidden>
+              <label class="slider">Сила эффекта<input id="layerFxAmount" type="range" min="0.4" max="2.5" step="0.05" data-def="1"></label>
+              <button class="btn small" id="layerFxShuffle" type="button">Перемешать</button>
+            </div>
+            <p class="hint">Эффект ложится только на сам стикер, фото под ним не меняется.</p>
+          </div>
+          <div class="group"><span class="label">Тень</span>
+            <div class="seg" id="layerShadow">
+              <button type="button" data-v="auto">Как было</button>
+              <button type="button" data-v="none">Нет</button>
+              <button type="button" data-v="soft">Мягкая</button>
+              <button type="button" data-v="hard">Резкая</button>
+            </div>
+          </div>
+          <label class="slider">Непрозрачность<input id="layerOpacity" type="range" min="0.1" max="1" step="0.01" data-def="1"></label>
           <label class="slider">Размер<input id="layerSize" type="range" min="0.03" max="1.2" step="0.005"></label>
-          <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1"></label>
+          <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1" data-def="0"></label>
           <div class="row">
-            <button class="btn small" id="layerCopy" type="button">Копия</button>
+            <button class="btn small" id="layerCopy" type="button" title="Копия (Ctrl+D)">Копия</button>
             <button class="btn small" id="layerFlip" type="button">Отразить</button>
-            <button class="btn small" id="layerUp" type="button">Выше</button>
-            <button class="btn small" id="layerDown" type="button">Ниже</button>
-            <button class="btn small" id="layerDelete" type="button">Удалить</button>
+            <button class="btn small" id="layerUp" type="button" title="Выше (])">Выше</button>
+            <button class="btn small" id="layerDown" type="button" title="Ниже ([)">Ниже</button>
+            <button class="btn small" id="layerDelete" type="button" title="Удалить (Delete)">Удалить</button>
           </div>
         </div>
       </section>
@@ -251,9 +271,9 @@
           <button class="btn" id="slotTurn" type="button">Повернуть</button>
           <button class="btn" id="slotReset" type="button">Сбросить</button>
         </div>
-        <label class="slider">Влево и вправо<input id="slotX" type="range" min="-1" max="1" step="0.01"></label>
-        <label class="slider">Вверх и вниз<input id="slotY" type="range" min="-1" max="1" step="0.01"></label>
-        <label class="slider">Масштаб<input id="slotZoom" type="range" min="1" max="4" step="0.01"></label>
+        <label class="slider">Влево и вправо<input id="slotX" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
+        <label class="slider">Вверх и вниз<input id="slotY" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
+        <label class="slider">Масштаб<input id="slotZoom" type="range" data-def="1" min="1" max="4" step="0.01"></label>
       </section>
 
       <section class="panel" data-panel="color" hidden>
@@ -405,6 +425,10 @@
       </section>
 
       <section class="panel" data-panel="format" hidden>
+        <div class="group"><span class="label">Мои стили</span>
+          <div class="thumbs" id="styleGrid"></div>
+          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
+        </div>
         <div class="group" id="paperPosGroup"><span class="label">Где лежит бумага</span>
           <div class="seg layouts" data-seg="paperPos">
             <button type="button" data-v="bottom"><i class="lay col"><b class="f"></b><b class="p"></b></i>Снизу</button>
@@ -417,6 +441,9 @@
         </div>
         <div class="group"><span class="label">Размер карточки</span>
           <div class="ratios" id="ratioList"></div>
+        </div>
+        <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
+          <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
         </div>
       </section>
     </div>
@@ -439,7 +466,7 @@
     <button class="btn small" id="exportClose" type="button">Закрыть</button>
   </div>
   <div class="sheet-list">
-    <button class="btn primary" id="saveCard" type="button">Сохранить карточку</button>
+    <button class="btn primary" id="saveCard" type="button" title="Сохранить карточку (Ctrl+S)">Сохранить карточку</button>
     <button class="btn" id="saveVideo" type="button">Сохранить видео</button>
     <button class="btn" id="shareCard" type="button" hidden>Поделиться</button>
   </div>
