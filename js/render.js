@@ -1358,6 +1358,20 @@
     });
   }
 
+  /* миниатюра одного слоя для списка слоёв: слой во весь квадрат, без поворота */
+  function layerThumb(l, assets, n) {
+    const c = canvas(n, n);
+    const x = c.getContext('2d');
+    const W = 1000, H = 1000;
+    const one = { ...l, x: 0, y: 0, rot: 0, flip: false, opacity: 1 };
+    const b = layerBox(x, one, assets, W, H);
+    const k = (n * 0.8) / Math.max(b.w, b.h, 1);
+    x.translate(n / 2, n / 2);
+    x.scale(k, k);
+    drawLayers(x, { layers: [one] }, assets, W, H);
+    return c;
+  }
+
   /* Тень стикера. «Как было» у каждого вида своя (у значков её нет), можно выключить или сделать мягкой либо резкой. */
   const SHADOWS = {
     die: [0.32, 0.05, 0.03], img: [0.28, 0.04, 0.02], emoji: [0.22, 0.05, 0.025], none: null,
@@ -1461,7 +1475,7 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
+    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, layerThumb, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
   };
 })();

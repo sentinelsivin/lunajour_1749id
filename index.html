@@ -30,24 +30,44 @@
         <button class="btn small" id="undoBtn" type="button" aria-label="Отменить" title="Отменить (Ctrl+Z)" disabled>↶</button>
         <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть (Ctrl+Shift+Z)" disabled>↷</button>
         <button class="btn small icon edit-only" id="compareBtn" type="button" aria-label="Удерживай, чтобы увидеть без эффектов" title="Удерживай, чтобы увидеть без эффектов (пробел)"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg></button>
+        <button class="btn small icon" id="moreBtn" type="button" aria-label="Ещё" title="Ещё: стили, начать заново, язык" aria-expanded="false" aria-controls="moreMenu">⋯</button>
         <button class="btn small primary edit-only" id="finish" type="button">Готово</button>
-      </div>
-      <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
-        <button type="button" data-v="ru">RU</button>
-        <button type="button" data-v="en">EN</button>
       </div>
       <span class="readout" id="readout"></span>
     </div>
   </header>
 
+  <div class="more-menu" id="moreMenu" hidden>
+        <div class="group"><span class="label">Мои стили</span>
+          <div class="thumbs" id="styleGrid"></div>
+          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
+        </div>
+        <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
+          <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
+        </div>
+        <div class="group"><span class="label">Язык</span>
+          <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
+            <button type="button" data-v="ru">RU</button>
+            <button type="button" data-v="en">EN</button>
+          </div>
+        </div>
+  </div>
+
   <main class="stage" id="stage">
     <div class="floaters" id="floaters" aria-hidden="true"></div>
     <canvas id="card" aria-label="Карточка"></canvas>
-    <span class="tag" id="sampleTag">пример</span>
     <button class="expand" id="expandCard" type="button" aria-label="Карточка на весь экран" aria-pressed="false">
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
     </button>
     <div class="countdown" id="countdown" hidden></div>
+    <div class="resume" id="resumeCard" hidden>
+      <img id="resumeThumb" alt="">
+      <div class="resume-text"><b>Незаконченная карточка</b><span>Можно продолжить с того же места.</span></div>
+      <div class="row">
+        <button class="btn primary small" id="resumeGo" type="button">Продолжить</button>
+        <button class="btn small" id="resumeNew" type="button">Новая</button>
+      </div>
+    </div>
     <div class="ctx" id="ctxMenu" role="toolbar" aria-label="Действия с выбранным" hidden></div>
   </main>
 
@@ -113,9 +133,9 @@
         <button class="btn" id="maskUpload" type="button" hidden>Загрузить картинку для выреза</button>
         <p class="hint" id="maskHint" hidden>Подойдёт PNG с прозрачностью или чёрная фигура на белом фоне.</p>
         <div class="group" id="genTools">
-          <button class="btn" id="shuffle" type="button">Перемешать</button>
           <label class="slider">Размер<input id="size" type="range" min="0.4" max="1.8" step="0.05" data-bind="size"></label>
           <label class="slider">Плотность<input id="density" type="range" min="0.3" max="2" step="0.05" data-bind="density"></label>
+          <button class="btn" id="shuffle" type="button">Перемешать</button>
         </div>
         <label class="slider">Фото вокруг фигур<input id="ghost" type="range" min="0" max="45" step="1" data-bind="ghost"></label>
         <div class="group"><span class="label">Края</span>
@@ -129,7 +149,6 @@
 
       <section class="panel" data-panel="collage" hidden>
         <div class="thumbs" id="collageGrid"></div>
-        <div id="tintGroups"></div>
         <div class="group" id="cellTools" hidden>
           <div class="group" id="cellButtons">
             <p class="hint">Нажми на ячейку на карточке, чтобы выбрать её. Несколько фото из галереи разложатся по пустым ячейкам. Текст и окошки фраз пишутся во вкладке «Подпись»: () ставит окошко.</p>
@@ -152,19 +171,27 @@
             </div>
           </div>
         </div>
+        <div id="tintGroups"></div>
       </section>
 
       <section class="panel" data-panel="layers" hidden>
-        <p class="hint">Нажми на стикер, чтобы добавить его. На карточке двигай одним пальцем, двумя меняй размер и поворачивай.</p>
-        <div class="chips" id="stickerTabs"></div>
-        <div class="stickers" id="stickerGrid"></div>
-        <div class="row">
-          <button class="btn" id="stickerUpload" type="button">Своя картинка</button>
-          <button class="btn" id="stickerPaste" type="button" hidden title="Вставить картинку (Ctrl+V)">Вставить</button>
-          <button class="btn" id="textAdd" type="button">Добавить текст</button>
+        <!-- полоса слоёв всегда сверху: «+» открывает каталог, миниатюра выбирает слой -->
+        <div class="layer-bar" id="layerListGroup" hidden>
+          <div class="layer-list" id="layerList"></div>
+          <button class="btn small" id="multiToggle" type="button" hidden>Несколько</button>
         </div>
-        <p class="hint">Для своей картинки лучше всего PNG с прозрачным фоном.</p>
-        <button class="btn" id="multiToggle" type="button" hidden>Выбрать несколько</button>
+        <div class="group" id="stickerCatalog">
+          <p class="hint">Нажми на стикер, чтобы добавить его. На карточке двигай одним пальцем, двумя меняй размер и поворачивай.</p>
+          <div class="chips" id="stickerTabs"></div>
+          <div class="stickers" id="stickerGrid"></div>
+          <div class="row">
+            <button class="btn" id="stickerUpload" type="button">Своя картинка</button>
+            <button class="btn" id="stickerPaste" type="button" hidden title="Вставить картинку (Ctrl+V)">Вставить</button>
+            <button class="btn" id="textAdd" type="button">Добавить текст</button>
+          </div>
+          <p class="hint">Для своей картинки лучше всего PNG с прозрачным фоном.</p>
+          <p class="hint" id="layerListHint" hidden>В полосе сверху: нажми на слой, чтобы выбрать его, удерживай и тяни на место другого, чтобы поменять порядок. Текст правится двойным нажатием прямо на карточке.</p>
+        </div>
         <div class="group" id="multiTools" hidden>
           <p class="hint">Нажимай на стикеры, чтобы отметить их. Тяни любой отмеченный, и поедут все. Повторное нажатие снимает отметку.</p>
           <span class="label" id="multiCount"></span>
@@ -179,7 +206,21 @@
           <label class="slider">Размер вместе<input id="multiSize" type="range" data-def="1" min="0.4" max="2" step="0.01" value="1"></label>
         </div>
         <div class="group" id="layerTools" hidden>
-          <div class="group" id="textTools" hidden>
+          <!-- быстрые действия с выбранным; «Выше» и «Ниже» спрятаны: порядок меняется в полосе слоёв, клавиши [ и ] работают -->
+          <div class="row">
+            <button class="btn small" id="layerCopy" type="button" title="Копия (Ctrl+D)">Копия</button>
+            <button class="btn small" id="layerFlip" type="button">Отразить</button>
+            <button class="btn small" id="layerUp" type="button" title="Выше (])" hidden>Выше</button>
+            <button class="btn small" id="layerDown" type="button" title="Ниже ([)" hidden>Ниже</button>
+            <button class="btn small" id="layerDelete" type="button" title="Удалить (Delete)">Удалить</button>
+          </div>
+          <div class="chips" id="layerSub"></div>
+          <div class="group" data-sub="look">
+            <label class="slider">Размер<input id="layerSize" type="range" min="0.03" max="1.2" step="0.005"></label>
+            <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1" data-def="0"></label>
+            <label class="slider">Непрозрачность<input id="layerOpacity" type="range" min="0.1" max="1" step="0.01" data-def="1"></label>
+          </div>
+          <div class="group" data-sub="text" id="textTools" hidden>
             <label class="field">Текст<textarea id="layerText" rows="2" maxlength="200"></textarea></label>
             <div class="group"><span class="label">Фон текста</span>
               <div class="seg" id="layerStyle">
@@ -192,18 +233,35 @@
             <div class="group"><span class="label">Цвет текста</span><div class="swatches" id="layerColor"></div></div>
             <div class="group"><span class="label">Цвет фона и контура</span><div class="swatches" id="layerBg"></div></div>
           </div>
-          <div class="group" id="vecTools" hidden><span class="label">Цвет значка</span><div class="swatches" id="vecColor"></div></div>
-          <div class="group" id="dieTools" hidden>
-            <span class="label">Эффект наклейки</span>
-            <div class="seg" id="dieSeg">
-              <button type="button" data-v="off">Выключен</button>
-              <button type="button" data-v="on">Включён</button>
+          <div class="group" data-sub="color" id="vecTools" hidden><span class="label">Цвет значка</span><div class="swatches" id="vecColor"></div></div>
+          <div class="group" data-sub="fx" id="lookTools" hidden>
+            <div class="chips" id="layerFx"></div>
+            <div class="group" id="layerFxMore" hidden>
+              <label class="slider">Сила эффекта<input id="layerFxAmount" type="range" min="0.4" max="2.5" step="0.05" data-def="1"></label>
+              <button class="btn small" id="layerFxShuffle" type="button">Перемешать</button>
             </div>
-            <label class="slider" id="dieWidthField">Толщина обводки<input id="dieWidth" type="range" min="0.015" max="0.12" step="0.005" data-def="0.05"></label>
-            <div class="group" id="dieColorField"><span class="label">Цвет обводки</span><div class="swatches" id="dieColor"></div></div>
+            <p class="hint">Эффект ложится только на сам стикер, фото под ним не меняется.</p>
           </div>
-          <div class="group" id="cutTools" hidden>
-            <span class="label">Фон картинки</span>
+          <div class="group" data-sub="edge">
+            <div class="group" id="dieTools" hidden>
+              <span class="label">Эффект наклейки</span>
+              <div class="seg" id="dieSeg">
+                <button type="button" data-v="off">Выключен</button>
+                <button type="button" data-v="on">Включён</button>
+              </div>
+              <label class="slider" id="dieWidthField">Толщина обводки<input id="dieWidth" type="range" min="0.015" max="0.12" step="0.005" data-def="0.05"></label>
+              <div class="group" id="dieColorField"><span class="label">Цвет обводки</span><div class="swatches" id="dieColor"></div></div>
+            </div>
+            <div class="group"><span class="label">Тень</span>
+              <div class="seg" id="layerShadow">
+                <button type="button" data-v="auto">Как было</button>
+                <button type="button" data-v="none">Нет</button>
+                <button type="button" data-v="soft">Мягкая</button>
+                <button type="button" data-v="hard">Резкая</button>
+              </div>
+            </div>
+          </div>
+          <div class="group" data-sub="bg" id="cutTools" hidden>
             <div class="row">
               <button class="btn primary" id="bgCut" type="button">Убрать фон</button>
               <button class="btn" id="bgRestore" type="button">Вернуть фон</button>
@@ -218,39 +276,11 @@
               <p class="hint">«Фон вокруг» убирает цвет, который касается краёв картинки. «Этот цвет везде» убирает его и внутри, например в дырках буквы О.</p>
             </div>
           </div>
-          <div class="group" id="lookTools" hidden>
-            <span class="label">Эффект стикера</span>
-            <div class="chips" id="layerFx"></div>
-            <div class="group" id="layerFxMore" hidden>
-              <label class="slider">Сила эффекта<input id="layerFxAmount" type="range" min="0.4" max="2.5" step="0.05" data-def="1"></label>
-              <button class="btn small" id="layerFxShuffle" type="button">Перемешать</button>
-            </div>
-            <p class="hint">Эффект ложится только на сам стикер, фото под ним не меняется.</p>
-          </div>
-          <div class="group"><span class="label">Тень</span>
-            <div class="seg" id="layerShadow">
-              <button type="button" data-v="auto">Как было</button>
-              <button type="button" data-v="none">Нет</button>
-              <button type="button" data-v="soft">Мягкая</button>
-              <button type="button" data-v="hard">Резкая</button>
-            </div>
-          </div>
-          <label class="slider">Непрозрачность<input id="layerOpacity" type="range" min="0.1" max="1" step="0.01" data-def="1"></label>
-          <label class="slider">Размер<input id="layerSize" type="range" min="0.03" max="1.2" step="0.005"></label>
-          <label class="slider">Поворот<input id="layerRot" type="range" min="-180" max="180" step="1" data-def="0"></label>
-          <div class="row">
-            <button class="btn small" id="layerCopy" type="button" title="Копия (Ctrl+D)">Копия</button>
-            <button class="btn small" id="layerFlip" type="button">Отразить</button>
-            <button class="btn small" id="layerUp" type="button" title="Выше (])">Выше</button>
-            <button class="btn small" id="layerDown" type="button" title="Ниже ([)">Ниже</button>
-            <button class="btn small" id="layerDelete" type="button" title="Удалить (Delete)">Удалить</button>
-          </div>
         </div>
       </section>
 
       <section class="panel" data-panel="paper" hidden>
         <div class="thumbs papers" id="paperList"></div>
-        <button class="btn" id="bgUpload" type="button">Загрузить свой фон</button>
         <div class="thumbs" id="templateGrid"></div>
         <div class="group"><span class="label">Цвет бумаги</span>
           <div class="swatches" id="paperSwatches"></div>
@@ -376,12 +406,6 @@
           <div class="thumbs" id="fxGrid"></div>
           <div class="group" id="fxTools" hidden>
             <div class="group" id="fxStyleGroup"><span class="label">Вид</span><div class="chips" id="fxStyles"></div></div>
-            <label class="field" id="fxTextField">Слова<input id="fxText" type="text" maxlength="200" data-bind="fx.text"></label>
-            <p class="hint" id="fxTextHint"></p>
-            <label class="field" id="fxFontGroup">Шрифт<select id="fxFont"></select></label>
-            <div class="group"><span class="label">Цвет</span><div class="swatches" id="fxSwatches"></div></div>
-            <label class="slider">Сколько<input id="fxAmount" type="range" min="0.4" max="2" step="0.05" data-bind="fx.amount"></label>
-            <button class="btn" id="fxShuffle" type="button">Перемешать</button>
             <p class="hint" id="fxCenterHint" hidden>Нажми на фото, чтобы поставить центр лучей.</p>
             <div class="group" id="fxGlitchTools" hidden>
               <div class="group"><span class="label">Где эффект</span><div class="chips" id="fxMask"></div></div>
@@ -390,6 +414,14 @@
                 <div class="chips" id="fxBrushSize"></div>
                 <button class="btn small" id="fxBrushClear" type="button">Стереть кисть</button>
               </div>
+            </div>
+            <label class="field" id="fxTextField">Слова<input id="fxText" type="text" maxlength="200" data-bind="fx.text"></label>
+            <p class="hint" id="fxTextHint"></p>
+            <label class="field" id="fxFontGroup">Шрифт<select id="fxFont"></select></label>
+            <div class="group"><span class="label">Цвет</span><div class="swatches" id="fxSwatches"></div></div>
+            <label class="slider">Сколько<input id="fxAmount" type="range" min="0.4" max="2" step="0.05" data-bind="fx.amount"></label>
+            <button class="btn" id="fxShuffle" type="button">Перемешать</button>
+            <div class="group" id="fxLiveTools" hidden>
               <label class="check"><input type="checkbox" id="fxLive">Живой в видео: ломается заново несколько раз в секунду</label>
               <button class="btn" id="fxPlay" type="button">▶ Проиграть</button>
             </div>
@@ -425,10 +457,6 @@
       </section>
 
       <section class="panel" data-panel="format" hidden>
-        <div class="group"><span class="label">Мои стили</span>
-          <div class="thumbs" id="styleGrid"></div>
-          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
-        </div>
         <div class="group" id="paperPosGroup"><span class="label">Где лежит бумага</span>
           <div class="seg layouts" data-seg="paperPos">
             <button type="button" data-v="bottom"><i class="lay col"><b class="f"></b><b class="p"></b></i>Снизу</button>
@@ -441,9 +469,6 @@
         </div>
         <div class="group"><span class="label">Размер карточки</span>
           <div class="ratios" id="ratioList"></div>
-        </div>
-        <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
-          <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
         </div>
       </section>
     </div>

@@ -96,14 +96,15 @@
   /* Миниатюры шаблонов рисуются той же отрисовкой, что и карточка, с примером в ячейках. */
   const collageThumbs = new Map();
   function collageThumb(id) {
-    const key = `${id}|${I18n.lang}`;
+    const src = thumbSrc();
+    const key = `${id}|${I18n.lang}|${srcKey(src)}`;
     if (collageThumbs.has(key)) return collageThumbs.get(key);
     const c = canvas(120, 150);
     const s = { ...defaults(), paper: 'smooth', collage: id, note: { ...defaults().note, title: '', showDate: false } };
     const n = id ? Collages.count(id, s) : 1;
     /* ошибка в одном шаблоне не должна ломать весь экран: такой просто останется без миниатюры */
     try {
-      renderCard(c.getContext('2d'), s, Array.from({ length: n }, () => newSlot(sampleSrc)), {});
+      renderCard(c.getContext('2d'), s, Array.from({ length: n }, () => newSlot(src)), {});
     } catch (err) {
       console.warn('collage thumb', id, err);
     }
@@ -384,7 +385,8 @@
     $('modeSeg').hidden = idle;
     $('camTools').hidden = idle;
     $('startSample').hidden = !idle;
-    $('sampleTag').hidden = !slots.some((s) => s.src && s.src.kind === 'sample');
+    /* предложение продолжить черновик живёт только на пустом стартовом экране */
+    if (!idle) $('resumeCard').hidden = true;
   }
 
   function goEdit() {
@@ -392,6 +394,7 @@
     sizeCanvas();
     setPhase('edit');
     scheduleDraft();
+    offerStyles();
   }
 
   function resetSlots() {
@@ -743,6 +746,198 @@
     resetHistory();
   }
 
+  /* ---------- незаконченная карточка: предложение на стартовом экране, а не всплывашкой поверх кнопок ---------- */
+  function showResume(draft) {
+    const box = $('resumeCard');
+    const first = (draft.slots || []).find((s) => s.blob && s.kind !== 'video');
+    const img = $('resumeThumb');
+    img.hidden = !first;
+    box.classList.toggle('no-thumb', !first);
+    if (first) img.src = URL.createObjectURL(first.blob);
+    box.hidden = false;
+    $('resumeGo').onclick = () => {
+      box.hidden = true;
+      restoreDraft(draft).catch(() => toast(t('Черновик не открылся.')));
+    };
+    $('resumeNew').onclick = () => { box.hidden = true; };
+  }
+
+  /* ---------- пока палец на ползунке, панель прячется, а карточка становится крупнее ---------- */
+  function bindSliding() {
+    const app = document.querySelector('.app');
+    const narrow = matchMedia('(max-width: 860px)');
+    let live = null;
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest && e.target.closest('.dock input[type="range"]');
+      if (!el || !narrow.matches) return;
+      live = el.closest('label') || el;
+      live.classList.add('live');
+      app.classList.add('sliding');
+    });
+    const end = () => {
+      if (!live) return;
+      live.classList.remove('live');
+      live = null;
+      app.classList.remove('sliding');
+    };
+    ['pointerup', 'pointercancel'].forEach((ev) => document.addEventListener(ev, end));
+    window.addEventListener('blur', end);
+  }
+
+  /* ---------- миниатюры на своём фото ---------- */
+  /* своё фото для миниатюр: из выбранной ячейки или первое загруженное, а пока своих нет, пример */
+  const srcIds = new WeakMap();
+  let srcCount = 0;
+  function thumbSrc() {
+    const own = hasPhoto(slots[activeSlot]) ? slots[activeSlot] : slots.find(hasPhoto);
+    return own && own.src.sw ? own.src : sampleSrc;
+  }
+  const srcKey = (src) => {
+    if (!srcIds.has(src)) srcIds.set(src, ++srcCount);
+    return String(srcIds.get(src));
+  };
+  function drawFxThumb(c, id) {
+    const x = c.getContext('2d');
+    const src = thumbSrc();
+    x.clearRect(0, 0, c.width, c.height);
+    drawCover(x, src.el, src.sw, src.sh, c.width, c.height);
+    if (id) Effects.draw(x, { fx: { id, color: '', text: '', amount: 0.8, seed: 3, boxes: [] } }, c.width, c.height);
+  }
+
+  /* ---------- список слоёв: выбрать маленький стикер под большим и поменять порядок ---------- */
+  function syncLayerList() {
+    const list = $('layerList');
+    const n = state.layers.length;
+    $('layerListGroup').hidden = n < 1;
+    $('layerListHint').hidden = n < 2;
+    list.replaceChildren();
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.className = 'layer-add';
+    add.textContent = '+';
+    add.title = t('Добавить стикер или текст');
+    add.setAttribute('aria-label', add.title);
+    add.classList.toggle('on', !multiMode && (addingSticker || !layerAt(selectedLayer)));
+    add.onclick = () => {
+      addingSticker = true;
+      multiMode = false;
+      multi = new Set();
+      syncLayerTools();
+      document.querySelector('.panels').scrollTop = 0;
+    };
+    list.append(add);
+    /* первым идёт верхний слой, как в редакторах */
+    for (let i = n - 1; i >= 0; i--) {
+      const l = state.layers[i];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'layer-item';
+      b.dataset.i = i;
+      b.classList.toggle('on', multiMode ? multi.has(i) : i === selectedLayer);
+      b.setAttribute('aria-label', l.type === 'text' ? `${t('Текст')}: ${l.text || ''}` : t('Стикер'));
+      b.title = b.getAttribute('aria-label');
+      b.append(Render.layerThumb(l, assets, 112));
+      list.append(b);
+    }
+  }
+  function bindLayerList() {
+    const list = $('layerList');
+    let press = null;
+    const pick = (i) => {
+      if (multiMode) {
+        if (multi.has(i)) multi.delete(i);
+        else multi.add(i);
+      } else {
+        selectedLayer = i;
+        addingSticker = false;
+      }
+      syncLayerTools();
+      invalidate();
+    };
+    const clear = () => list.querySelectorAll('.target, .dragging').forEach((x) => x.classList.remove('target', 'dragging'));
+    list.addEventListener('pointerdown', (e) => {
+      const it = e.target.closest('.layer-item');
+      if (!it) return;
+      const p = { i: Number(it.dataset.i), x: e.clientX, y: e.clientY, drag: false, el: it, id: e.pointerId, over: null };
+      /* долгое нажатие берёт слой, дальше его можно тащить на место другого */
+      p.timer = setTimeout(() => {
+        if (press !== p) return;
+        p.drag = true;
+        it.classList.add('dragging');
+        try { list.setPointerCapture(p.id); } catch { /* без захвата тоже работает */ }
+        try { if (navigator.vibrate) navigator.vibrate(10); } catch { /* без вибрации */ }
+      }, 280);
+      press = p;
+    });
+    list.addEventListener('pointermove', (e) => {
+      if (!press) return;
+      if (!press.drag) {
+        /* палец поехал раньше долгого нажатия: это прокрутка ряда */
+        if (Math.hypot(e.clientX - press.x, e.clientY - press.y) > 8) { clearTimeout(press.timer); press = null; }
+        return;
+      }
+      list.querySelectorAll('.target').forEach((x) => x.classList.remove('target'));
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      const over = hit && hit.closest('.layer-item');
+      press.over = over && list.contains(over) ? Number(over.dataset.i) : null;
+      if (over && over !== press.el) over.classList.add('target');
+    });
+    /* пока слой тащат, ряд не прокручивается */
+    list.addEventListener('touchmove', (e) => { if (press && press.drag) e.preventDefault(); }, { passive: false });
+    list.addEventListener('pointerup', () => {
+      if (!press) return;
+      const p = press;
+      press = null;
+      clearTimeout(p.timer);
+      clear();
+      if (!p.drag) { pick(p.i); return; }
+      if (p.over != null && p.over !== p.i) {
+        const next = [...state.layers];
+        const [moved] = next.splice(p.i, 1);
+        next.splice(p.over, 0, moved);
+        state.layers = next;
+        selectedLayer = p.over;
+        multiMode = false;
+        multi = new Set();
+        update();
+      }
+      syncLayerTools();
+    });
+    list.addEventListener('pointercancel', () => {
+      if (!press) return;
+      clearTimeout(press.timer);
+      press = null;
+      clear();
+    });
+  }
+
+  /* ---------- меню «⋯»: мои стили, начать заново, язык ---------- */
+  let setMore = () => {};
+  function bindMore() {
+    const btn = $('moreBtn');
+    const menu = $('moreMenu');
+    setMore = (on) => {
+      menu.hidden = !on;
+      btn.setAttribute('aria-expanded', String(on));
+      btn.classList.toggle('primary', on);
+      if (on) syncStyles();
+    };
+    btn.onclick = () => setMore(menu.hidden);
+    /* нажатие мимо меню закрывает его */
+    document.addEventListener('pointerdown', (e) => {
+      if (!menu.hidden && !menu.contains(e.target) && !btn.contains(e.target)) setMore(false);
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !menu.hidden) setMore(false); });
+    $('resetCard').onclick = () => { setMore(false); resetCard(); };
+  }
+  /* свои стили есть: после загрузки фото один раз за сеанс предлагаем их */
+  let stylesOffered = false;
+  function offerStyles() {
+    if (stylesOffered || !myStyles.length) return;
+    stylesOffered = true;
+    toast(t('Применить свой стиль к этому фото?'), { label: t('Мои стили'), run: () => setMore(true) });
+  }
+
   /* ---------- недавние, мои стили, начать заново ---------- */
   /* последние выбранные фигуры, эффекты и стикеры: раздел «Недавние» в начале каждого каталога */
   let recent = {};
@@ -799,6 +994,7 @@
     syncAll();
     syncLayerTools();
     update();
+    setMore(false);
     toast(t('Стиль применён.'), { label: t('Отменить'), run: undo });
   }
   async function deleteStyle(item) {
@@ -997,7 +1193,6 @@
       toast(t('Картинка добавлена стикером.'));
     }
 
-    $('resetCard').onclick = resetCard;
   }
 
   /* ---------- общие помощники интерфейса ---------- */
@@ -1108,7 +1303,14 @@
     motif.draw(x, c.width, c.height, makeRng(7), {
       size: 1, density: 0.8, text: '', font: state.wordFont, image: motif.usesImage ? assets.mask : null, pieces: DEMO_PIECES,
     });
-    /* Перелив в миниатюрах: те же цвета, что у заголовка. */
+    /* своё фото видно сквозь фигуру, как на карточке; пока фото нет, перелив цветов заголовка */
+    const src = thumbSrc();
+    if (src !== sampleSrc) {
+      x.globalCompositeOperation = 'source-in';
+      drawCover(x, src.el, src.sw, src.sh, c.width, c.height);
+      x.globalCompositeOperation = 'source-over';
+      return;
+    }
     const holo = x.createLinearGradient(0, 0, c.width, c.height);
     ['#f0ede5', '#b8c5d6', '#6c9fe0', '#a78bfa'].forEach((color, i) => holo.addColorStop(i / 3, color));
     x.globalCompositeOperation = 'source-in';
@@ -1374,6 +1576,17 @@
       b.onclick = async () => setBackground(await (await fetch(item.src)).blob());
       grid.append(b);
     });
+    /* своя картинка-фон: последняя плитка ряда, как «+» у стилей */
+    const own = document.createElement('button');
+    own.type = 'button';
+    own.className = 'thumb add-tile';
+    const plus = document.createElement('i');
+    plus.textContent = '+';
+    const ownLabel = document.createElement('span');
+    ownLabel.textContent = t('Свой фон');
+    own.append(plus, ownLabel);
+    own.onclick = () => $('fileBg').click();
+    grid.append(own);
     swatches($('paperSwatches'), PAPER_COLORS, state.paperColor, (c) => {
       state.paperColor = c;
       if (state.paper === 'own') state.paper = 'smooth';
@@ -1733,13 +1946,13 @@
           update();
         };
         grid.append(b);
-        /* превью рисуются по одной за кадр, чтобы вкладка открывалась сразу */
-        setTimeout(() => {
-          const x = c.getContext('2d');
-          drawCover(x, sample, sample.width, sample.height, c.width, c.height);
-          if (e.id) Effects.draw(x, { fx: { id: e.id, color: '', text: '', amount: 0.8, seed: 3, boxes: [] } }, c.width, c.height);
-        }, 30 * i);
       });
+    }
+    /* превью рисуются по одной за кадр, чтобы вкладка открывалась сразу; новое своё фото перерисовывает их */
+    const fxKey = srcKey(thumbSrc());
+    if (grid.dataset.src !== fxKey) {
+      grid.dataset.src = fxKey;
+      [...grid.querySelectorAll('[data-fx]')].forEach((b, i) => setTimeout(() => drawFxThumb(b.querySelector('canvas'), b.dataset.fx), 30 * i));
     }
     /* разделы, как у фигур: сканер открывает свои настройки вместо сетки эффектов */
     const cats = $('fxCats');
@@ -1809,7 +2022,7 @@
     const g = def.cat === 'glitch';
     $('fxGlitchTools').hidden = !fxMaskable(def);
     /* «Живой в видео» только у глитча, остальные эффекты в видео не ломаются */
-    $('fxLive').closest('label').hidden = !g;
+    $('fxLiveTools').hidden = !g;
     if (fxMaskable(def)) {
       const f = state[fxSlot];
       const mask = $('fxMask');
@@ -2516,7 +2729,25 @@
   const layersMode = () => tab === 'layers';
   const layerAt = (i) => state.layers[i];
 
+  /* подвкладки настроек слоя: какая открыта, помним между стикерами */
+  let layerSub = 'look';
+  /* нажат «+» в полосе слоёв: показываем каталог, даже если слой выбран */
+  let addingSticker = false;
+  const SUBS = { look: 'Вид', text: 'Текст', color: 'Цвет', fx: 'Эффект', edge: 'Обводка и тень', bg: 'Фон картинки' };
+  function syncLayerSub(l) {
+    const isText = l.type === 'text';
+    const list = isText ? ['text', 'look', 'edge'] : ['look', 'fx', 'edge', ...(l.vec ? ['color'] : []), ...(l.img ? ['bg'] : [])];
+    const cur = list.includes(layerSub) ? layerSub : list[0];
+    const row = $('layerSub');
+    row.replaceChildren();
+    list.forEach((k) => chip(row, t(k === 'edge' && isText ? 'Тень' : SUBS[k]), k === cur, () => { layerSub = k; syncLayerTools(); }));
+    document.querySelectorAll('#layerTools [data-sub]').forEach((el) => { el.hidden = el.dataset.sub !== cur; });
+  }
+
   function addLayer(layer) {
+    addingSticker = false;
+    /* новый текст сразу открывает свои настройки текста */
+    if (layer.type === 'text') layerSub = 'text';
     state.layers = [...state.layers, { x: 0.5, y: 0.45, rot: 0, ...layer }];
     selectedLayer = state.layers.length - 1;
     multiMode = false;
@@ -2761,7 +2992,7 @@
 
   function syncMulti() {
     multi = new Set([...multi].filter((i) => i < state.layers.length));
-    $('multiToggle').textContent = t(multiMode ? 'Готово с выбором' : 'Выбрать несколько');
+    $('multiToggle').textContent = t(multiMode ? 'Готово' : 'Несколько');
     $('multiToggle').classList.toggle('primary', multiMode);
     $('multiTools').hidden = !multiMode;
     $('multiCount').textContent = `${t('Выбрано')}: ${multi.size}`;
@@ -2771,8 +3002,11 @@
 
   function syncLayerTools() {
     syncMulti();
+    syncLayerList();
     const l = !multiMode && layerAt(selectedLayer);
-    $('layerTools').hidden = !l;
+    /* выбран слой: его настройки; ничего не выбрано или нажат «+»: каталог стикеров */
+    $('layerTools').hidden = !l || addingSticker;
+    $('stickerCatalog').hidden = multiMode || (!!l && !addingSticker);
     if (!l) return;
     const isText = l.type === 'text';
     $('textTools').hidden = !isText;
@@ -2818,6 +3052,7 @@
     if (l.vec) swatches($('vecColor'), ['#ff1a1a', '#ffffff', '#111111', '#39ff6a', '#f5c518', '#ff5a1f', '#6c9fe0', '#f472b6', '#a78bfa'], l.color, (c) => editLayer({ color: c }));
     $('layerSize').value = l.size;
     $('layerRot').value = Math.round(((l.rot || 0) * 180) / Math.PI);
+    syncLayerSub(l);
     $('layerUp').disabled = selectedLayer >= state.layers.length - 1;
     $('layerDown').disabled = selectedLayer <= 0;
     if (!isText) return;
@@ -2850,9 +3085,11 @@
       return [((e.clientX - box.left) / box.width) * card.width, ((e.clientY - box.top) / box.height) * card.height];
     };
     /* какой слой под пальцем: сверху вниз, с учётом поворота */
-    const hitLayer = (px, py) => {
+    /* only: искать только такие слои, например текст под стикером */
+    const hitLayer = (px, py, only) => {
       for (let i = state.layers.length - 1; i >= 0; i--) {
         const l = state.layers[i];
+        if (only && !only(l)) continue;
         const b = window.Render.layerBox(ctx, l, assets, card.width, card.height);
         const dx = px - l.x * card.width;
         const dy = py - l.y * card.height;
@@ -2893,6 +3130,7 @@
         return;
       }
       selectedLayer = hit;
+      if (hit >= 0) addingSticker = false;
       syncLayerTools();
       invalidate();
       if (hit < 0) return;
@@ -2989,6 +3227,70 @@
       if (b) editLayer({ shadow: b.dataset.v === 'auto' ? undefined : b.dataset.v });
     });
     $('layerOpacity').oninput = (e) => editLayer({ opacity: Number(e.target.value) }, true);
+    /* двойное нажатие по тексту: поле ввода прямо поверх него, Enter или нажатие мимо закрывает */
+    const editor = document.createElement('textarea');
+    editor.className = 'text-edit';
+    editor.hidden = true;
+    editor.rows = 1;
+    editor.setAttribute('aria-label', t('Текст'));
+    $('stage').append(editor);
+    let editing = -1;
+    const placeEditor = () => {
+      const l = state.layers[editing];
+      if (!l) return;
+      const cb = card.getBoundingClientRect();
+      const sb = $('stage').getBoundingClientRect();
+      const k = cb.width / card.width;
+      const b = window.Render.layerBox(ctx, l, assets, card.width, card.height);
+      const f = FONTS.find((x) => x.id === l.font) || FONTS[0];
+      editor.style.left = `${cb.left - sb.left + l.x * card.width * k}px`;
+      editor.style.top = `${cb.top - sb.top + l.y * card.height * k}px`;
+      editor.style.width = `${Math.min(sb.width - 16, Math.max(160, b.w * k + 32))}px`;
+      editor.style.fontFamily = f.css;
+      editor.style.fontSize = `${Math.max(16, b.size * k)}px`;
+      editor.rows = Math.max(1, editor.value.split('\n').length);
+    };
+    const closeEditor = () => {
+      if (editing < 0) return;
+      editing = -1;
+      editor.hidden = true;
+      syncLayerTools();
+      update();
+    };
+    editor.oninput = () => {
+      if (editing < 0) return;
+      state.layers = state.layers.map((x, j) => (j === editing ? { ...x, text: editor.value } : x));
+      placeEditor();
+      update();
+    };
+    editor.onkeydown = (e) => {
+      e.stopPropagation();
+      if ((e.key === 'Enter' && !e.shiftKey) || e.key === 'Escape') { e.preventDefault(); closeEditor(); editor.blur(); }
+    };
+    editor.onblur = closeEditor;
+    /* нажатие мимо поля тоже заканчивает правку */
+    document.addEventListener('pointerdown', (e) => { if (editing >= 0 && e.target !== editor) closeEditor(); }, true);
+    card.addEventListener('dblclick', (e) => {
+      if (phase !== 'edit') return;
+      const [px, py] = toCard(e);
+      const hit = hitLayer(px, py, (l) => l.type === 'text');
+      if (hit < 0) return;
+      /* двойной тап по тексту правит его, а не открывает полный экран */
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      if (tab !== 'layers') openTool('layers');
+      multiMode = false;
+      selectedLayer = hit;
+      addingSticker = false;
+      editing = hit;
+      editor.value = state.layers[hit].text || '';
+      editor.hidden = false;
+      placeEditor();
+      editor.focus();
+      editor.select();
+      syncLayerTools();
+      invalidate();
+    });
     /* правая кнопка мыши по стикеру: выбрать его и открыть его эффекты */
     card.addEventListener('contextmenu', (e) => {
       if (phase !== 'edit') return;
@@ -2999,10 +3301,11 @@
       if (tab !== 'layers') setTab('layers');
       multiMode = false;
       selectedLayer = hit;
+      addingSticker = false;
+      if (state.layers[hit].type !== 'text') layerSub = 'fx';
       syncLayerTools();
       invalidate();
-      const look = $('lookTools');
-      if (!look.hidden) document.querySelector('.panels').scrollTop = look.offsetTop - 8;
+      document.querySelector('.panels').scrollTop = 0;
     });
     $('layerCopy').onclick = () => {
       const l = layerAt(selectedLayer);
@@ -3319,7 +3622,11 @@
 
     $('tools').addEventListener('click', (e) => {
       const b = e.target.closest('[data-tab]');
-      if (b) openTool(b.dataset.tab);
+      if (!b) return;
+      /* вкладки видны и при открытой панели: нажатие на другую переключает сразу, правки прошлой остаются,
+         нажатие на открытую закрывает её */
+      if (b.dataset.tab === tab) closeTool(true);
+      else openTool(b.dataset.tab);
     });
     $('toolDone').onclick = () => closeTool(true);
     $('toolCancel').onclick = () => closeTool(false);
@@ -3382,7 +3689,6 @@
     $('shareCard').onclick = shareCard;
 
     $('filePhoto').onchange = (e) => { handleFiles(e.target.files); e.target.value = ''; };
-    $('bgUpload').onclick = () => $('fileBg').click();
     $('fileBg').onchange = (e) => {
       if (e.target.files[0]) setBackground(e.target.files[0]).catch(() => toast(t('Эта картинка не открывается.')));
       e.target.value = '';
@@ -3450,6 +3756,9 @@
     bindFullscreen();
     bindStrips();
     bindSliderReset();
+    bindMore();
+    bindSliding();
+    bindLayerList();
     bindDesk();
     buildPalette();
   }
@@ -3466,10 +3775,14 @@
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
     const btn = document.querySelector(`#tools [data-tab="${tab}"]`);
     $('toolTitle').textContent = btn ? btn.querySelector('span').textContent : '';
+    /* открытая вкладка всегда видна в полосе, даже если до неё надо было листать */
+    if (btn) requestAnimationFrame(() => btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
     $('scanSub').hidden = !(scanOpen() && state.scan.on);
     if (!scanOpen()) unselect();
     syncGrab();
     if (tab === 'layers') syncLayerTools();
+    if (tab === 'motif') syncMotifs();
+    if (tab === 'collage') syncCollages();
     if (tab === 'fx') syncFx();
     syncCtx();
     invalidate();
@@ -3547,10 +3860,7 @@
 
     const draft = await Store.get('draft');
     if (draft && draft.slots) {
-      toast(t('Есть незаконченная карточка.'), {
-        label: t('Продолжить'),
-        run: () => restoreDraft(draft).catch(() => toast(t('Черновик не открылся.'))),
-      });
+      if (phase === 'shoot') showResume(draft);
     }
     const local = ['localhost', '127.0.0.1'].includes(location.hostname);
     if ('serviceWorker' in navigator && !local) navigator.serviceWorker.register('sw.js').catch(() => {});

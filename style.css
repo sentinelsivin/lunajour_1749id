@@ -145,18 +145,6 @@ button { cursor: pointer; }
   to { transform: translateY(-18px) rotate(8deg); opacity: .35; }
 }
 
-.tag {
-  position: absolute;
-  top: 10px;
-  left: 16px;
-  padding: 2px 8px;
-  font: 10px var(--mono);
-  letter-spacing: .14em;
-  text-transform: uppercase;
-  color: var(--bone);
-  background: var(--accent);
-  border-radius: 4px;
-}
 .countdown {
   position: absolute;
   inset: 0;
@@ -185,7 +173,7 @@ button { cursor: pointer; }
 /* Карточка на весь экран: нажатие в любом месте возвращает обратно. */
 .app.view .stage { position: fixed; inset: 0; z-index: 25; background: var(--ink); }
 .app.view #card { max-width: 100%; max-height: 100%; border-radius: 0; box-shadow: none; pointer-events: none; }
-.app.view .tag, .app.view .floaters { display: none; }
+.app.view .floaters { display: none; }
 
 .dock {
   grid-area: dock;
@@ -294,7 +282,15 @@ button { cursor: pointer; }
 .icon-btn { width: 44px; height: 38px; border: 0; border-radius: 8px; background: none; color: var(--muted); font-size: 18px; }
 .icon-btn:hover { color: var(--bone); }
 .icon-btn.ok { color: var(--accent-light); font-size: 20px; }
-.app.tool-open #tools { display: none; }
+/* Открытый инструмент не прячет вкладки: они сжимаются в полосу под панелью, чтобы переключаться,
+   не закрывая её. На компьютере полоса стоит над панелью. */
+.app.tool-open #tools { order: 3; flex-wrap: nowrap; padding: 3px 6px; border-top: 1px solid var(--hairline); }
+.app.tool-open #tools button { flex: 1 0 46px; gap: 2px; padding: 5px 2px 4px; font-size: 10px; }
+.app.tool-open #tools svg { width: 18px; height: 18px; }
+@media (min-width: 861px) {
+  .app.tool-open #tools { order: 0; flex-wrap: wrap; border-top: 0; border-bottom: 1px solid var(--hairline); }
+  .app.tool-open #tools button { flex: 0 0 calc(20% - 2px); }
+}
 .app.tool-open .panel-head { display: flex; }
 .app.tool-open .panels { display: block; }
 .app.tool-open .bar { display: none; }
@@ -512,7 +508,6 @@ button { cursor: pointer; }
   .app.tool-open .grip { display: block !important; }
 
   #card { max-width: calc(100% - 16px); max-height: calc(100% - 12px); }
-  .tag { top: 6px; left: 8px; }
   .expand { top: 6px; right: 8px; }
 
   /* Панель лежит поверх пустого ряда сетки, поэтому её высота меняется плавно и не двигает карточку. */
@@ -592,7 +587,7 @@ button { cursor: pointer; }
 
 /* ---------- мои стили ---------- */
 .thumb { position: relative; }
-.style-add i {
+.style-add i, .add-tile i {
   display: grid;
   place-items: center;
   aspect-ratio: 4 / 5;
@@ -643,4 +638,143 @@ button { cursor: pointer; }
   .seg button { min-height: 40px; }
   .thumb .del { width: 30px; height: 30px; font-size: 18px; }
   input[type="range"] { min-height: 32px; }
+}
+
+/* ---------- незаконченная карточка на стартовом экране ---------- */
+.resume {
+  position: absolute;
+  left: 50%;
+  bottom: 16px;
+  z-index: 8;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px 12px;
+  align-items: center;
+  width: min(360px, calc(100% - 32px));
+  padding: 12px;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, .94);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+.resume[hidden] { display: none; }
+.resume img { grid-row: span 2; width: 52px; height: 64px; object-fit: cover; border-radius: 4px; }
+.resume img[hidden] { display: none; }
+.resume-text, .resume .row { grid-column: 2; }
+.resume.no-thumb .resume-text, .resume.no-thumb .row { grid-column: 1 / -1; }
+.resume-text { display: flex; flex-direction: column; gap: 2px; font-size: 13px; color: var(--muted); }
+.resume-text b { color: var(--bone); font-weight: 600; }
+.resume .row { gap: 8px; }
+
+/* ---------- список слоёв ---------- */
+.layer-list { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px; }
+.layer-list::-webkit-scrollbar { display: none; }
+.layer-item {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  /* средне-серая шахматка: видно и чёрный, и белый текст */
+  background: repeating-conic-gradient(#6a6a6a 0 25%, #7c7c7c 0 50%) 0 0 / 12px 12px;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
+}
+.layer-item canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.layer-item.on { border-color: var(--accent-light); box-shadow: 0 0 0 1px var(--accent-light); }
+.layer-item.dragging { opacity: .55; transform: scale(1.08); }
+.layer-item.target { border-color: #f472b6; box-shadow: -4px 0 0 #f472b6; }
+
+/* ---------- правка текста прямо на карточке ---------- */
+.text-edit {
+  position: absolute;
+  z-index: 9;
+  transform: translate(-50%, -50%);
+  padding: 6px 10px;
+  resize: none;
+  overflow: hidden;
+  text-align: center;
+  line-height: 1.2;
+  color: var(--bone);
+  background: rgba(10, 10, 10, .86);
+  border: 1px solid var(--accent-light);
+  border-radius: 8px;
+  outline: none;
+}
+.text-edit[hidden] { display: none; }
+
+/* ---------- палец на ползунке: панель прячется, карточка крупнее, виден только сам ползунок ---------- */
+@media (max-width: 860px) {
+  .app { transition: grid-template-rows .22s ease-out; }
+  .app.sliding { grid-template-rows: auto minmax(0, 1fr) calc(84px + env(safe-area-inset-bottom)); }
+  .app.sliding .dock { visibility: hidden; background: transparent; border-top-color: transparent; }
+  .app.sliding .dock .live {
+    visibility: visible;
+    background: rgba(10, 10, 10, .78);
+    box-shadow: 0 0 0 10px rgba(10, 10, 10, .78);
+    border-radius: 6px;
+  }
+}
+
+/* ---------- вкладка «Стикеры»: полоса слоёв сверху, прилипает при прокрутке ---------- */
+.layer-bar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 4px;
+  padding: 6px 0;
+  background: var(--surface1);
+  border-bottom: 1px solid var(--hairline);
+}
+.layer-bar[hidden] { display: none; }
+.layer-bar .layer-list { flex: 1; min-width: 0; }
+.layer-bar #multiToggle { flex: none; }
+.layer-add {
+  flex: none;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px dashed var(--hairline);
+  border-radius: 6px;
+  background: none;
+  color: var(--muted);
+  font-size: 26px;
+  line-height: 1;
+}
+.layer-add.on { border-style: solid; border-color: var(--accent-light); color: var(--bone); }
+#layerSub { margin-top: 2px; }
+
+/* ---------- меню «⋯» в шапке ---------- */
+.more-menu {
+  position: fixed;
+  top: calc(max(12px, env(safe-area-inset-top)) + 44px);
+  right: max(12px, env(safe-area-inset-right));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(360px, calc(100vw - 24px));
+  max-height: calc(100dvh - 90px);
+  overflow-y: auto;
+  padding: 14px;
+  background: var(--surface1);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .5);
+}
+.more-menu[hidden] { display: none; }
+.more-menu .seg.lang { display: flex !important; width: 100%; }
+#moreBtn { font-size: 18px; line-height: 1; }
+
+/* узкий телефон: в редакторе логотип уступает место кнопкам */
+@media (max-width: 420px) {
+  .app.editing .brand { display: none; }
+  .app.editing .top-side { flex: 1; }
+  .app.editing .history { width: 100%; justify-content: space-between; }
 }
