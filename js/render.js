@@ -1021,6 +1021,14 @@
     { id: 'pLixie', name: 'Lixie dust', adjust: { lut: 'lixie', lutA: 100, k: -30 } },
     { id: 'pAika', name: 'Aika', adjust: { lut: 'aika', lutA: 100, k: -30, spA: 35 } },
     { id: 'pOceanGlow', name: 'Ocean glow', adjust: { lut: 'oceanGlow', lutA: 100, c: 22, sh: -28, gl: 60, glR: 35, v: 22, s: 10 } },
+    { id: 'pCinematic', name: 'Cinematic night', adjust: { lut: 'cinematicNight', lutA: 100 } },
+    { id: 'pNightDriving', name: 'Night driving', adjust: { lut: 'nightDriving', lutA: 100 } },
+    { id: 'pScifi', name: 'Sci-fi', adjust: { lut: 'scifi', lutA: 100 } },
+    { id: 'pGreenToBlue', name: 'Green water to blue', adjust: { lut: 'greenToBlue', lutA: 100, cl: 30, k: 20, kR: 8 } },
+    { id: 'pWarmDigicam', name: 'Warm digicam', adjust: { lut: 'warmDigicam', lutA: 100 } },
+    /* у этих двух на странице Polarr нет картинки «до»: собраны настройками по виду готового фото */
+    { id: 'pOcean', name: 'Ocean', adjust: { f: 35, s: -25, c: -10, w: 6, t: -4, hl: -15, b: 4, tsC: '#3a6b78', tsA: 25 } },
+    { id: 'pVxlvxtk', name: 'Vxlvxtkisses', adjust: { b: 22, c: -6, f: 15, s: -5, gl: 50, glR: 30, thC: '#ffc8dc', thA: 55, tsC: '#7a68b8', tsA: 45, ca: 4, k: -15 } },
   ];
 
   let grainTile = null;
