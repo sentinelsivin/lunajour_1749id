@@ -45,12 +45,36 @@
         <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
           <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
         </div>
+        <button class="btn" id="keysBtn" type="button">Клавиши</button>
         <div class="group"><span class="label">Язык</span>
           <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
             <button type="button" data-v="ru">RU</button>
             <button type="button" data-v="en">EN</button>
           </div>
         </div>
+  </div>
+
+  <div class="more-menu keys-sheet" id="keysSheet" role="dialog" aria-label="Клавиши" hidden>
+    <div class="keys-head"><b>Клавиши</b><button class="icon-btn" id="keysClose" type="button" aria-label="Закрыть">✕</button></div>
+    <dl class="keys">
+      <dt><kbd>Ctrl+Z</kbd></dt><dd>Отменить</dd>
+      <dt><kbd>Ctrl+Shift+Z</kbd> <kbd>Ctrl+Y</kbd></dt><dd>Вернуть</dd>
+      <dt><kbd>Ctrl+S</kbd></dt><dd>Сохранить карточку</dd>
+      <dt><kbd>Пробел</kbd></dt><dd>Удерживать: без эффектов</dd>
+      <dt><kbd>Ctrl+V</kbd></dt><dd>Вставить картинку стикером</dd>
+      <dt><kbd>Shift</kbd> + файл</dt><dd>Перетащенная картинка станет стикером</dd>
+      <dt><kbd>Delete</kbd></dt><dd>Удалить стикер</dd>
+      <dt><kbd>←↑→↓</kbd></dt><dd>Сдвинуть стикер, с Shift сильнее</dd>
+      <dt><kbd>Ctrl+D</kbd></dt><dd>Копия стикера</dd>
+      <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Стикер ниже или выше</dd>
+      <dt><kbd>Alt</kbd></dt><dd>Тянуть стикер без прилипания к середине</dd>
+      <dt><kbd>Shift</kbd> + клик</dt><dd>Выбрать несколько стикеров</dd>
+      <dt>Колесо мыши</dt><dd>Размер выбранного стикера</dd>
+      <dt>Двойной клик</dt><dd>По тексту: править его на карточке</dd>
+      <dt>Правый клик</dt><dd>По стикеру: его эффекты</dd>
+      <dt><kbd>Esc</kbd></dt><dd>Закрыть панель</dd>
+      <dt><kbd>?</kbd></dt><dd>Эта шпаргалка</dd>
+    </dl>
   </div>
 
   <main class="stage" id="stage">

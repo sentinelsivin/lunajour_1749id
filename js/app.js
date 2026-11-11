@@ -177,6 +177,7 @@
     if (tpl && tpl.shuffle) $('collageShuffle').textContent = t(tpl.id === 'cutouts' ? 'Перемешать вырезки' : 'Перемешать');
     $('markTools').hidden = !(tpl && tpl.marks);
     $('cellButtons').hidden = !!(tpl && tpl.marks);
+    keepInView($('collageGrid'));
   }
 
   /* У фраз число окошек зависит от текста: добавляем пустые ячейки или убираем лишние, свои снимки не трогаем. */
@@ -197,7 +198,8 @@
   /* ---------- отрисовка ---------- */
   function sizeCanvas() {
     const [W, H] = RATIOS[state.ratio];
-    const k = (Camera.active ? 800 : 1100) / Math.max(W, H);
+    /* пока тянут ползунок у тяжёлого эффекта, превью считается вдвое меньше и не тормозит */
+    const k = (Camera.active ? 800 : lowRes ? 560 : 1100) / Math.max(W, H);
     card.width = Math.round(W * k);
     card.height = Math.round(H * k);
     $('readout').textContent = `${W} × ${H} · ${state.ratio}`;
@@ -911,6 +913,131 @@
     });
   }
 
+  /* ---------- выбранное в ряду всегда на виду ---------- */
+  /* Ряд сам прокручивается к выбранной плитке, когда выбор поменялся или вкладку открыли заново.
+     Если плитка и так видна, ряд не дёргается. */
+  function keepInView(row, force) {
+    requestAnimationFrame(() => {
+      const on = row.querySelector('.on:not([hidden])');
+      const r = row.getBoundingClientRect();
+      if (!on || !r.width || row.scrollWidth <= row.clientWidth + 2) return;
+      const key = on.dataset.fx ?? on.textContent;
+      if (!force && row.dataset.seen === key) return;
+      row.dataset.seen = key;
+      const b = on.getBoundingClientRect();
+      if (!force && b.left >= r.left && b.right <= r.right) return;
+      row.scrollTo({ left: row.scrollLeft + b.left - r.left - (r.width - b.width) / 2, behavior: force ? 'auto' : 'smooth' });
+    });
+  }
+
+  /* ---------- подсказки: первые два раза полностью, потом значок «?» ---------- */
+  const HINTS_KEY = 'lunajour-hints';
+  /* эти подсказки меняют текст по ходу дела, их не сворачиваем */
+  const LIVE_HINTS = new Set(['fxTextHint', 'fxMaskHint', 'fxCenterHint', 'cellHint']);
+  let hintSeen = {};
+  try { hintSeen = JSON.parse(localStorage.getItem(HINTS_KEY)) || {}; } catch { /* счёт просто начнётся заново */ }
+  /* вызывается до перевода интерфейса, поэтому ключ подсказки всегда русский текст */
+  function prepHints() {
+    document.querySelectorAll('.panels .hint').forEach((p) => {
+      if (LIVE_HINTS.has(p.id) || !p.textContent.trim()) return;
+      p.dataset.hk = p.textContent.trim().slice(0, 60);
+      const q = document.createElement('button');
+      q.type = 'button';
+      q.className = 'hint-q';
+      q.textContent = '?';
+      q.title = 'Показать подсказку';
+      q.setAttribute('aria-label', 'Показать подсказку');
+      q.onclick = () => p.classList.remove('folded');
+      p.after(q);
+    });
+  }
+  function foldHints(panel) {
+    if (!panel) return;
+    requestAnimationFrame(() => {
+      let changed = false;
+      panel.querySelectorAll('.hint[data-hk]').forEach((p) => {
+        const n = hintSeen[p.dataset.hk] || 0;
+        p.classList.toggle('folded', n >= 2);
+        /* считаем только те подсказки, что правда видны сейчас */
+        if (n < 2 && p.offsetParent) {
+          hintSeen[p.dataset.hk] = n + 1;
+          changed = true;
+        }
+      });
+      if (changed) {
+        try { localStorage.setItem(HINTS_KEY, JSON.stringify(hintSeen)); } catch { /* без запоминания */ }
+      }
+    });
+  }
+
+  /* ---------- ползунок у тяжёлых эффектов: превью в половину размера, пока его тянут ---------- */
+  let lowRes = false;
+  const heavyCard = () => !!(state.fx.id || state.fx2.id || (state.scan && state.scan.on) || state.layers.some((l) => l.fx && l.fx.id));
+  function bindLowRes() {
+    document.addEventListener('pointerdown', (e) => {
+      const el = e.target.closest && e.target.closest('input[type="range"]');
+      if (!el || !heavyCard() || lowRes) return;
+      lowRes = true;
+      sizeCanvas();
+    });
+    const end = () => {
+      if (!lowRes) return;
+      lowRes = false;
+      sizeCanvas();
+    };
+    ['pointerup', 'pointercancel'].forEach((ev) => document.addEventListener(ev, end));
+    window.addEventListener('blur', end);
+  }
+
+  /* ---------- отмена: что именно отменится ---------- */
+  /* Сравнивает два снимка настроек и называет главное отличие: «эффект «Лего»», «удаление стикера». */
+  function changeOf(a, b) {
+    if (!a || !b) return '';
+    let A;
+    let B;
+    try { A = JSON.parse(a); B = JSON.parse(b); } catch { return ''; }
+    const differs = (k) => JSON.stringify(A[k]) !== JSON.stringify(B[k]);
+    const order = ['layers', 'fx', 'fx2', 'scan', 'motif', 'pieces', 'collage', 'tints', 'marks', 'paper', 'paperColor', 'note', 'adjust', 'ratio', 'paperPos'];
+    const k = order.find(differs) || Object.keys({ ...A, ...B }).find(differs);
+    if (!k) return '';
+    const named = (what, name) => (name ? `${t(what)} «${t(name)}»` : t(what));
+    if (k === 'layers') {
+      const da = (A.layers || []).length, db = (B.layers || []).length;
+      return t(db > da ? 'добавление стикера' : db < da ? 'удаление стикера' : 'правка стикера');
+    }
+    if (k === 'fx' || k === 'fx2') {
+      const def = Effects.byId(B[k].id) || Effects.byId(A[k].id);
+      return named('эффект', def && def.name);
+    }
+    if (k === 'motif') {
+      const m = MOTIFS.find((x) => x.id === B.motif) || MOTIFS.find((x) => x.id === A.motif);
+      return named('фигура', m && m.id !== 'none' ? m.name : '');
+    }
+    if (k === 'collage') {
+      const c = Collages.byId(B.collage) || Collages.byId(A.collage);
+      return named('коллаж', c && c.name);
+    }
+    return t({
+      scan: 'сканер', pieces: 'фигуры', tints: 'цвета коллажа', marks: 'рамки вокруг людей', paper: 'бумага', paperColor: 'цвет бумаги',
+      note: 'подпись', adjust: 'цвет фото', ratio: 'размер карточки', paperPos: 'формат',
+    }[k] || 'изменение');
+  }
+
+  /* ---------- шпаргалка клавиш ---------- */
+  function bindKeysSheet() {
+    const sheet = $('keysSheet');
+    const set = (on) => { sheet.hidden = !on; };
+    $('keysBtn').onclick = () => { setMore(false); set(true); };
+    $('keysClose').onclick = () => set(false);
+    document.addEventListener('pointerdown', (e) => { if (!sheet.hidden && !sheet.contains(e.target) && e.target !== $('keysBtn')) set(false); });
+    document.addEventListener('keydown', (e) => {
+      const a = document.activeElement;
+      const typing = a && (/TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && a.type !== 'range' && a.type !== 'checkbox'));
+      if (e.key === 'Escape' && !sheet.hidden) { set(false); return; }
+      if (e.key === '?' && !typing && !e.ctrlKey && !e.metaKey) { e.preventDefault(); set(sheet.hidden); }
+    });
+  }
+
   /* ---------- меню «⋯»: мои стили, начать заново, язык ---------- */
   let setMore = () => {};
   function bindMore() {
@@ -1390,6 +1517,7 @@
     $('fontHint').textContent = t(only === 'latin' ? 'В этом шрифте только латиница.' : 'В этом шрифте только кириллица.');
     syncPieceTools();
     syncGrab();
+    keepInView($('motifGrid'));
   }
 
   /* ---------- ручная расстановка ---------- */
@@ -1561,6 +1689,7 @@
       paperQueue.push([c, p.id]);
     });
     requestAnimationFrame(pumpPapers);
+    keepInView($('paperList'));
     const grid = $('templateGrid');
     grid.replaceChildren();
     Templates.BACKGROUNDS.forEach((item) => {
@@ -1994,6 +2123,7 @@
       const e = Effects.byId(b.dataset.fx);
       b.querySelector('span').textContent = t(e ? e.name : 'Без эффекта');
     });
+    keepInView(grid);
     const def = fxDef();
     $('fxTools').hidden = !def;
     if (!def) return;
@@ -3395,6 +3525,11 @@
   function syncHistory() {
     $('undoBtn').disabled = !past.length;
     $('redoBtn').disabled = !future.length;
+    /* в подсказке кнопки сказано, что именно отменится или вернётся */
+    const u = past.length ? changeOf(past[past.length - 1], lastSnap) : '';
+    const r = future.length ? changeOf(lastSnap, future[future.length - 1]) : '';
+    $('undoBtn').title = u ? `${t('Отменить')}: ${u} (Ctrl+Z)` : t('Отменить (Ctrl+Z)');
+    $('redoBtn').title = r ? `${t('Вернуть')}: ${r} (Ctrl+Shift+Z)` : t('Вернуть (Ctrl+Shift+Z)');
   }
   function commitHistory() {
     clearTimeout(histTimer);
@@ -3436,14 +3571,18 @@
   function undo() {
     commitHistory();
     if (!past.length) return;
+    const what = changeOf(past[past.length - 1], lastSnap);
     future.push(lastSnap);
     applySnap(past.pop());
+    if (what) toast(`${t('Отменено')}: ${what}`);
   }
   function redo() {
     commitHistory();
     if (!future.length) return;
+    const what = changeOf(lastSnap, future[future.length - 1]);
     past.push(lastSnap);
     applySnap(future.pop());
+    if (what) toast(`${t('Возвращено')}: ${what}`);
   }
   function bindHistory() {
     $('undoBtn').onclick = undo;
@@ -3512,7 +3651,12 @@
         $('expandCard').setAttribute('aria-pressed', on);
       };
       const calm = matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (document.startViewTransition && !calm) document.startViewTransition(apply);
+      if (document.startViewTransition && !calm) {
+        /* переход прерывается, если окно меняет размер на ходу: это не ошибка, полный экран просто включается без анимации */
+        const vt = document.startViewTransition(apply);
+        vt.ready.catch(() => {});
+        vt.finished.catch(() => {});
+      }
       else apply();
     };
     const setFull = (on) => {
@@ -3757,6 +3901,8 @@
     bindStrips();
     bindSliderReset();
     bindMore();
+    bindLowRes();
+    bindKeysSheet();
     bindSliding();
     bindLayerList();
     bindDesk();
@@ -3783,6 +3929,12 @@
     if (tab === 'layers') syncLayerTools();
     if (tab === 'motif') syncMotifs();
     if (tab === 'collage') syncCollages();
+    /* открытая вкладка: ряды встают на выбранное, давно знакомые подсказки сворачиваются в «?» */
+    const openPanel = tab && document.querySelector(`[data-panel="${tab}"]`);
+    if (openPanel) {
+      openPanel.querySelectorAll('.thumbs').forEach((row) => keepInView(row, true));
+      foldHints(openPanel);
+    }
     if (tab === 'fx') syncFx();
     syncCtx();
     invalidate();
@@ -3842,6 +3994,7 @@
   }
 
   async function boot() {
+    prepHints();
     I18n.capture();
     I18n.apply();
     markSeg($('langSeg'), I18n.lang);
