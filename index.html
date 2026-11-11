@@ -331,12 +331,50 @@
       </section>
 
       <section class="panel" data-panel="color" hidden>
-        <label class="slider">Яркость<input id="adjB" type="range" min="-60" max="60" data-bind="adjust.b"></label>
-        <label class="slider">Контраст<input id="adjC" type="range" min="-60" max="60" data-bind="adjust.c"></label>
-        <label class="slider">Насыщенность<input id="adjS" type="range" min="-100" max="80" data-bind="adjust.s"></label>
-        <label class="slider">Теплота<input id="adjW" type="range" min="-60" max="60" data-bind="adjust.w"></label>
-        <label class="slider">Зерно<input id="adjG" type="range" min="0" max="100" data-bind="adjust.g"></label>
-        <button class="btn" id="adjReset" type="button">Сбросить цвет</button>
+        <!-- шаблоны цвета на своём фото, у выбранного своя сила -->
+        <div class="thumbs" id="lookGrid"></div>
+        <label class="slider" id="lookMixField" hidden>Сила шаблона<input id="lookMix" type="range" min="0" max="1" step="0.01" data-def="1"></label>
+        <div class="chips" id="adjSub"></div>
+        <div class="group" data-asub="light">
+          <label class="slider">Яркость<input id="adjB" type="range" min="-60" max="60" data-bind="adjust.b"></label>
+          <label class="slider">Контраст<input id="adjC" type="range" min="-60" max="60" data-bind="adjust.c"></label>
+          <label class="slider">Тени<input id="adjSh" type="range" min="-100" max="100" data-bind="adjust.sh"></label>
+          <label class="slider">Света<input id="adjHl" type="range" min="-100" max="100" data-bind="adjust.hl"></label>
+          <label class="slider">Выцветание<input id="adjF" type="range" min="0" max="100" data-bind="adjust.f"></label>
+        </div>
+        <div class="group" data-asub="color" hidden>
+          <label class="slider">Насыщенность<input id="adjS" type="range" min="-100" max="80" data-bind="adjust.s"></label>
+          <label class="slider">Теплота<input id="adjW" type="range" min="-60" max="60" data-bind="adjust.w"></label>
+          <label class="slider">Оттенок: зелень или пурпур<input id="adjT" type="range" min="-60" max="60" data-bind="adjust.t"></label>
+        </div>
+        <div class="group" data-asub="tone" hidden>
+          <div class="group"><span class="label">Цвет теней</span><div class="swatches" id="toneSh"></div></div>
+          <label class="slider">Сила в тенях<input id="adjTsA" type="range" min="0" max="100" data-bind="adjust.tsA"></label>
+          <div class="group"><span class="label">Цвет светов</span><div class="swatches" id="toneHl"></div></div>
+          <label class="slider">Сила в светах<input id="adjThA" type="range" min="0" max="100" data-bind="adjust.thA"></label>
+          <p class="hint">Тени тянутся к одному цвету, света к другому, как в кино: например тени в бирюзу, света в персик.</p>
+          <div class="group"><span class="label">Цвет мягким светом</span><div class="swatches" id="toneSt"></div></div>
+          <label class="slider">Сила мягкого света<input id="adjStA" type="range" min="0" max="100" data-bind="adjust.stA"></label>
+        </div>
+        <div class="group" data-asub="detail" hidden>
+          <label class="slider">Резкость: мягче или резче<input id="adjK" type="range" min="-100" max="100" data-bind="adjust.k"></label>
+          <label class="slider">Радиус резкости<input id="adjKR" type="range" min="2" max="30" data-bind="adjust.kR"></label>
+          <label class="slider">Чёткость<input id="adjCl" type="range" min="0" max="100" data-bind="adjust.cl"></label>
+          <label class="slider">Свечение<input id="adjGl" type="range" min="0" max="100" data-bind="adjust.gl"></label>
+          <label class="slider">Размер свечения<input id="adjGlR" type="range" min="0" max="100" data-bind="adjust.glR"></label>
+          <label class="slider">Сдвиг красного канала<input id="adjCa" type="range" min="0" max="12" step="0.5" data-bind="adjust.ca"></label>
+          <label class="slider">Блёстки<input id="adjSp" type="range" min="0" max="100" data-bind="adjust.spA"></label>
+          <label class="slider">Засветка<input id="adjLk" type="range" min="0" max="100" data-bind="adjust.lkA"></label>
+          <div class="group" id="leakTools"><span class="label">Откуда засветка</span><div class="chips" id="leakSide"></div>
+            <div class="swatches" id="leakColor"></div>
+          </div>
+          <label class="slider">Виньетка: светлее или темнее к краям<input id="adjV" type="range" min="-100" max="100" data-bind="adjust.v"></label>
+          <label class="slider">Зерно<input id="adjG" type="range" min="0" max="100" data-bind="adjust.g"></label>
+        </div>
+        <div class="row">
+          <button class="btn" id="lookSave" type="button">Сохранить как шаблон</button>
+          <button class="btn" id="adjReset" type="button">Сбросить цвет</button>
+        </div>
       </section>
 
       <section class="panel" data-panel="fx" hidden>
@@ -533,6 +571,7 @@
 <script src="js/collages.js"></script>
 <script src="js/effects.js"></script>
 <script src="js/scanner.js"></script>
+<script src="js/luts.js"></script>
 <script src="js/render.js"></script>
 <script src="js/decor.js"></script>
 <script src="js/templates.js"></script>

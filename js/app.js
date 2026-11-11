@@ -23,7 +23,12 @@
     fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     scan: Scanner.defaults(),
-    adjust: { b: 0, c: 0, s: 0, w: 0, g: 0 },
+    /* цвет фото: значения ползунков; look и mix помнят выбранный шаблон и его силу */
+    adjust: {
+      b: 0, c: 0, s: 0, w: 0, g: 0, t: 0, sh: 0, hl: 0, f: 0, v: 0, k: 0, kR: 8, kT: 0, cl: 0, gl: 0, glR: 40, glN: 0, ca: 0,
+      tsC: '#1f6f78', tsA: 0, thC: '#ffb680', thA: 0, stC: '#e1d3b3', stA: 0, lut: '', lutA: 100, lkA: 0, lkC: '#ff9a2e', lkS: 'right', spA: 0,
+      look: '', mix: 1,
+    },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
   });
 
@@ -911,6 +916,145 @@
       press = null;
       clear();
     });
+  }
+
+  /* ---------- вкладка «Цвет»: шаблоны и подвкладки ---------- */
+  const TONE_COLORS = ['#1f6f78', '#16756f', '#3a5f9e', '#1d4a2f', '#6b3a8f', '#a33a5a', '#ffb680', '#ffcf9e', '#ffb3d1', '#ffe27a', '#e8913a', '#f0ede5'];
+  const ASUBS = [['light', 'Свет'], ['color', 'Цвет'], ['tone', 'Тонировка'], ['detail', 'Детали']];
+  let adjSub = 'light';
+  /* свои шаблоны цвета лежат на устройстве */
+  let myLooks = [];
+  const lookById = (id) => Render.LOOKS.find((l) => l.id === id) || myLooks.find((l) => l.id === id) || null;
+  /* шаблон при силе mix: числа умножаются, цвета тонировки остаются */
+  function lookAdjust(look, mix) {
+    const out = { ...defaults().adjust };
+    Object.entries(look.adjust).forEach(([key, v]) => { out[key] = typeof v === 'number' ? Math.round(v * mix * 10) / 10 : v; });
+    return { ...out, look: look.id, mix };
+  }
+  function setLook(id, mix = 1) {
+    const look = lookById(id);
+    state.adjust = look ? lookAdjust(look, mix) : { ...defaults().adjust };
+    syncColor();
+    syncInputs();
+    update();
+  }
+  function drawLookThumb(c, adjust) {
+    const x = c.getContext('2d', { willReadFrequently: true });
+    const src = thumbSrc();
+    x.clearRect(0, 0, c.width, c.height);
+    drawCover(x, src.el, src.sw, src.sh, c.width, c.height);
+    if (adjust) Render.applyAdjust(x, c.width, c.height, adjust);
+  }
+  function syncColor() {
+    const grid = $('lookGrid');
+    const a = state.adjust;
+    const key = `${srcKey(thumbSrc())}|${myLooks.map((l) => l.id).join(',')}|${I18n.lang}`;
+    if (grid.dataset.key !== key) {
+      grid.dataset.key = key;
+      grid.replaceChildren();
+      [{ id: '', name: 'Без шаблона' }, ...Render.LOOKS, ...myLooks].forEach((look, i) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'thumb';
+        b.dataset.fx = look.id;
+        const c = canvas(120, 150);
+        const label = document.createElement('span');
+        label.textContent = look.mine ? look.name : t(look.name);
+        b.append(c, label);
+        if (look.mine) {
+          const del = document.createElement('i');
+          del.className = 'del';
+          del.textContent = '×';
+          del.title = t('Удалить шаблон');
+          del.setAttribute('aria-label', t('Удалить шаблон'));
+          del.onclick = (e) => { e.stopPropagation(); deleteLook(look); };
+          b.append(del);
+        }
+        b.onclick = () => setLook(look.id, look.id === state.adjust.look ? state.adjust.mix ?? 1 : 1);
+        grid.append(b);
+        /* миниатюры по одной за кадр, на своём фото */
+        setTimeout(() => drawLookThumb(c, look.id ? lookAdjust(look, 1) : null), 25 * i);
+      });
+    }
+    grid.querySelectorAll('.thumb').forEach((b) => b.classList.toggle('on', b.dataset.fx === (a.look || '')));
+    keepInView(grid);
+    $('lookMixField').hidden = !a.look || !lookById(a.look);
+    $('lookMix').value = a.mix ?? 1;
+    const sub = $('adjSub');
+    sub.replaceChildren();
+    ASUBS.forEach(([id, name]) => chip(sub, t(name), id === adjSub, () => { adjSub = id; syncColor(); }));
+    document.querySelectorAll('[data-asub]').forEach((el) => { el.hidden = el.dataset.asub !== adjSub; });
+    swatches($('toneSh'), TONE_COLORS, a.tsC || '#1f6f78', (c) => {
+      state.adjust = { ...state.adjust, tsC: c, tsA: state.adjust.tsA || 30 };
+      syncColor();
+      syncInputs();
+      update();
+    });
+    swatches($('toneSt'), ['#e1d3b3', '#f0c9a0', '#ffd6e0', '#c9d8f0', '#cfe8d0', '#b0a090', '#ffffff'], a.stC || '#e1d3b3', (c) => {
+      state.adjust = { ...state.adjust, stC: c, stA: state.adjust.stA || 20 };
+      syncColor();
+      syncInputs();
+      update();
+    });
+    /* засветка: с какого края и каким цветом; без силы настройки не показываем */
+    $('leakTools').hidden = !Number(a.lkA);
+    const side = $('leakSide');
+    side.replaceChildren();
+    [['right', 'Справа'], ['left', 'Слева'], ['top', 'Сверху'], ['bottom', 'Снизу'], ['tr', 'Из угла']].forEach(([v, name]) => chip(side, t(name), (a.lkS || 'right') === v, () => {
+      state.adjust = { ...state.adjust, lkS: v };
+      syncColor();
+      update();
+    }));
+    swatches($('leakColor'), ['#ff9a2e', '#ff5a3c', '#ffd27a', '#ff7ab8', '#fff4e0', '#8fd0ff'], a.lkC || '#ff9a2e', (c) => {
+      state.adjust = { ...state.adjust, lkC: c };
+      syncColor();
+      update();
+    });
+    swatches($('toneHl'), TONE_COLORS, a.thC || '#ffb680', (c) => {
+      state.adjust = { ...state.adjust, thC: c, thA: state.adjust.thA || 30 };
+      syncColor();
+      syncInputs();
+      update();
+    });
+  }
+  async function saveLook() {
+    const n = myLooks.reduce((m, l) => Math.max(m, l.n || 0), 0) + 1;
+    const adjust = { ...state.adjust };
+    delete adjust.look;
+    delete adjust.mix;
+    const look = { id: `my${Date.now()}`, n, name: `${t('Мой')} ${n}`, mine: true, adjust };
+    myLooks = [...myLooks, look];
+    await Store.set('looks', myLooks);
+    state.adjust = { ...state.adjust, look: look.id, mix: 1 };
+    syncColor();
+    update();
+    toast(t('Шаблон цвета сохранён.'));
+  }
+  async function deleteLook(look) {
+    myLooks = myLooks.filter((l) => l.id !== look.id);
+    await Store.set('looks', myLooks);
+    if (state.adjust.look === look.id) state.adjust = { ...state.adjust, look: '' };
+    syncColor();
+    toast(t('Шаблон удалён.'), {
+      label: t('Вернуть'),
+      run: async () => {
+        myLooks = [...myLooks, look];
+        await Store.set('looks', myLooks);
+        syncColor();
+      },
+    });
+  }
+  function bindColor() {
+    $('lookMix').oninput = (e) => {
+      const look = lookById(state.adjust.look);
+      if (!look) return;
+      state.adjust = lookAdjust(look, Number(e.target.value));
+      syncInputs();
+      update();
+    };
+    $('lookSave').onclick = saveLook;
+    /* настройки засветки показываются, как только у неё появилась сила */
+    $('adjLk').addEventListener('input', () => { $('leakTools').hidden = !Number(state.adjust.lkA); });
   }
 
   /* ---------- выбранное в ряду всегда на виду ---------- */
@@ -3887,6 +4031,7 @@
     $('adjReset').onclick = () => {
       state.adjust = defaults().adjust;
       syncInputs();
+      syncColor();
       update();
     };
 
@@ -3901,6 +4046,7 @@
     bindStrips();
     bindSliderReset();
     bindMore();
+    bindColor();
     bindLowRes();
     bindKeysSheet();
     bindSliding();
@@ -3929,6 +4075,7 @@
     if (tab === 'layers') syncLayerTools();
     if (tab === 'motif') syncMotifs();
     if (tab === 'collage') syncCollages();
+    if (tab === 'color') syncColor();
     /* открытая вкладка: ряды встают на выбранное, давно знакомые подсказки сворачиваются в «?» */
     const openPanel = tab && document.querySelector(`[data-panel="${tab}"]`);
     if (openPanel) {
@@ -3970,6 +4117,7 @@
 
   function syncAll() {
     syncFx();
+    syncColor();
     syncStyles();
     syncScan();
     syncStickers();
@@ -4002,6 +4150,7 @@
     bindEvents();
     setTab('');
     Store.get('recent').then((r) => { if (r && typeof r === 'object') { recent = r; syncMotifs(); syncFx(); syncStickers(); } }).catch(() => {});
+    Store.get('looks').then((list) => { if (Array.isArray(list)) { myLooks = list; syncColor(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
     markSeg($('modeSeg'), mode);
