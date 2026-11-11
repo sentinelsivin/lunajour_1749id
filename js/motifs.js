@@ -1906,6 +1906,59 @@
   }
 
   /* ---------- каталог ---------- */
+  /* Кубики лего кучкой: фото видно сквозь кубики, у каждого шип прорезан тонким кольцом.
+     Кубики встают по сетке в полкубика и чуть просвечивают там, где налезают друг на друга. */
+  function legoBricks(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const s = m * 0.068 * o.size;
+    const n = Math.round(48 * o.density);
+    const half = s * 0.5;
+    const placed = [];
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < n; i++) {
+      const far = rng() < 0.15;
+      const x = Math.round((w / 2 + rng.gauss() * m * (far ? 0.27 : 0.13)) / half) * half;
+      const y = Math.round((h / 2 + rng.gauss() * m * (far ? 0.19 : 0.08)) / half) * half;
+      ctx.globalAlpha = 0.7 + rng() * 0.3;
+      ctx.fillRect(x - s / 2, y - s / 2, s, s);
+      placed.push([x, y]);
+    }
+    ctx.globalAlpha = 1;
+    ctx.globalCompositeOperation = 'destination-out';
+    ctx.lineWidth = s * 0.06;
+    placed.forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, s * 0.3, 0, TAU);
+      ctx.stroke();
+    });
+    ctx.globalCompositeOperation = 'source-over';
+  }
+
+  /* Пиксельное облако: в середине пятна клетки залиты, к краю пустые с точкой, мелкие и точки. */
+  function pixelCloud(ctx, w, h, rng, o) {
+    const m = Math.min(w, h);
+    const s = m * 0.034 * o.size;
+    const blobs = Array.from({ length: 5 }, () => [w * (0.25 + rng() * 0.5), h * (0.28 + rng() * 0.44), m * (0.1 + rng() * 0.12)]);
+    ctx.fillStyle = '#fff';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = s * 0.16;
+    for (let y = 0; y < h; y += s) {
+      for (let x = 0; x < w; x += s) {
+        const cx = x + s / 2, cy = y + s / 2;
+        let v = 0;
+        blobs.forEach(([bx, by, br]) => { v = Math.max(v, Math.exp(-((cx - bx) ** 2 + (cy - by) ** 2) / (2 * br * br))); });
+        v *= (0.7 + rng() * 0.6) * (0.6 + 0.4 * o.density);
+        const k = s * 0.06;
+        if (v > 0.75) ctx.fillRect(x + k, y + k, s - k * 2, s - k * 2);
+        else if (v > 0.5) {
+          ctx.strokeRect(x + k + s * 0.08, y + k + s * 0.08, s - k * 2 - s * 0.16, s - k * 2 - s * 0.16);
+          ctx.fillRect(x + s * 0.41, y + s * 0.41, s * 0.18, s * 0.18);
+        } else if (v > 0.32) ctx.fillRect(x + s * 0.28, y + s * 0.28, s * 0.44, s * 0.44);
+        else if (v > 0.2 && rng() < 0.5) ctx.fillRect(x + s * 0.4, y + s * 0.4, s * 0.2, s * 0.2);
+      }
+    }
+  }
+
   const CATEGORIES = [
     { id: 'all', name: 'Все' },
     { id: 'hand', name: 'Расставить' },
@@ -2116,6 +2169,8 @@
     { id: 'px-eyes', name: 'Сонные глаза', cat: 'pixels', draw: pixelMotif('eyes') },
     { id: 'px-bird', name: 'Птичка', cat: 'pixels', draw: pixelMotif('bird') },
     { id: 'px-tulip', name: 'Тюльпан', cat: 'pixels', draw: pixelMotif('tulip') },
+    { id: 'px-lego', name: 'Кубики лего', cat: 'pixels', draw: legoBricks },
+    { id: 'px-cloud', name: 'Пиксельное облако', cat: 'pixels', draw: pixelCloud },
     { id: 'px-cat-stretch', name: 'Кот потягивается', cat: 'pixels', draw: pixelCatStretch },
     { id: 'px-glitch', name: 'Сбой', cat: 'pixels', draw: glitchSparks },
     { id: 'px-ornament', name: 'Узор', cat: 'pixels', draw: pixelOrnament },

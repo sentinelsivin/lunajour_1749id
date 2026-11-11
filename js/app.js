@@ -171,6 +171,8 @@
       }));
     });
     $('collageShuffle').hidden = !(tpl && tpl.shuffle);
+    /* у вырезок кнопка тасует кусочки, у остальных шаблонов всю раскладку */
+    if (tpl && tpl.shuffle) $('collageShuffle').textContent = t(tpl.id === 'cutouts' ? 'Перемешать вырезки' : 'Перемешать');
     $('markTools').hidden = !(tpl && tpl.marks);
     $('cellButtons').hidden = !!(tpl && tpl.marks);
   }
@@ -1417,12 +1419,17 @@
     curve: 'Подписи точек через запятую.',
     formula: 'Например: x^2 [-3, 3], sin(x)/x, abs(x). Для кривой: x = cos(t); y = sin(t).',
     bsod: 'Свой текст ошибки. Пусто: про сердце, которое поставили на паузу.',
+    ascii: 'Свои знаки вместо букв: например ? или 0123%{}. Пусто: как в эффекте.',
+    wordTrail: 'Слова через запятую, они чередуются в шлейфе.',
+    typewriter: 'Строки через запятую, машинка печатает их вперемешку.',
   };
   let selectedBox = -1;
   /* какой из двух слоёв эффектов сейчас правится */
   let fxSlot = 'fx';
   const fxDef = () => (state[fxSlot].id ? Effects.byId(state[fxSlot].id) : null);
-  const fxBrush = () => !!(fxDef() && fxDef().cat === 'glitch' && state[fxSlot].mask === 'brush');
+  /* кистью кладутся глитчи и пиксельные эффекты */
+  const fxMaskable = (def) => !!def && (def.cat === 'glitch' || !!def.mask);
+  const fxBrush = () => fxMaskable(fxDef()) && state[fxSlot].mask === 'brush';
   const fxBoxMode = () => tab === 'fx' && fxCat !== 'scan' && (Effects.usesBoxes(state[fxSlot].id) || !!(fxDef() && fxDef().center) || fxBrush());
 
   function syncFx() {
@@ -1497,7 +1504,8 @@
     $('fxText').placeholder = (st && st.text) || def.text || '';
     $('fxText').value = state[fxSlot].text;
     $('fxAmount').value = state[fxSlot].amount;
-    $('fxFontGroup').hidden = def.id === 'points';
+    /* у точек и пиксельных эффектов нет текста, шрифт не нужен */
+    $('fxFontGroup').hidden = def.id === 'points' || def.cat === 'pixel';
     $('fxStyleGroup').hidden = !def.styles;
     const fxStyles = $('fxStyles');
     fxStyles.replaceChildren();
@@ -1509,10 +1517,12 @@
     swatches($('fxSwatches'), FX_COLORS, state[fxSlot].color, (v) => { state[fxSlot] = { ...state[fxSlot], color: v }; syncFx(); update(); }, t('Как в эффекте'));
     $('fxBoxTools').hidden = !def.boxes;
     $('fxCenterHint').hidden = !def.center || fxBrush();
-    $('fxCenterHint').textContent = t(def.id === 'stretch' ? 'Нажми на фото, чтобы поставить линию, от которой тянется картинка.' : 'Нажми на фото, чтобы поставить центр лучей.');
+    $('fxCenterHint').textContent = t(def.id === 'stretch' ? 'Нажми на фото, чтобы поставить линию, от которой тянется картинка.' : def.id === 'wordTrail' ? 'Нажми на фото, чтобы поставить, откуда тянется шлейф.' : 'Нажми на фото, чтобы поставить центр лучей.');
     const g = def.cat === 'glitch';
-    $('fxGlitchTools').hidden = !g;
-    if (g) {
+    $('fxGlitchTools').hidden = !fxMaskable(def);
+    /* «Живой в видео» только у глитча, остальные эффекты в видео не ломаются */
+    $('fxLive').closest('label').hidden = !g;
+    if (fxMaskable(def)) {
       const f = state[fxSlot];
       const mask = $('fxMask');
       mask.replaceChildren();
@@ -1523,9 +1533,10 @@
         update();
       }));
       $('fxMaskHint').textContent = t({
-        all: 'Глитч по всему фото.',
-        scan: state.scan.on ? 'Глитч только внутри рамок сканера.' : 'Глитч только внутри рамок сканера. Включи сканер в разделе «Сканер».',
-        brush: 'Води пальцем по фото: глитч появится только там.',
+        all: g ? 'Глитч по всему фото.' : 'Эффект по всему фото.',
+        scan: g ? (state.scan.on ? 'Глитч только внутри рамок сканера.' : 'Глитч только внутри рамок сканера. Включи сканер в разделе «Сканер».')
+          : state.scan.on ? 'Эффект только внутри рамок сканера.' : 'Эффект только внутри рамок сканера. Включи сканер в разделе «Сканер».',
+        brush: g ? 'Води пальцем по фото: глитч появится только там.' : 'Води пальцем по фото: эффект появится только там.',
       }[f.mask || 'all']);
       $('fxBrushTools').hidden = f.mask !== 'brush';
       const size = $('fxBrushSize');
@@ -1533,7 +1544,7 @@
       [[0.5, 'Тонкая'], [1, 'Средняя'], [2, 'Толстая']].forEach(([v, name]) => chip(size, t(name), (f.brushSize || 1) === v, () => { state[fxSlot] = { ...state[fxSlot], brushSize: v }; syncFx(); update(); }));
       $('fxBrushClear').disabled = !(f.brush && f.brush.length);
       $('fxLive').checked = f.live !== false;
-      $('fxPlay').hidden = f.live === false;
+      $('fxPlay').hidden = !g || f.live === false;
     }
     $('fxBoxDelete').disabled = selectedBox < 0;
     $('fxBoxAuto').disabled = !state[fxSlot].boxes.length;
@@ -2929,7 +2940,7 @@
         setPath(el.dataset.bind, value);
         if (el.dataset.bind === 'note.mood') syncNote();
         if (el.dataset.bind.startsWith('scan.')) syncScan();
-        if (el.dataset.bind === 'note.title' || el.dataset.bind === 'note.font') syncSlotCount();
+        if (el.dataset.bind === 'note.title' || el.dataset.bind === 'note.font' || el.dataset.bind === 'note.date') syncSlotCount();
       });
     });
     document.querySelectorAll('[data-seg]').forEach((seg) => {

@@ -23,7 +23,8 @@ window.Effects = (function () {
     { id: 'frameLetters', cat: 'letters', name: 'Буквы рамкой', color: '#ffffff', text: '' },
     { id: 'colLetters', cat: 'letters', name: 'Буквы столбцами', color: '#ffffff', text: '' },
     { id: 'pixels', cat: 'glitch', name: 'Пиксели', color: '#e01b1b', text: 'SUNBURN' },
-    { id: 'ascii', cat: 'glitch', name: 'ASCII', color: '#c4161c', text: '' },
+    { id: 'ascii', cat: 'glitch', name: 'ASCII', color: '#c4161c', text: '',
+      styles: [{ id: 'fade', name: 'С краю' }, { id: 'full', name: 'Весь кадр', color: '#c9d4ff' }, { id: 'boxed', name: 'Цифры в клетках', color: '#2a17f5' }, { id: 'paper', name: 'На бумаге' }] },
     { id: 'morse', cat: 'letters', name: 'Морзе', color: '#ffffff', text: 'STAY' },
     { id: 'threads', cat: 'letters', name: 'Слова на нитях', color: '#ffffff', text: 'One step at a time' },
     { id: 'graph', cat: 'charts', name: 'График', color: '#ffffff', text: 'JFMAMJJASOND' },
@@ -57,6 +58,19 @@ window.Effects = (function () {
         { id: 'wave', name: 'Волна', text: 'sin(x)/x [-12, 12]' },
         { id: 'heart', name: 'Сердце', text: 'x = 16*sin(t)^3; y = 13*cos(t) - 5*cos(2*t) - 2*cos(3*t) - cos(4*t)' },
       ] },
+    /* пиксели: их тоже можно положить кистью только на часть фото */
+    { id: 'lego', cat: 'pixel', mask: true, name: 'Лего', color: '#9fb4c8', text: '',
+      styles: [{ id: 'photo', name: 'Цвета фото' }, { id: 'mono', name: 'Одним цветом' }, { id: 'scatter', name: 'Россыпь' }] },
+    { id: 'mosaic', cat: 'pixel', mask: true, name: 'Клетки', color: '#ffffff', text: '',
+      styles: [{ id: 'half', name: 'Половина на бумаге' }, { id: 'light', name: 'На фото' }, { id: 'mono', name: 'Силуэт', color: '#2f6bff' }, { id: 'paper', name: 'На бумаге' }] },
+    { id: 'pixelate', cat: 'pixel', mask: true, name: 'Пикселизация', color: '#1a1a1a', text: '',
+      styles: [{ id: 'all', name: 'Весь кадр' }, { id: 'cutout', name: 'Без фона' }, { id: 'callouts', name: 'Со сносками' }] },
+    { id: 'hatch', cat: 'pixel', mask: true, name: 'Штриховка', color: '#ffffff', text: '',
+      styles: [{ id: 'diag', name: 'Косые' }, { id: 'cross', name: 'Крестиком' }, { id: 'dots', name: 'Точками' }] },
+    { id: 'wordTrail', cat: 'letters', name: 'Шлейф слов', color: '#ffffff', center: true, text: 'Thinking, spring',
+      styles: [{ id: 'neon', name: 'Разноцветный' }, { id: 'mono', name: 'Одним цветом' }] },
+    { id: 'typewriter', cat: 'letters', name: 'Печатная машинка', color: '#f2f2f2', text: 'not who you know, who you do not know, yet, not yet, what you do know now',
+      styles: [{ id: 'dark', name: 'На чёрном' }, { id: 'photo', name: 'Поверх фото' }] },
   ];
   /* разделы вкладки «Эффекты», как у фигур; сканер тоже раздел, но со своими настройками */
   const CATS = [
@@ -66,6 +80,7 @@ window.Effects = (function () {
     { id: 'charts', name: 'Графики' },
     { id: 'light', name: 'Лучи и точки' },
     { id: 'glitch', name: 'Глитч' },
+    { id: 'pixel', name: 'Пиксели' },
   ];
   const byId = (id) => EFFECTS.find((e) => e.id === id) || null;
   /* вид эффекта: первый из списка, если не выбран */
@@ -612,26 +627,100 @@ window.Effects = (function () {
   const RAMP = '@%#$&8B*+=~^;:-,.` ';
   const JUNK = '()<>{}[]¥$§±×÷¿¡©®µ°ÆØÔÛ%#@&';
   function ascii(ctx, A, W, H, u, col, fx, rng) {
+    const style = fx.style || 'fade';
+    /* свои знаки из поля текста: например ? или 0123%{} */
+    const own = fx.own && fx.text ? [...String(fx.text).replace(/\s+/g, '')] : null;
+    const pick = (l) => (own ? own[Math.floor(rng() * own.length)] : RAMP[Math.min(RAMP.length - 1, Math.floor(l * RAMP.length))]);
     const step = 19 * u / Math.sqrt(fx.amount || 1);
     let lo = 1, hi = 0;
     A.lum.forEach((v) => { if (v < lo) lo = v; if (v > hi) hi = v; });
     const span = Math.max(0.05, hi - lo);
-    const edgeX = (y) => W * (0.42 + 0.2 * Math.sin(y / H * 5.2 + rng() * 0.3));
+    const L = (x, y) => (lumAt(A, x, y) - lo) / span;
     ctx.save();
-    ctx.fillStyle = col;
     ctx.textBaseline = 'middle';
-    ctx.font = `${wt(600)} ${step * 1.05}px ${face(MONO)}`;
-    for (let y = step / 2; y < H; y += step * 1.1) {
-      const lim = edgeX(y);
-      for (let x = step / 2; x < W; x += step * 0.62) {
-        const fade = 1 - Math.max(0, (x - lim) / (W * 0.18));
-        if (fade <= 0 || rng() > fade) continue;
-        const l = (lumAt(A, x, y) - lo) / span;
-        const dark = 1 - l;
-        if (dark < 0.25 || rng() > dark * 0.95) continue;
-        const ch = rng() < 0.25 ? JUNK[Math.floor(rng() * JUNK.length)] : RAMP[Math.min(RAMP.length - 1, Math.floor(l * RAMP.length))];
-        ctx.globalAlpha = Math.min(1, 0.25 + dark * 0.75);
-        ctx.fillText(ch, x, y);
+    ctx.textAlign = 'center';
+    if (style === 'full') {
+      /* весь кадр знаками на чёрном: светлое плотнее и ярче */
+      ctx.fillStyle = '#05060a';
+      ctx.fillRect(0, 0, W, H);
+      ctx.fillStyle = col;
+      ctx.font = `${wt(500)} ${step * 1.05}px ${face(MONO)}`;
+      for (let y = step / 2; y < H; y += step * 1.05) {
+        for (let x = step / 2; x < W; x += step * 0.62) {
+          const l = L(x, y);
+          if (l < 0.12 || rng() > l * 1.2) continue;
+          ctx.globalAlpha = Math.min(1, 0.25 + l * 0.75);
+          ctx.fillText(pick(1 - l), x, y);
+        }
+      }
+    } else if (style === 'boxed' || style === 'paper') {
+      /* boxed: цифры на цветном листе, часть в рамках и на белых плашках; paper: тёмные знаки на бумаге */
+      const boxed = style === 'boxed';
+      ctx.fillStyle = boxed ? col : '#ecebe7';
+      ctx.fillRect(0, 0, W, H);
+      const s = boxed ? step * 1.6 : step * 0.8;
+      const set = own || (boxed ? [...'0123456789%{}'] : null);
+      ctx.font = `${wt(boxed ? 700 : 500)} ${s * 0.82}px ${face(MONO)}`;
+      ctx.lineWidth = Math.max(1, 1.4 * u);
+      /* знаки встают на предмет: фон узнаём по краю кадра, чем дальше яркость от фона, тем гуще */
+      const rim = [];
+      for (let i = 0; i < A.lum.length; i++) {
+        const gx = i % A.gw, gy = Math.floor(i / A.gw);
+        if (gx === 0 || gy === 0 || gx === A.gw - 1 || gy === A.gh - 1) rim.push((A.lum[i] - lo) / span);
+      }
+      rim.sort((a, b) => a - b);
+      const bg = rim[Math.floor(rim.length / 2)] || 0;
+      const far = Math.max(0.05, bg, 1 - bg);
+      for (let y = s / 2; y < H; y += s * (boxed ? 1.15 : 1.1)) {
+        for (let x = s / 2; x < W; x += s * (boxed ? 0.9 : 0.75)) {
+          const dark = Math.abs(L(x, y) - bg) / far;
+          if (dark < (boxed ? 0.5 : 0.35) || rng() > dark * 1.15) continue;
+          const ch = set ? set[Math.floor(rng() * set.length)] : RAMP[Math.min(RAMP.length - 1, Math.floor((1 - dark) * RAMP.length))];
+          if (!boxed) {
+            ctx.fillStyle = '#1d1d1d';
+            ctx.globalAlpha = Math.min(1, 0.35 + dark * 0.65);
+            ctx.fillText(ch, x, y);
+            continue;
+          }
+          const k = rng();
+          const bw = s * 0.8, bh = s * 1.05;
+          if (k < 0.1) {
+            /* белая плашка, знак цветом листа */
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(x - bw / 2, y - bh / 2, bw, bh);
+            ctx.fillStyle = col;
+            ctx.fillText(ch, x, y);
+          } else if (k < 0.14) {
+            ctx.fillStyle = rng() < 0.5 ? '#ff5ad1' : '#3fc0ff';
+            ctx.fillText('[]', x, y);
+          } else {
+            ctx.fillStyle = '#ffffff';
+            ctx.fillText(ch, x, y);
+            if (k > 0.82) {
+              ctx.strokeStyle = '#ffffff';
+              ctx.strokeRect(x - bw / 2, y - bh / 2, bw, bh);
+            }
+          }
+        }
+      }
+    } else {
+      /* знаки с одной стороны кадра, к краю редеют */
+      const edgeX = (y) => W * (0.42 + 0.2 * Math.sin(y / H * 5.2 + rng() * 0.3));
+      ctx.textAlign = 'left';
+      ctx.fillStyle = col;
+      ctx.font = `${wt(600)} ${step * 1.05}px ${face(MONO)}`;
+      for (let y = step / 2; y < H; y += step * 1.1) {
+        const lim = edgeX(y);
+        for (let x = step / 2; x < W; x += step * 0.62) {
+          const fade = 1 - Math.max(0, (x - lim) / (W * 0.18));
+          if (fade <= 0 || rng() > fade) continue;
+          const l = L(x, y);
+          const dark = 1 - l;
+          if (dark < 0.25 || rng() > dark * 0.95) continue;
+          const ch = own ? pick(l) : rng() < 0.25 ? JUNK[Math.floor(rng() * JUNK.length)] : pick(l);
+          ctx.globalAlpha = Math.min(1, 0.25 + dark * 0.75);
+          ctx.fillText(ch, x, y);
+        }
       }
     }
     ctx.restore();
@@ -1760,6 +1849,302 @@ window.Effects = (function () {
     ctx.restore();
   }
 
+  /* ---------- пиксели: лего, клетки, пикселизация, штриховка ---------- */
+  const rgbOf = (hex) => {
+    const n = parseInt(String(hex || '#000').replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
+    return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  };
+  /* Средний цвет каждой клетки: снимок ужимается до сетки cols × rows. lum уже растянута на 0…1 по снимку. */
+  const gridProbe = document.createElement('canvas');
+  function cellGrid(ctx, W, H, r, cs) {
+    const cols = Math.max(1, Math.ceil(W / cs));
+    const rows = Math.max(1, Math.ceil(H / cs));
+    gridProbe.width = cols;
+    gridProbe.height = rows;
+    const p = gridProbe.getContext('2d', { willReadFrequently: true });
+    p.imageSmoothingEnabled = true;
+    p.imageSmoothingQuality = 'high';
+    p.clearRect(0, 0, cols, rows);
+    p.drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, W / cs, H / cs);
+    const d = p.getImageData(0, 0, cols, rows).data;
+    const lum = new Float32Array(cols * rows);
+    let lo = 1, hi = 0;
+    for (let i = 0; i < lum.length; i++) {
+      lum[i] = (0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2]) / 255;
+      if (lum[i] < lo) lo = lum[i];
+      if (lum[i] > hi) hi = lum[i];
+    }
+    const span = Math.max(0.05, hi - lo);
+    for (let i = 0; i < lum.length; i++) lum[i] = (lum[i] - lo) / span;
+    /* фон: средняя яркость клеток по краю кадра. sub — насколько клетка отличается от фона, 0…1:
+       так светлый предмет на тёмном и тёмный на светлом выделяются одинаково */
+    const rim = [];
+    for (let i = 0; i < lum.length; i++) {
+      const c = i % cols, r = Math.floor(i / cols);
+      if (c === 0 || r === 0 || c === cols - 1 || r === rows - 1) rim.push(lum[i]);
+    }
+    rim.sort((a, b) => a - b);
+    const bg = rim[Math.floor(rim.length / 2)] || 0;
+    const sub = new Float32Array(lum.length);
+    let top = 0.05;
+    for (let i = 0; i < lum.length; i++) { sub[i] = Math.abs(lum[i] - bg); if (sub[i] > top) top = sub[i]; }
+    for (let i = 0; i < lum.length; i++) sub[i] /= top;
+    return { cols, rows, d, lum, sub, cs };
+  }
+  const cellRgb = (G, i) => `rgb(${G.d[i * 4]},${G.d[i * 4 + 1]},${G.d[i * 4 + 2]})`;
+
+  /* кубик лего: плитка со скосом и круглый шип с тенью и бликом */
+  function brick(ctx, x, y, s, fill) {
+    ctx.fillStyle = fill;
+    ctx.fillRect(x, y, s + 0.5, s + 0.5);
+    ctx.fillStyle = 'rgba(255,255,255,.16)';
+    ctx.fillRect(x, y, s, s * 0.06);
+    ctx.fillRect(x, y, s * 0.06, s);
+    ctx.fillStyle = 'rgba(0,0,0,.22)';
+    ctx.fillRect(x, y + s * 0.94, s, s * 0.06);
+    ctx.fillRect(x + s * 0.94, y, s * 0.06, s);
+    const cx = x + s / 2, cy = y + s / 2, rr = s * 0.29;
+    ctx.fillStyle = 'rgba(0,0,0,.3)';
+    ctx.beginPath();
+    ctx.arc(cx + s * 0.04, cy + s * 0.05, rr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.4)';
+    ctx.lineWidth = Math.max(1, s * 0.04);
+    ctx.beginPath();
+    ctx.arc(cx, cy, rr * 0.78, Math.PI * 0.95, Math.PI * 1.55);
+    ctx.stroke();
+  }
+  /* Лего: снимок собирается из кубиков. «Россыпь» кладёт кубики сгустками, остальное фото видно. */
+  function lego(ctx, W, H, u, col, fx, rng, r) {
+    const cs = (36 * u) / Math.sqrt(fx.amount || 1);
+    const G = cellGrid(ctx, W, H, r, cs);
+    const style = fx.style || 'photo';
+    const tint = rgbOf(col);
+    const blobs = style === 'scatter' ? Array.from({ length: 4 + Math.floor(rng() * 3) }, () => [rng() * W, rng() * H, (0.1 + rng() * 0.18) * Math.min(W, H)]) : null;
+    for (let i = 0; i < G.cols * G.rows; i++) {
+      const x = (i % G.cols) * cs;
+      const y = Math.floor(i / G.cols) * cs;
+      if (blobs) {
+        const k = rng();
+        if (!blobs.some(([bx, by, br]) => Math.hypot(x + cs / 2 - bx, y + cs / 2 - by) < br * (0.55 + k * 0.7))) continue;
+      }
+      let fill = cellRgb(G, i);
+      if (style === 'mono') {
+        const v = 0.45 + G.lum[i] * 0.75;
+        fill = `rgb(${Math.min(255, tint[0] * v)},${Math.min(255, tint[1] * v)},${Math.min(255, tint[2] * v)})`;
+      }
+      brick(ctx, x, y, cs, fill);
+    }
+  }
+
+  /* Клетки: кадр делится на квадраты, по яркости клетка залита, пустая с точкой, мелкая или пропадает.
+     «Половина на бумаге»: сверху бумага с тёмными клетками, снизу фото со светлыми. */
+  function mosaic(ctx, W, H, u, col, fx, rng, r) {
+    const cs = (22 * u) / Math.sqrt(fx.amount || 1);
+    const G = cellGrid(ctx, W, H, r, cs);
+    const style = fx.style || 'half';
+    const split = style === 'half' ? Math.round(G.rows / 2) * cs : style === 'paper' ? H + cs : 0;
+    if (split > 0) {
+      ctx.fillStyle = '#efede8';
+      ctx.fillRect(0, 0, W, Math.min(H, split));
+    }
+    const cell = (x, y, v, fill) => {
+      const m = cs * 0.06;
+      ctx.fillStyle = fill;
+      ctx.strokeStyle = fill;
+      if (v > 0.78) ctx.fillRect(x + m, y + m, cs - m * 2, cs - m * 2);
+      else if (v > 0.56) {
+        const lw = cs * 0.15;
+        ctx.lineWidth = lw;
+        ctx.strokeRect(x + m + lw / 2, y + m + lw / 2, cs - m * 2 - lw, cs - m * 2 - lw);
+        ctx.fillRect(x + cs * 0.41, y + cs * 0.41, cs * 0.18, cs * 0.18);
+      } else if (v > 0.4) ctx.fillRect(x + cs * 0.28, y + cs * 0.28, cs * 0.44, cs * 0.44);
+      else if (v > 0.26 && rng() < 0.55) ctx.fillRect(x + cs * 0.4, y + cs * 0.4, cs * 0.2, cs * 0.2);
+    };
+    for (let i = 0; i < G.cols * G.rows; i++) {
+      const x = (i % G.cols) * cs;
+      const y = Math.floor(i / G.cols) * cs;
+      /* клетки встают на предмет: чем сильнее клетка отличается от фона, тем она плотнее */
+      const v = G.sub[i];
+      if (y < split) cell(x, y, v, style === 'paper' ? cellRgb(G, i) : '#141414');
+      else cell(x, y, v, col);
+    }
+  }
+
+  /* Пикселизация: крупные квадраты цвета снимка. «Без фона» уводит фон (цвет края кадра) в бумагу,
+     «Со сносками» добавляет к этому увеличенные кусочки в рамках с линиями к месту. */
+  function pixelate(ctx, W, H, u, col, fx, rng, r) {
+    const cs = (30 * u) / Math.sqrt(fx.amount || 1);
+    const G = cellGrid(ctx, W, H, r, cs);
+    const style = fx.style || 'all';
+    const cut = style !== 'all';
+    if (cut) {
+      ctx.fillStyle = '#f7f6f3';
+      ctx.fillRect(0, 0, W, H);
+    }
+    const kept = [];
+    for (let i = 0; i < G.cols * G.rows; i++) {
+      if (cut && G.sub[i] < 0.22) continue;
+      kept.push(i);
+      ctx.fillStyle = cellRgb(G, i);
+      ctx.fillRect((i % G.cols) * cs, Math.floor(i / G.cols) * cs, cs + 0.5, cs + 0.5);
+    }
+    if (style !== 'callouts' || !kept.length) return;
+    /* сноски: четыре места на рисунке, крупно в рамке у края, линия к месту */
+    const snap = snapOf(ctx, W, H, r);
+    const box = Math.min(W, H) * 0.17;
+    const n = 4;
+    for (let k = 0; k < n; k++) {
+      const i = kept[Math.floor(((k + 0.3 + rng() * 0.4) / n) * kept.length)];
+      const sx = (i % G.cols) * cs + cs / 2;
+      const sy = Math.floor(i / G.cols) * cs + cs / 2;
+      const left = k % 2 === 0;
+      const bx = left ? W * 0.06 : W * 0.94 - box;
+      const by = H * (0.12 + (0.7 * k) / (n - 1)) - box / 2 + (rng() - 0.5) * H * 0.04;
+      ctx.strokeStyle = col;
+      ctx.lineWidth = Math.max(1.5, 2.2 * u);
+      ctx.beginPath();
+      ctx.moveTo(left ? bx + box : bx, by + box / 2);
+      ctx.lineTo(sx, sy);
+      ctx.stroke();
+      const src = cs * 3.2;
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(bx, by, box, box);
+      ctx.drawImage(snap, Math.max(0, sx - src / 2), Math.max(0, sy - src / 2), src, src, bx, by, box, box);
+      ctx.restore();
+      ctx.strokeRect(bx, by, box, box);
+    }
+  }
+
+  /* Штриховка: светлые места фото покрываются короткими штрихами, самые яркие точки становятся звёздами. */
+  function hatch(ctx, A, W, H, u, col, fx, rng) {
+    const cs = (10 * u) / Math.sqrt(fx.amount || 1);
+    const style = fx.style || 'diag';
+    let lo = 1, hi = 0;
+    A.lum.forEach((v) => { if (v < lo) lo = v; if (v > hi) hi = v; });
+    const span = Math.max(0.05, hi - lo);
+    /* фото чуть темнее и серее, чтобы светлые штрихи читались */
+    ctx.fillStyle = 'rgba(40,40,44,.42)';
+    ctx.fillRect(0, 0, W, H);
+    const buckets = [[], [], [], []];
+    const stars = [];
+    for (let y = 0; y < H; y += cs) {
+      for (let x = 0; x < W; x += cs) {
+        const l = (lumAt(A, x + cs / 2, y + cs / 2) - lo) / span;
+        if (l < 0.3 || rng() > (l - 0.3) / 0.6) continue;
+        buckets[Math.min(3, Math.floor(l * 4))].push([x, y]);
+        if (l > 0.94 && rng() < 0.05) stars.push([x + cs / 2, y + cs / 2]);
+      }
+    }
+    ctx.save();
+    ctx.strokeStyle = col;
+    ctx.fillStyle = col;
+    ctx.lineWidth = Math.max(1, 1.1 * u);
+    const m = cs * 0.18;
+    buckets.forEach((list, b) => {
+      ctx.globalAlpha = 0.35 + b * 0.2;
+      ctx.beginPath();
+      list.forEach(([x, y]) => {
+        if (style === 'dots') {
+          ctx.rect(x + cs * 0.4, y + cs * 0.4, cs * 0.22, cs * 0.22);
+          return;
+        }
+        ctx.moveTo(x + m, y + cs - m);
+        ctx.lineTo(x + cs - m, y + m);
+        if (style === 'cross') {
+          ctx.moveTo(x + m, y + m);
+          ctx.lineTo(x + cs - m, y + cs - m);
+        }
+      });
+      if (style === 'dots') ctx.fill();
+      else ctx.stroke();
+    });
+    ctx.globalAlpha = 1;
+    ctx.shadowColor = col;
+    ctx.shadowBlur = 8 * u;
+    stars.forEach(([x, y]) => {
+      ctx.beginPath();
+      ctx.arc(x, y, (2 + rng() * 5) * u, 0, Math.PI * 2);
+      ctx.fill();
+    });
+    ctx.restore();
+  }
+
+  /* ---------- буквы: шлейф слов, печатная машинка ---------- */
+  const NEON = ['#ff5ad1', '#ffe94a', '#4dff8a', '#5ad1ff', '#ffffff'];
+  /* Шлейф слов: слова и звёздочки поднимаются от точки на фото дугой вверх, к верху шлейф шире и мельче. */
+  function wordTrail(ctx, W, H, u, col, fx, rng) {
+    const list = String(fx.text || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const words = list.length ? list : ['Thinking', 'spring'];
+    const c = fx.center || { x: 0.45, y: 0.75 };
+    const p0 = [c.x * W, c.y * H];
+    const p2 = [Math.min(W * 0.95, p0[0] + W * 0.42), H * 0.02];
+    const p1 = [p0[0] + W * 0.02, H * 0.35];
+    const at = (t) => [
+      (1 - t) * (1 - t) * p0[0] + 2 * (1 - t) * t * p1[0] + t * t * p2[0],
+      (1 - t) * (1 - t) * p0[1] + 2 * (1 - t) * t * p1[1] + t * t * p2[1],
+    ];
+    const neon = (fx.style || 'neon') === 'neon';
+    const n = Math.round(150 * (fx.amount || 1));
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    for (let k = 0; k < n; k++) {
+      const t = rng();
+      const [px, py] = at(t);
+      const spread = W * (0.03 + 0.09 * Math.sin(Math.PI * Math.min(1, t * 1.3)));
+      const x = px + (rng() - 0.5) * 2 * spread;
+      const y = py + (rng() - 0.5) * H * 0.02;
+      const size = (12 + rng() * 24) * u * (1 - t * 0.5);
+      if (rng() < 0.12) {
+        ctx.fillStyle = neon ? '#5ad1ff' : col;
+        ctx.font = `700 ${size * 1.6}px ${SANS}`;
+        ctx.fillText('✱', x, y);
+        continue;
+      }
+      ctx.fillStyle = neon ? NEON[Math.floor(rng() * (NEON.length - 1))] : col;
+      ctx.font = `${wt(rng() < 0.3 ? 700 : 400)} ${size}px ${face(SERIF)}`;
+      ctx.fillText(words[k % words.length], x, y);
+    }
+    ctx.restore();
+  }
+
+  /* Печатная машинка: фразы печатаются строками там, где фото светлое, с повторами внахлёст. */
+  function typewriter(ctx, A, W, H, u, col, fx, rng) {
+    const style = fx.style || 'dark';
+    ctx.fillStyle = style === 'dark' ? '#050505' : 'rgba(0,0,0,.5)';
+    ctx.fillRect(0, 0, W, H);
+    const list = String(fx.text || '').split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
+    const lines = list.length ? list : ['not who you know', 'who you do not know', 'yet', 'not yet', 'what you do know now'];
+    let lo = 1, hi = 0;
+    A.lum.forEach((v) => { if (v < lo) lo = v; if (v > hi) hi = v; });
+    const span = Math.max(0.05, hi - lo);
+    const size = (19 * u) / Math.sqrt(fx.amount || 1);
+    ctx.save();
+    ctx.fillStyle = col;
+    ctx.textBaseline = 'middle';
+    ctx.font = `${wt(700)} ${size}px ${face('"Courier New", Courier, monospace')}`;
+    for (let y = size; y < H - size / 2; y += size * 1.05) {
+      for (let x = rng() * size * 4; x < W; x += size * (3 + rng() * 5)) {
+        const l = (lumAt(A, x + size * 2, y) - lo) / span;
+        if (l < 0.5 || rng() > (l - 0.4) * 1.3) continue;
+        const s = lines[Math.floor(rng() * lines.length)];
+        ctx.globalAlpha = 0.55 + rng() * 0.45;
+        ctx.fillText(s, x, y);
+        /* двойной удар: та же строка чуть сдвинута */
+        if (rng() < 0.35) ctx.fillText(s, x + (rng() - 0.5) * size * 0.4, y + (rng() - 0.5) * size * 0.5);
+        x += ctx.measureText(s).width * (0.3 + rng() * 0.6);
+      }
+    }
+    ctx.restore();
+  }
+
   /* ---------- где лежит глитч: везде, в рамках сканера или там, где провели кистью ---------- */
   let maskCanvas = null;
   function maskFor(state, fx, W, H, u) {
@@ -1826,7 +2211,7 @@ window.Effects = (function () {
     const rng = makeRng((fx.seed || 1) * 31 + 7 + tick * 101);
 
     /* глитч только в рамках сканера или под кистью: рисуем на копии и вырезаем по маске */
-    const masked = isGlitch(def) && fx.mask && fx.mask !== 'all';
+    const masked = (isGlitch(def) || def.mask) && fx.mask && fx.mask !== 'all';
     let c = ctx;
     let rr = r;
     if (masked) {
@@ -1889,6 +2274,12 @@ window.Effects = (function () {
         case 'curve': curve(ctx, W, H, u, col, fx, rng); break;
         case 'vwords': vwords(ctx, W, H, u, col, fx, rng); break;
         case 'formula': formula(ctx, W, H, u, col, fx); break;
+        case 'lego': lego(ctx, W, H, u, col, fx, rng, r); break;
+        case 'mosaic': mosaic(ctx, W, H, u, col, fx, rng, r); break;
+        case 'pixelate': pixelate(ctx, W, H, u, col, fx, rng, r); break;
+        case 'hatch': hatch(ctx, A, W, H, u, col, fx, rng); break;
+        case 'wordTrail': wordTrail(ctx, W, H, u, col, fx, rng); break;
+        case 'typewriter': typewriter(ctx, A, W, H, u, col, fx, rng); break;
         default: break;
       }
     }

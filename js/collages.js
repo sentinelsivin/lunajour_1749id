@@ -1854,13 +1854,20 @@
       /* фото на весь лист, поверх крупная фраза цветом и маленькие окошки в скобках */
       id: 'phraseOver', name: 'Фраза поверх фото', noNote: true, sample: 'i am () () () () made of () memories ()',
       palette: [{ key: 'text', name: 'Текст', def: '#d64545' }],
-      choices: [{ key: 'brace', name: 'Скобки', def: '()', options: [['()', '( )'], ['{}', '{ }'], ['none', 'Без скобок']] }],
+      choices: [
+        { key: 'brace', name: 'Скобки', def: '()', options: [['()', '( )'], ['{}', '{ }'], ['none', 'Без скобок']] },
+        { key: 'shape', name: 'Окошки', def: 'rect', options: [['rect', 'Прямоугольные'], ['round', 'Круглые']] },
+        { key: 'nums', name: 'Номера', def: 'off', options: [['off', 'Без номеров'], ['on', 'С номерами']] },
+      ],
       layout(W, H, env) {
         const m = Math.min(W, H);
+        /* круглые окошки крупнее, как кружки-фото между словами */
+        const round = env.pick('shape', 'rect') === 'round';
         const f = flowText(env.text || this.sample, { x: W * 0.04, y: H * 0.3, w: W * 0.92, h: H * 0.38 }, {
-          size: m * 0.075, weight: 400, css: SANS, winScale: 0.85, aspects: [1.6], pad: 0.55, brace: env.pick('brace', '()'), color: env.pick('text', '#d64545'),
+          size: m * 0.075, weight: 400, css: SANS, winScale: round ? 1.5 : 0.85, aspects: round ? [1] : [1.6], pad: round ? 0.3 : 0.55, lineGap: round ? 1.15 : 1.2,
+          brace: env.pick('brace', '()'), color: env.pick('text', '#d64545'), numbered: env.pick('nums', 'off') === 'on',
         });
-        return { cells: [{ x: 0, y: 0, w: W, h: H, rot: 0 }, ...f.wins.map((c) => ({ ...c, inline: true }))], items: f.items };
+        return { cells: [{ x: 0, y: 0, w: W, h: H, rot: 0 }, ...f.wins.map((c) => ({ ...c, inline: true, shape: round ? 'round' : undefined }))], items: f.items };
       },
     },
     {
@@ -2128,6 +2135,8 @@
       const font = fonts.find((f) => f.id === (s.note && s.note.font)) || { css: SANS, weight: 400 };
       const env = {
         text: ((s.note && s.note.title) || '').trim(),
+        date: (s.note && s.note.date) || '',
+        place: ((s.note && s.note.place) || '').trim(),
         font,
         ink,
         pick: (key, def) => (chosen[key] && chosen[key] !== 'auto' ? chosen[key] : def),
@@ -2301,6 +2310,736 @@
         ctx.moveTo(W * 0.71, 0); ctx.lineTo(W * 0.71, H);
         ctx.stroke();
         ctx.restore();
+      },
+    },
+  );
+
+  /* ---------- итоги месяца: россыпь, скобки, календарь, капча, слова вразброс, листалка ---------- */
+  let textCtx = null;
+  /* ширина строки заданным шрифтом */
+  function measure(text, font) {
+    textCtx = textCtx || document.createElement('canvas').getContext('2d');
+    textCtx.font = font;
+    return textCtx.measureText(text).width;
+  }
+  const hits = (a, b, pad = 0) => a.x < b.x + b.w + pad && b.x < a.x + a.w + pad && a.y < b.y + b.h + pad && b.y < a.y + a.h + pad;
+  /* копия списка, перемешанная зерном шаблона: кнопка «Перемешать» даёт новую раскладку */
+  function shuffled(list, rng) {
+    const a = list.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+  /* значок: звезда, сердце или искра с четырьмя лучами */
+  function mark(ctx, kind, x, y, r) {
+    ctx.beginPath();
+    if (kind === 'heart') tracePts(ctx, heartPts(r * 2.1, r * 1.9, 24).map(([px, py]) => [px + x, py + y]));
+    else if (kind === 'spark') {
+      for (let i = 0; i < 8; i++) {
+        const a = (i * Math.PI) / 4 - Math.PI / 2;
+        const rr = i % 2 ? r * 0.24 : r;
+        ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+      }
+      ctx.closePath();
+    } else starPath(ctx, x, y, r, 0);
+    ctx.fill();
+  }
+  /* скобка высотой h у края x: side -1 открывающая слева от фото, 1 закрывающая справа. Возвращает ширину. */
+  function bracket(ctx, kind, x, cy, h, side, u) {
+    const t = h * 0.035;
+    if (kind === '()') {
+      /* серп: толще в середине, тоньше к концам */
+      const a = h * 0.16;
+      ctx.beginPath();
+      ctx.moveTo(x, cy - h / 2);
+      ctx.quadraticCurveTo(x + side * a * 2, cy, x, cy + h / 2);
+      ctx.quadraticCurveTo(x + side * (a * 2 - t * 3.4), cy, x, cy - h / 2);
+      ctx.fill();
+      return a + t;
+    }
+    if (kind === '[]') {
+      const a = h * 0.1;
+      const lw = Math.max(1.5, t * 0.8);
+      ctx.fillRect(side < 0 ? x - a : x + a - lw, cy - h / 2, lw, h);
+      ctx.fillRect(side < 0 ? x - a : x, cy - h / 2, a, lw);
+      ctx.fillRect(side < 0 ? x - a : x, cy + h / 2 - lw, a, lw);
+      return a;
+    }
+    ctx.font = `300 ${h * 0.95}px ${SANS}`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = side < 0 ? 'right' : 'left';
+    ctx.fillText(kind === '{}' ? (side < 0 ? '{' : '}') : '', x, cy - h * 0.05);
+    return ctx.measureText('{').width;
+  }
+  /* стрелка листания: < или > тонкой линией */
+  function chevron(ctx, x, y, a, dir, lw) {
+    ctx.lineWidth = lw;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x - (dir * a) / 2, y - a);
+    ctx.lineTo(x + (dir * a) / 2, y);
+    ctx.lineTo(x - (dir * a) / 2, y + a);
+    ctx.stroke();
+  }
+  /* месяц из даты подписи: сколько дней, с какой клетки недели он начинается, имя месяца */
+  function monthOf(iso, fromMonday) {
+    let d = iso ? new Date(iso + 'T12:00:00') : new Date();
+    if (isNaN(d)) d = new Date();
+    const y = d.getFullYear();
+    const mo = d.getMonth();
+    const first = new Date(y, mo, 1).getDay();
+    return {
+      y, mo, days: new Date(y, mo + 1, 0).getDate(), offset: fromMonday ? (first + 6) % 7 : first,
+      name: new Date(y, mo, 1).toLocaleDateString('en-GB', { month: 'long' }),
+    };
+  }
+  /* короткие имена дней недели; 1 января 2023 года было воскресенье */
+  function weekNames(fromMonday) {
+    const names = Array.from({ length: 7 }, (_, i) => new Date(2023, 0, 1 + i, 12).toLocaleDateString('en-GB', { weekday: 'short' }));
+    return fromMonday ? [...names.slice(1), names[0]] : names;
+  }
+
+  COLLAGES.push(
+    {
+      /* снимки по клеткам вразброс, у каждого номер, вокруг квадратики; крупная надпись уходит за правый край
+         и выходит из левого. «Перемешать» переставляет снимки, номера и квадратики. */
+      id: 'scatterGrid', name: 'Россыпь кадров', noNote: true, shuffle: true, sample: 'June so faaaaaar',
+      palette: [{ key: 'accent', name: 'Надпись и квадратики', def: '#0b1fae' }],
+      choices: [
+        { key: 'count', name: 'Снимков', def: '9', options: [['6', '6'], ['9', '9'], ['13', '13']] },
+        { key: 'order', name: 'Раскладка', def: 'loose', options: [['loose', 'Вразброс'], ['grid', 'Ровной сеткой']] },
+        { key: 'squares', name: 'Квадратики', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+        { key: 'nums', name: 'Номера', def: '()', options: [['()', '( 1 )'], ['[]', '[ 1 ]'], ['none', 'Без номеров']] },
+      ],
+      layout(W, H, env) {
+        const m = Math.min(W, H);
+        const n = Number(env.pick('count', '9'));
+        const rng = env.rng;
+        const color = env.pick('accent', '#0b1fae');
+        const loose = env.pick('order', 'loose') === 'loose';
+        const nums = env.pick('nums', '()');
+        const words = (env.text || this.sample).split(/\s+/).filter(Boolean);
+        const items = [];
+        const busy = [];
+        const say = (s, x, y, size, align = 'left', weight = 800) => items.push({ kind: 'text', s, x, y, size, weight, css: SANS, color, align });
+        const numText = (k) => (nums === 'none' ? '' : nums === '[]' ? `[ ${k} ]` : `( ${k} )`);
+        let rects;
+        let s;
+        if (loose) {
+          /* надпись: первое слово, ниже остальные; что не влезло справа, продолжается слева ниже */
+          const big = m * 0.135;
+          const font = `800 ${big}px ${SANS}`;
+          const lines = [words[0], words.slice(1).join(' ')].filter(Boolean);
+          const x = W * 0.63;
+          lines.forEach((ln, k) => {
+            const y = H * 0.16 + k * big * 0.8;
+            const w = measure(ln, font);
+            say(ln, x, y, big);
+            busy.push({ x, y: y - big * 0.5, w: Math.min(w, W - x), h: big });
+            if (x + w > W) {
+              const yw = H * 0.36 + k * big * 0.8;
+              say(ln, x - W, yw, big);
+              busy.push({ x: 0, y: yw - big * 0.5, w: x + w - W, h: big });
+            }
+          });
+          s = Math.min(W * 0.145, H * 0.17);
+          const stride = s * 1.06;
+          const rowStride = s * 1.3;
+          const cols = Math.max(3, Math.min(8, Math.floor((W * 0.86 - s) / stride) + 1));
+          const rows = Math.max(2, Math.floor((H * 0.84 - H * 0.12 - s) / rowStride) + 1);
+          const all = [];
+          for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) all.push({ r, c, x: W * 0.07 + c * stride, y: H * 0.12 + r * rowStride, w: s, h: s });
+          const free = shuffled(all.filter((p) => busy.every((b) => !hits(p, b, s * 0.12))), rng);
+          const rest = shuffled(all.filter((p) => !free.includes(p)), rng);
+          rects = [...free, ...rest].slice(0, n).sort((a, b) => a.r - b.r || a.c - b.c);
+          /* номер у левого края снимка, сверху или снизу: у соседей по ряду они не сталкиваются */
+          /* если под снимком сосед, номер сверху, если сверху сосед, снизу */
+          const has = (r, c) => rects.some((o) => o.r === r && o.c === c);
+          rects.forEach((p) => {
+            const up = has(p.r - 1, p.c);
+            const down = has(p.r + 1, p.c);
+            p.at = down ? 'tl' : up ? 'bl' : rng() < 0.5 ? 'tl' : 'bl';
+          });
+        } else {
+          /* ровная сетка, номера под снимками, надпись сверху */
+          say(words.join(' '), W * 0.06, H * 0.09, m * 0.08);
+          const cols = n === 13 ? 4 : 3;
+          const rows = Math.ceil(n / cols);
+          const gap = W * 0.025;
+          const lab = m * 0.06;
+          const area = { x: W * 0.06, y: H * 0.16, w: W * 0.88, h: H * 0.73 };
+          const cw = (area.w - gap * (cols - 1)) / cols;
+          const ch = Math.min(cw, (area.h - rows * lab) / rows);
+          s = cw;
+          rects = Array.from({ length: n }, (_, k) => ({
+            x: area.x + (k % cols) * (cw + gap), y: area.y + Math.floor(k / cols) * (ch + lab), w: cw, h: ch, at: 'b',
+          }));
+        }
+        const cells = rects.map((p, k) => ({ x: p.x, y: p.y, w: p.w, h: p.h, rot: 0, num: numText(k + 1), at: p.at }));
+        /* квадратики садятся на углы клеток: часть ложится на снимки, часть на бумагу */
+        const squares = [];
+        if (env.pick('squares', 'on') === 'on') {
+          const q = Math.min(s * 0.2, m * 0.032);
+          for (let k = 0, tries = 0; k < 3 + Math.round(n * 0.35) && tries < 200; tries++) {
+            const base = rects[Math.floor(rng() * rects.length)];
+            const sq = {
+              x: base.x + (rng() < 0.5 ? -q * 0.5 : base.w - q * 0.5) + (rng() < 0.4 ? (rng() < 0.5 ? -1 : 1) * base.w * 1.5 : 0),
+              y: base.y + (rng() < 0.5 ? -q * 0.6 : base.h - q * 0.4), s: q,
+            };
+            const box = { x: sq.x, y: sq.y, w: q, h: q };
+            if (sq.x < 0 || sq.x + q > W || busy.some((b) => hits(box, b)) || squares.some((o) => hits(box, { x: o.x, y: o.y, w: o.s, h: o.s }, q))) continue;
+            squares.push(sq);
+            k++;
+          }
+        }
+        /* внизу место из подписи и месяц */
+        const M = monthOf(env.date, true);
+        if (env.place) say(env.place, W * 0.07, H * 0.94, m * 0.032, 'left', 500);
+        say(`${M.name} ${M.y}`, W * 0.93, H * 0.94, m * 0.032, 'right', 500);
+        return { cells, items, squares };
+      },
+      overlay(ctx, geo, u, opt) {
+        const color = opt.c('accent', '#0b1fae');
+        ctx.fillStyle = color;
+        geo.squares.forEach((q) => ctx.fillRect(q.x, q.y, q.s, q.s));
+        ctx.textBaseline = 'middle';
+        geo.cells.forEach((c) => {
+          if (!c.num) return;
+          const size = Math.max(11 * u, Math.min(c.w, c.h) * 0.12);
+          ctx.font = `400 ${size}px ${SANS}`;
+          const below = c.at === 'b' || c.at === 'bl' || c.at === 'br';
+          const y = below ? c.y + c.h + size * 0.95 : c.y - size * 0.95;
+          ctx.textAlign = c.at === 'b' ? 'center' : c.at === 'tl' || c.at === 'bl' ? 'left' : 'right';
+          const x = c.at === 'b' ? c.x + c.w / 2 : ctx.textAlign === 'left' ? c.x : c.x + c.w;
+          ctx.fillText(c.num, x, y);
+        });
+      },
+    },
+    {
+      /* маленькое фото в больших скобках, по бокам два слова, сверху и снизу значки; большое фото сверху или снизу */
+      id: 'bracketed', name: 'Фото в скобках', noNote: true, sample: 'month favs',
+      palette: [
+        { key: 'text', name: 'Скобки и слова' },
+        { key: 'marks', name: 'Значки' },
+      ],
+      choices: [
+        { key: 'photo', name: 'Большое фото', def: 'top', options: [['top', 'Сверху'], ['bottom', 'Снизу'], ['none', 'Нет']] },
+        { key: 'brace', name: 'Скобки', def: '()', options: [['()', '( )'], ['[]', '[ ]'], ['{}', '{ }'], ['none', 'Без скобок']] },
+        { key: 'mark', name: 'Значки', def: 'star', options: [['star', 'Звёзды'], ['heart', 'Сердца'], ['spark', 'Искры'], ['none', 'Нет']] },
+      ],
+      layout(W, H, env) {
+        const where = env.pick('photo', 'top');
+        const zone = where === 'top' ? { y: H * 0.53, h: H * 0.47 } : where === 'bottom' ? { y: 0, h: H * 0.47 } : { y: 0, h: H };
+        const ph = Math.min(zone.h * (where === 'none' ? 0.4 : 0.5), W * 0.4);
+        const pw = ph * 0.76;
+        /* главный снимок в скобках, большое фото идёт вторым */
+        const focus = { x: W / 2 - pw / 2, y: zone.y + zone.h / 2 - ph / 2, w: pw, h: ph, rot: 0, slot: 0 };
+        const cells = where === 'none' ? [focus] : [{ x: 0, y: where === 'top' ? 0 : H * 0.53, w: W, h: H * 0.47, rot: 0, slot: 1 }, focus];
+        return { cells, focus, words: (env.text || this.sample).split(/\s+/).filter(Boolean) };
+      },
+      overlay(ctx, geo, u, opt) {
+        const f = geo.focus;
+        const ink = opt.c('text', opt.ink);
+        const brace = opt.c('brace', '()');
+        const cy = f.y + f.h / 2;
+        const gap = f.w * 0.12;
+        ctx.fillStyle = ink;
+        ctx.textBaseline = 'middle';
+        let reach = gap * 1.5;
+        if (brace !== 'none') {
+          const bw = bracket(ctx, brace, f.x - gap, cy, f.h * 1.15, -1, u);
+          bracket(ctx, brace, f.x + f.w + gap, cy, f.h * 1.15, 1, u);
+          reach = gap * 2.2 + bw;
+        }
+        const list = geo.words;
+        const half = Math.ceil(list.length / 2);
+        const left = list.slice(0, half).join(' ');
+        const right = list.slice(half).join(' ');
+        let size = Math.min(geo.W, geo.H) * 0.036;
+        const room = f.x - reach - geo.W * 0.04;
+        const widest = Math.max(measure(left, `400 ${size}px ${opt.font}`), measure(right, `400 ${size}px ${opt.font}`));
+        if (widest > room && room > 0) size *= room / widest;
+        ctx.font = `400 ${size}px ${opt.font}`;
+        ctx.textAlign = 'right';
+        ctx.fillText(left, f.x - reach, cy);
+        ctx.textAlign = 'left';
+        ctx.fillText(right, f.x + f.w + reach, cy);
+        const kind = opt.c('mark', 'star');
+        if (kind !== 'none') {
+          ctx.fillStyle = opt.c('marks', ink);
+          const r = f.w * 0.11;
+          mark(ctx, kind, f.x + f.w / 2, f.y - f.h * 0.2, r);
+          mark(ctx, kind, f.x + f.w / 2, f.y + f.h * 1.2, r);
+        }
+      },
+    },
+    {
+      /* календарь месяца из даты в «Подписи»: снимки встают в дни. Вид сеткой, кружками или шахматкой.
+         Если снимков меньше, чем дней, «Перемешать» выбирает другие дни. */
+      id: 'calendar', name: 'Календарь', noNote: true, shuffle: true,
+      palette: [
+        { key: 'lines', name: 'Линии и числа' },
+        { key: 'squares', name: 'Клетки и звёзды', def: '#8e2a20' },
+      ],
+      choices: [
+        { key: 'style', name: 'Вид', def: 'grid', options: [['grid', 'Сетка'], ['circles', 'Кружки'], ['chess', 'Шахматка']] },
+        { key: 'count', name: 'Снимков', def: '12', options: [['7', '7'], ['12', '12'], ['all', 'Каждый день']] },
+        { key: 'bg', name: 'Фото-фон', def: 'auto', options: [['auto', 'Как в виде'], ['full', 'На весь лист'], ['top', 'Сверху'], ['none', 'Нет']] },
+        { key: 'week', name: 'Неделя с', def: 'mon', options: [['mon', 'Понедельника'], ['sun', 'Воскресенья']] },
+      ],
+      layout(W, H, env) {
+        const style = env.pick('style', 'grid');
+        const fromMon = env.pick('week', 'mon') === 'mon';
+        const M = monthOf(env.date, fromMon);
+        let bg = env.pick('bg', 'auto');
+        if (bg === 'auto') bg = { grid: 'full', circles: 'top', chess: 'none' }[style];
+        const rows = Math.ceil((M.offset + M.days) / 7);
+        const top = bg === 'top' ? H * 0.42 : 0;
+        const region = bg === 'top' ? { y: top + H * 0.05, h: H - top - H * 0.08 } : { y: H * 0.06, h: H * 0.88 };
+        /* сверху место под заголовок и дни недели, в клетках календаря */
+        const headK = style === 'circles' && bg === 'top' ? 0.7 : 1.6;
+        const maxW = { grid: W * 0.7, circles: W * 0.84, chess: W * 0.96 }[style];
+        const cs = Math.min(maxW / 7, region.h / (rows + headK));
+        const gx = (W - cs * 7) / 2;
+        const gy = region.y + (region.h - cs * (rows + headK)) / 2 + cs * headK;
+        const want = env.pick('count', '12');
+        const n = want === 'all' ? M.days : Math.min(M.days, Number(want));
+        const days = shuffled(Array.from({ length: M.days }, (_, i) => i + 1), env.rng).slice(0, n).sort((a, b) => a - b);
+        const cells = [];
+        if (bg !== 'none') cells.push({ x: 0, y: 0, w: W, h: bg === 'top' ? top : H, rot: 0 });
+        days.forEach((d) => {
+          const k = M.offset + d - 1;
+          const x = gx + (k % 7) * cs;
+          const y = gy + Math.floor(k / 7) * cs;
+          const i = style === 'circles' ? cs * 0.08 : style === 'grid' ? Math.max(1, cs * 0.012) : 0;
+          cells.push({ x: x + i, y: y + i, w: cs - i * 2, h: cs - i * 2, rot: 0, shape: style === 'circles' ? 'round' : undefined });
+        });
+        const title = env.text || (style === 'chess' ? 'core memories.' : `${M.name.toLowerCase()} dump`);
+        return { cells, cal: { style, bg, top, rows, cs, gx, gy, M, photo: new Set(days), title, fromMon } };
+      },
+      overlay(ctx, geo, u, opt) {
+        const { style, bg, top, rows, cs, gx, gy, M, photo, title, fromMon } = geo.cal;
+        const line = opt.c('lines', bg === 'full' ? '#ffffff' : opt.ink);
+        const accent = opt.c('squares', '#8e2a20');
+        const at = (d) => {
+          const k = M.offset + d - 1;
+          return [gx + (k % 7) * cs, gy + Math.floor(k / 7) * cs, Math.floor(k / 7), k % 7];
+        };
+        const names = weekNames(fromMon);
+        const lift = (on) => {
+          ctx.shadowColor = on ? 'rgba(0,0,0,.45)' : 'transparent';
+          ctx.shadowBlur = on ? 5 * u : 0;
+        };
+        ctx.textBaseline = 'middle';
+        if (style === 'grid') {
+          ctx.strokeStyle = line;
+          ctx.lineWidth = Math.max(1, 1.6 * u);
+          ctx.beginPath();
+          for (let r = 0; r <= rows; r++) { ctx.moveTo(gx, gy + r * cs); ctx.lineTo(gx + 7 * cs, gy + r * cs); }
+          for (let c = 0; c <= 7; c++) { ctx.moveTo(gx + c * cs, gy); ctx.lineTo(gx + c * cs, gy + rows * cs); }
+          ctx.stroke();
+          ctx.fillStyle = line;
+          ctx.textAlign = 'left';
+          ctx.font = `400 ${cs * 0.17}px ${SANS}`;
+          for (let d = 1; d <= M.days; d++) {
+            const [x, y] = at(d);
+            lift(photo.has(d));
+            ctx.fillText(String(d), x + cs * 0.1, y + cs * 0.17);
+          }
+          lift(false);
+          ctx.textAlign = 'center';
+          ctx.font = `400 ${cs * 0.2}px ${SANS}`;
+          names.forEach((nm, i) => ctx.fillText(nm.toLowerCase(), gx + (i + 0.5) * cs, gy - cs * 0.4));
+          ctx.font = `400 ${cs * 0.42}px ${opt.font}`;
+          ctx.fillText(title, gx + 3.5 * cs, gy - cs * 1.1);
+        } else if (style === 'circles') {
+          if (bg === 'top') spiralBind(ctx, 0, geo.W, top, geo.W * 0.075);
+          ctx.fillStyle = line;
+          ctx.textAlign = 'center';
+          ctx.font = `500 ${cs * 0.24}px ${SANS}`;
+          names.forEach((nm, i) => ctx.fillText(nm, gx + (i + 0.5) * cs, gy - cs * 0.35));
+          ctx.font = `400 ${cs * 0.26}px ${SANS}`;
+          for (let d = 1; d <= M.days; d++) {
+            if (photo.has(d)) continue;
+            const [x, y] = at(d);
+            ctx.globalAlpha = 0.1;
+            ctx.beginPath();
+            ctx.arc(x + cs / 2, y + cs / 2, cs * 0.42, 0, TAU);
+            ctx.fill();
+            ctx.globalAlpha = 1;
+            ctx.fillText(String(d), x + cs / 2, y + cs / 2);
+          }
+          if (bg === 'top') {
+            ctx.fillStyle = '#ffffff';
+            lift(true);
+            ctx.textAlign = 'left';
+            ctx.font = `400 ${geo.W * 0.065}px ${opt.font}`;
+            ctx.fillText(title, geo.W * 0.06, top * 0.78);
+            lift(false);
+          } else {
+            ctx.font = `400 ${cs * 0.34}px ${opt.font}`;
+            ctx.fillText(title, gx + 3.5 * cs, gy - cs * 1.1);
+          }
+        } else {
+          /* шахматка: пустые дни через один залиты цветом, числа на светлых клетках */
+          for (let d = 1; d <= M.days; d++) {
+            const [x, y, r, c] = at(d);
+            if (photo.has(d)) {
+              ctx.fillStyle = '#ffffff';
+              lift(true);
+              ctx.textAlign = 'left';
+              ctx.font = `500 ${cs * 0.2}px ${SANS}`;
+              ctx.fillText(String(d), x + cs * 0.08, y + cs * 0.84);
+              lift(false);
+              continue;
+            }
+            const dark = (r + c) % 2 === 1;
+            ctx.fillStyle = dark ? accent : 'rgba(255,255,255,.45)';
+            ctx.fillRect(x, y, cs, cs);
+            if (dark) continue;
+            ctx.fillStyle = line;
+            ctx.textAlign = 'left';
+            ctx.font = `400 ${cs * 0.32}px ${SANS}`;
+            ctx.fillText(String(d), x + cs * 0.08, y + cs * 0.78);
+          }
+          ctx.fillStyle = accent;
+          ctx.beginPath();
+          /* звёзды в пустых клетках до первого и после последнего дня, а если их мало, за сеткой */
+          const tail = rows * 7 - M.offset - M.days;
+          if (M.offset >= 2) starPath(ctx, gx + (M.offset / 2) * cs, gy + cs * 0.5, cs * Math.min(1, M.offset * 0.42), 0.15);
+          else starPath(ctx, gx + cs * 6.4, gy - cs * 0.45, cs * 0.9, 0.15);
+          if (tail >= 2) starPath(ctx, gx + (7 - tail / 2) * cs, gy + (rows - 0.5) * cs, cs * Math.min(1, tail * 0.42), -0.2);
+          else starPath(ctx, gx + cs * 0.4, gy + rows * cs + cs * 0.75, cs * 0.9, -0.2);
+          ctx.fill();
+          /* подпись в овале слева сверху */
+          let size = cs * 0.22;
+          const maxW = cs * 4.2;
+          const w = measure(title, `400 ${size}px ${opt.font}`);
+          if (w > maxW) size *= maxW / w;
+          ctx.font = `400 ${size}px ${opt.font}`;
+          const tw = ctx.measureText(title).width;
+          const ox = gx + tw / 2 + cs * 0.35;
+          const oy = gy - cs * 0.75;
+          ctx.strokeStyle = accent;
+          ctx.lineWidth = Math.max(1, 1.8 * u);
+          ctx.beginPath();
+          ctx.ellipse(ox, oy, tw / 2 + cs * 0.25, size * 1.1, 0, 0, TAU);
+          ctx.stroke();
+          ctx.fillStyle = accent;
+          ctx.textAlign = 'center';
+          ctx.fillText(title, ox, oy);
+        }
+      },
+    },
+    {
+      /* окно «выберите все картинки с …» поверх фото. Клетки режут один снимок, у каждой свой или пустые,
+         выбранные клетки сжимаются и получают галочку. Слово в шапке берётся из подписи. */
+      id: 'captcha', name: 'Капча', noNote: true, shuffle: true, sample: 'me',
+      palette: [{ key: 'blue', name: 'Шапка и кнопка', def: '#4a86e8' }],
+      choices: [
+        { key: 'grid', name: 'Клеток', def: '3', options: [['3', '3 × 3'], ['4', '4 × 4']] },
+        { key: 'tiles', name: 'В клетках', def: 'one', options: [['one', 'Одно фото'], ['many', 'Разные фото'], ['black', 'Пусто']] },
+        { key: 'bg', name: 'Фон', def: 'same', options: [['same', 'То же фото'], ['other', 'Другое фото'], ['paper', 'Бумага']] },
+        { key: 'checks', name: 'Галочки', def: 'off', options: [['off', 'Нет'], ['on', 'Есть']] },
+        { key: 'button', name: 'Кнопка', def: 'VERIFY', options: [['VERIFY', 'Verify'], ['SKIP', 'Skip']] },
+      ],
+      layout(W, H, env) {
+        const n = Number(env.pick('grid', '3'));
+        const tiles = env.pick('tiles', 'one');
+        let bg = env.pick('bg', 'same');
+        if (tiles === 'black' && bg === 'other') bg = 'same';
+        const button = env.pick('button', 'VERIFY');
+        /* окно: поля, синяя шапка, квадрат клеток, низ с кнопкой */
+        const k = 1 + 0.025 * 3 + 0.3 + 0.19 - 0.05;
+        const pw = Math.min(W * 0.78, (H * 0.9) / k);
+        const pad = pw * 0.025;
+        const head = pw * 0.3;
+        const foot = pw * 0.19;
+        const gs = pw - pad * 2;
+        const ph = pad * 2 + head + gs + foot;
+        const px = (W - pw) / 2;
+        const py = (H - ph) / 2;
+        const grid = { x: px + pad, y: py + pad * 2 + head, w: gs, h: gs };
+        const gap = pw * 0.009;
+        const ts = (gs - gap * (n - 1)) / n;
+        const picked = env.pick('checks', 'off') === 'on' ? new Set(shuffled([...Array(n * n).keys()], env.rng).slice(0, Math.max(2, Math.round((n * n) / 3)))) : new Set();
+        const rects = [];
+        for (let r = 0; r < n; r++) {
+          for (let c = 0; c < n; c++) {
+            const on = picked.has(r * n + c);
+            const i = on ? ts * 0.1 : 0;
+            rects.push({ x: grid.x + c * (ts + gap) + i, y: grid.y + r * (ts + gap) + i, w: ts - i * 2, h: ts - i * 2, on });
+          }
+        }
+        const full = { x: 0, y: 0, w: W, h: H, rot: 0 };
+        const cells = [];
+        let pieces = [];
+        let underAt;
+        if (tiles === 'many') {
+          if (bg === 'same') cells.push({ ...full, slot: 0 });
+          if (bg === 'other') cells.push({ ...full, slot: n * n });
+          underAt = cells.length;
+          rects.forEach((t, i) => cells.push({ x: t.x, y: t.y, w: t.w, h: t.h, rot: 0, slot: i }));
+        } else if (bg === 'same') {
+          /* клетки показывают тот же снимок чуть крупнее, чем фон под окном */
+          cells.push({ ...full, slot: 0, source: true });
+          underAt = 1;
+          const zoom = 1.25;
+          const cx = grid.x + grid.w / 2;
+          const cy = grid.y + grid.h / 2;
+          if (tiles === 'one') pieces = rects.map((t) => ({ ...t, from: { x: cx + (t.x - cx) / zoom, y: cy + (t.y - cy) / zoom, w: t.w / zoom, h: t.h / zoom } }));
+        } else {
+          /* снимок целиком в квадрате клеток; сама ячейка не видна, её кусочки ложатся в клетки */
+          if (bg === 'other') cells.push({ ...full, slot: 1 });
+          underAt = cells.length;
+          cells.push({ ...grid, rot: 0, slot: 0, hidden: true, source: true });
+          if (tiles === 'one') pieces = rects.map((t) => ({ ...t, from: { x: t.x - grid.x, y: t.y - grid.y, w: t.w, h: t.h } }));
+        }
+        const word = env.text || this.sample;
+        const lines = [n === 4 ? 'Select all squares with' : 'Select all images with', word, button === 'SKIP' ? 'If there are none, click skip' : 'Click verify once there are none left.'];
+        const under = (ctx, u, opt) => {
+          const blue = opt.c('blue', '#4a86e8');
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,.25)';
+          ctx.shadowBlur = 16 * u;
+          ctx.shadowOffsetY = 4 * u;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(px, py, pw, ph);
+          ctx.restore();
+          ctx.strokeStyle = '#d3d3d3';
+          ctx.lineWidth = Math.max(1, 1.5 * u);
+          ctx.strokeRect(px, py, pw, ph);
+          ctx.fillStyle = blue;
+          ctx.fillRect(px + pad, py + pad, pw - pad * 2, head);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          const tx = px + pad + pw * 0.06;
+          const room = pw - pad * 2 - pw * 0.12;
+          ctx.font = `400 ${pw * 0.04}px ${SANS}`;
+          ctx.fillText(lines[0], tx, py + pad + head * 0.24);
+          let big = pw * 0.085;
+          const ww = measure(lines[1], `700 ${big}px ${SANS}`);
+          if (ww > room) big *= room / ww;
+          ctx.font = `700 ${big}px ${SANS}`;
+          ctx.fillText(lines[1], tx, py + pad + head * 0.53);
+          ctx.font = `400 ${pw * 0.036}px ${SANS}`;
+          ctx.fillText(lines[2], tx, py + pad + head * 0.8);
+          /* низ: черта, три значка и кнопка */
+          const fy = grid.y + grid.h + pad;
+          ctx.fillStyle = '#e2e2e2';
+          ctx.fillRect(px, fy, pw, Math.max(1, 1.5 * u));
+          const iy = fy + (foot - pad) / 2;
+          const ir = foot * 0.16;
+          ctx.strokeStyle = '#555555';
+          ctx.fillStyle = '#555555';
+          ctx.lineWidth = Math.max(1.5, ir * 0.22);
+          ctx.lineCap = 'round';
+          let ix = px + pad + pw * 0.06;
+          ctx.beginPath();
+          ctx.arc(ix, iy, ir, -Math.PI * 0.35, Math.PI * 1.45);
+          ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(ix + ir * 0.95, iy - ir * 1.05);
+          ctx.lineTo(ix + ir * 0.5, iy - ir * 0.3);
+          ctx.lineTo(ix + ir * 1.25, iy - ir * 0.2);
+          ctx.closePath();
+          ctx.fill();
+          ix += pw * 0.13;
+          ctx.beginPath();
+          ctx.arc(ix, iy + ir * 0.15, ir, Math.PI, 0);
+          ctx.stroke();
+          ctx.fillRect(ix - ir * 1.15, iy, ir * 0.55, ir * 0.95);
+          ctx.fillRect(ix + ir * 0.6, iy, ir * 0.55, ir * 0.95);
+          ix += pw * 0.13;
+          ctx.beginPath();
+          ctx.arc(ix, iy, ir, 0, TAU);
+          ctx.stroke();
+          ctx.fillRect(ix - ir * 0.1, iy - ir * 0.15, ir * 0.2, ir * 0.65);
+          ctx.beginPath();
+          ctx.arc(ix, iy - ir * 0.45, ir * 0.13, 0, TAU);
+          ctx.fill();
+          const bw = pw * 0.3;
+          const bh = foot * 0.55;
+          ctx.fillStyle = blue;
+          ctx.fillRect(px + pw - pad * 2 - bw, iy - bh / 2, bw, bh);
+          ctx.fillStyle = '#ffffff';
+          ctx.textAlign = 'center';
+          ctx.font = `600 ${bh * 0.36}px ${SANS}`;
+          ctx.fillText(button, px + pw - pad * 2 - bw / 2, iy);
+        };
+        return { cells, pieces, under, underAt, cap: { rects, black: tiles === 'black' } };
+      },
+      overlay(ctx, geo, u, opt) {
+        const { rects, black } = geo.cap;
+        if (black) {
+          ctx.fillStyle = '#000000';
+          rects.forEach((t) => ctx.fillRect(t.x, t.y, t.w, t.h));
+        }
+        const blue = opt.c('blue', '#4a86e8');
+        rects.filter((t) => t.on).forEach((t) => {
+          const r = Math.max(t.w, t.h) * 0.14;
+          const x = t.x + r * 0.35;
+          const y = t.y + r * 0.35;
+          ctx.fillStyle = blue;
+          ctx.strokeStyle = '#ffffff';
+          ctx.lineWidth = Math.max(1.5, r * 0.14);
+          ctx.beginPath();
+          ctx.arc(x, y, r, 0, TAU);
+          ctx.fill();
+          ctx.stroke();
+          ctx.lineWidth = Math.max(1.5, r * 0.2);
+          ctx.lineCap = 'round';
+          ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(x - r * 0.45, y);
+          ctx.lineTo(x - r * 0.1, y + r * 0.35);
+          ctx.lineTo(x + r * 0.5, y - r * 0.3);
+          ctx.stroke();
+        });
+      },
+    },
+    {
+      /* слова рассыпаны по бумаге, но читаются сверху вниз; рядом большое фото, среди слов может лежать ещё одно.
+         Число со скобкой в начале, как «8)», встаёт к левому краю. */
+      id: 'scatterWords', name: 'Слова вразброс', noNote: true, shuffle: true, sample: '8) free oolong-tea with cream i got from a sustainability campaign',
+      palette: [{ key: 'text', name: 'Слова', def: '#7d7458' }],
+      choices: [
+        { key: 'side', name: 'Большое фото', def: 'bottom', options: [['bottom', 'Снизу'], ['top', 'Сверху'], ['none', 'Нет']] },
+        { key: 'mid', name: 'Фото среди слов', def: 'off', options: [['off', 'Нет'], ['on', 'Есть']] },
+        { key: 'size', name: 'Слова', def: 'm', options: [['s', 'Мелкие'], ['m', 'Средние'], ['l', 'Крупные']] },
+      ],
+      layout(W, H, env) {
+        const m = Math.min(W, H);
+        const side = env.pick('side', 'bottom');
+        const mid = env.pick('mid', 'off') === 'on' || side === 'none';
+        const cells = [];
+        let region = { x: W * 0.08, y: H * 0.07, w: W * 0.84, h: H * 0.86 };
+        if (side !== 'none') {
+          const ph = H * 0.45;
+          cells.push({ x: 0, y: side === 'top' ? 0 : H - ph, w: W, h: ph, rot: 0 });
+          region = { x: W * 0.08, y: side === 'top' ? ph + H * 0.06 : H * 0.07, w: W * 0.84, h: H - ph - H * 0.13 };
+        }
+        let hole = null;
+        if (mid) {
+          const hh = region.h * 0.62;
+          const hw = Math.min(region.w * 0.4, hh * 0.9);
+          hole = { x: W / 2 - hw / 2, y: region.y + (region.h - hh) / 2, w: hw, h: hh };
+          cells.push({ ...hole, rot: 0 });
+        }
+        const size = m * { s: 0.03, m: 0.038, l: 0.05 }[env.pick('size', 'm')];
+        const css = env.font.css;
+        const weight = env.font.weight || 400;
+        const color = env.pick('text', '#7d7458');
+        const font = `${weight} ${size}px ${css}`;
+        const list = (env.text || this.sample).split(/\s+/).filter(Boolean);
+        const rng = env.rng;
+        /* слова идут строками сверху вниз; если строк не хватает, в строке несколько слов, каждое в своей доле ширины */
+        const rowH = size * 1.9;
+        const fit = Math.max(1, Math.floor(region.h / rowH));
+        const perRow = Math.ceil(list.length / fit);
+        const used = Math.ceil(list.length / perRow);
+        const gapX = size * 0.6;
+        const items = list.map((wd, i) => {
+          const r = Math.floor(i / perRow);
+          const k = i % perRow;
+          const y = region.y + (region.h * (r + 0.5)) / used + (rng() - 0.5) * rowH * 0.3;
+          const ww = measure(wd, font);
+          let lo = region.x + (region.w * k) / perRow;
+          let hi = region.x + (region.w * (k + 1)) / perRow;
+          if (hole && y > hole.y - size && y < hole.y + hole.h + size) {
+            const spans = [[lo, Math.min(hi, hole.x - gapX)], [Math.max(lo, hole.x + hole.w + gapX), hi]].filter(([a, b]) => b - a >= ww);
+            [lo, hi] = spans.length ? spans[Math.floor(rng() * spans.length)] : rng() < 0.5 ? [region.x, hole.x - gapX] : [hole.x + hole.w + gapX, region.x + region.w];
+          }
+          const x = i === 0 && /^\d+[).]$/.test(wd) ? region.x : lo + rng() * Math.max(0, hi - lo - ww);
+          return { kind: 'text', s: wd, x, y, size, weight, css, color };
+        });
+        return { cells, items };
+      },
+    },
+    {
+      /* как пост-карусель: большое фото со стрелками и миниатюры с номерами, или стопка снимков со словами по углам */
+      id: 'slider', name: 'Листалка', noNote: true, shuffle: true, sample: 'the picture i capture',
+      palette: [{ key: 'text', name: 'Стрелки и подписи' }],
+      choices: [
+        { key: 'view', name: 'Вид', def: 'thumbs', options: [['thumbs', 'Миниатюры'], ['stack', 'Стопка']] },
+        { key: 'count', name: 'Снимков', def: '6', options: [['3', '3'], ['6', '6']] },
+        { key: 'arrows', name: 'Стрелки', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+      ],
+      layout(W, H, env) {
+        const n = Number(env.pick('count', '6'));
+        const rng = env.rng;
+        const m = Math.min(W, H);
+        const cells = [];
+        const labels = [];
+        let arrowY;
+        let arrowX;
+        if (env.pick('view', 'thumbs') === 'stack') {
+          /* нижние снимки повёрнуты сильнее, верхний первый снимок почти ровно */
+          const w = Math.min(W * 0.56, H * 0.5);
+          const h = w * 1.25;
+          for (let k = n - 1; k >= 0; k--) {
+            const t = k ? 1 : 0.15;
+            cells.push({ x: W / 2 - w / 2 + (rng() - 0.5) * w * 0.08 * t, y: H / 2 - h / 2 + (rng() - 0.5) * h * 0.05 * t, w, h, rot: (rng() - 0.5) * 0.22 * t, slot: k, frame: 'white' });
+          }
+          const list = (env.text || this.sample).split(/\s+/).filter(Boolean);
+          const per = Math.ceil(list.length / 4);
+          const spots = [[-0.32, -0.64], [0.32, -0.64], [-0.32, 0.64], [0.32, 0.64]];
+          spots.forEach(([dx, dy], i) => {
+            const s = list.slice(i * per, (i + 1) * per).join(' ');
+            if (s) labels.push({ s, x: W / 2 + dx * w, y: H / 2 + dy * h, size: m * 0.05, align: 'center' });
+          });
+          arrowY = H / 2;
+          arrowX = Math.max(W * 0.07, (W / 2 - w / 2) / 2);
+        } else {
+          /* миниатюры по столбцам в верхней половине, первая повторяет большое фото */
+          const rows = n === 6 ? 2 : 1;
+          const tw = W * 0.24;
+          const band = { y: H * 0.07, h: H * 0.4 };
+          const aspects = shuffled([1.35, 1.05, 0.8, 1.25, 0.9, 1.0], rng);
+          for (let k = 0; k < n; k++) {
+            const c = rows === 2 ? Math.floor(k / 2) : k;
+            const r = rows === 2 ? k % 2 : 0;
+            /* не выше своей доли полосы: подписям остаётся место */
+            const room = (band.h / rows) * 0.72;
+            let ww = tw * (0.85 + rng() * 0.2);
+            let hh = ww / aspects[k];
+            if (hh > room) { ww *= room / hh; hh = room; }
+            const cx = W * (0.2 + c * 0.3) + (rng() - 0.5) * W * 0.03;
+            const cy = band.y + (band.h * (r + 0.5)) / rows + (c % 2 ? 0.06 : -0.04) * (band.h / rows);
+            const cell = { x: cx - ww / 2, y: cy - hh / 2, w: ww, h: hh, rot: 0, slot: k };
+            cells.push(cell);
+            /* верхний ряд подписан сверху, нижний снизу */
+            const below = rows === 1 || r === 1;
+            labels.push({ s: `(${k + 1})`, x: cx, y: below ? cell.y + hh + m * 0.04 : cell.y - m * 0.035, size: m * 0.032, align: 'center' });
+          }
+          const bw = Math.min(W * 0.64, H * 0.4 * 1.35);
+          const bh = bw / 1.35;
+          const by = H * 0.53 + (H * 0.44 - bh) / 2;
+          cells.push({ x: W / 2 - bw / 2, y: by, w: bw, h: bh, rot: 0, slot: 0 });
+          arrowY = by + bh / 2;
+          arrowX = Math.max(W * 0.07, (W / 2 - bw / 2) / 2);
+        }
+        return { cells, labels, arrowX, arrowY };
+      },
+      overlay(ctx, geo, u, opt) {
+        const col = opt.c('text', opt.ink);
+        ctx.fillStyle = col;
+        ctx.strokeStyle = col;
+        ctx.textBaseline = 'middle';
+        geo.labels.forEach((l) => {
+          ctx.font = `400 ${l.size}px ${opt.font}`;
+          ctx.textAlign = l.align;
+          ctx.fillText(l.s, l.x, l.y);
+        });
+        if (opt.c('arrows', 'on') === 'on') {
+          const a = Math.min(geo.W, geo.H) * 0.035;
+          chevron(ctx, geo.arrowX, geo.arrowY, a, -1, Math.max(2, a * 0.14));
+          chevron(ctx, geo.W - geo.arrowX, geo.arrowY, a, 1, Math.max(2, a * 0.14));
+        }
       },
     },
   );

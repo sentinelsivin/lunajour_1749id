@@ -863,7 +863,19 @@
     const pick = (key, def) => (chosen[key] && chosen[key] !== 'auto' ? chosen[key] : def);
     const opt = { title: s.note.title, ink: inkText, c: pick };
     if (geo.tpl.deco) geo.tpl.deco(ctx, geo.box, u, geo, opt);
+    /* подложка шаблона между ячейками: например окно капчи поверх фото-фона, под клетками */
+    let under = !geo.under;
+    const drawUnder = () => {
+      if (under) return;
+      under = true;
+      ctx.save();
+      geo.under(ctx, u, opt);
+      ctx.restore();
+    };
     geo.cells.forEach((base, i) => {
+      if (i === (geo.underAt || 0)) drawUnder();
+      /* скрытая ячейка: только источник для кусочков и место для касания */
+      if (base.hidden) return;
       const slot = slots[base.slot ?? i];
       const cell = { ...base };
       if (base.tint) cell.color = pick(base.tint, base.color);
@@ -906,9 +918,13 @@
       ctx.restore();
     });
 
+    drawUnder();
     /* вырезки: на фото на месте кусочка видна бумага, сам кусочек лежит в другом месте */
-    const base = geo.cells[0];
-    const source = slots[0] && slots[0].src ? drawPhoto(s, [slots[0]], base.w, base.h, 'cell0') : null;
+    /* кусочки берутся из ячейки-источника (source) или из первой */
+    const si = Math.max(0, geo.cells.findIndex((c) => c.source));
+    const base = geo.cells[si];
+    const from = base && slots[base.slot ?? si];
+    const source = geo.pieces.length && from && from.src ? drawPhoto(s, [from], base.w, base.h, `cell${si}`) : null;
     geo.holes.forEach((r) => {
       ctx.drawImage(paper, r.x, r.y, r.w, r.h, r.x, r.y, r.w, r.h);
     });
@@ -1098,6 +1114,10 @@
     { id: 'rec', name: 'Запись', color: '#ff1a1a' },
     { id: 'warn', name: 'Внимание', color: '#39ff6a' },
     { id: 'heartLine', name: 'Сердце контуром', color: '#ff1a1a' },
+    { id: 'retroWin', name: 'Ретро-окно', color: '#ffffff' },
+    { id: 'retroDialog', name: 'Окошко сообщения', color: '#ffffff' },
+    { id: 'storyboard', name: 'Кадр с ярлыком', color: '#ffffff' },
+    { id: 'squares', name: 'Квадратики', color: '#ffffff' },
   ];
   /* значок в квадрате size с центром cx, cy */
   function drawVector(ctx, id, cx, cy, size, color) {
@@ -1217,6 +1237,59 @@
         ctx.bezierCurveTo(s * 0.55, -s * 0.95, s * 1.1, -s * 0.05, 0, s * 0.75);
         ctx.stroke();
         break;
+      case 'retroWin':
+      case 'retroDialog': {
+        /* окно старого компьютера: двойная рамка, полоски в шапке, квадратики-кнопки; у большого окна полоса прокрутки */
+        const big = id === 'retroWin';
+        const w = big ? s * 1.3 : s * 1.9;
+        const h = big ? s * 1.9 : s * 0.9;
+        const x = -w / 2, y = -h / 2;
+        const bar = s * (big ? 0.11 : 0.13);
+        const lw = Math.max(1, s * 0.012);
+        ctx.lineWidth = lw;
+        ctx.strokeRect(x, y, w, h);
+        ctx.strokeRect(x + lw * 2.5, y + lw * 2.5, w - lw * 5, h - lw * 5);
+        ctx.beginPath();
+        ctx.moveTo(x, y + bar); ctx.lineTo(x + w, y + bar);
+        for (let k = 1; k < 5; k++) {
+          const yy = y + (bar * k) / 5;
+          ctx.moveTo(x + w * 0.22, yy); ctx.lineTo(x + w * 0.4, yy);
+          ctx.moveTo(x + w * 0.6, yy); ctx.lineTo(x + w * 0.96, yy);
+        }
+        ctx.stroke();
+        const q = bar * 0.55;
+        [0, 1, 2].slice(0, big ? 3 : 1).forEach((k) => ctx.strokeRect(x + w * 0.03 + k * q * 1.4, y + (bar - q) / 2, q, q));
+        /* название окна в середине шапки: два штриха, как буквы */
+        ctx.fillRect(x + w * 0.44, y + bar * 0.38, w * 0.12, bar * 0.24);
+        if (big) {
+          const sw = s * 0.08;
+          ctx.strokeRect(x + w - sw - lw * 3, y + bar * 1.6, sw, h - bar * 1.6 - lw * 3);
+          ctx.fillRect(x + w - sw - lw * 3, y + bar * 1.6 + (h - bar * 1.6) * 0.62, sw, (h - bar * 1.6) * 0.03);
+          ctx.beginPath();
+          ctx.moveTo(x + lw * 3, y + bar * 1.5); ctx.lineTo(x + w - lw * 3, y + bar * 1.5);
+          ctx.stroke();
+        } else {
+          /* строки текста в окошке */
+          ctx.globalAlpha = 0.85;
+          [0.42, 0.62].forEach((f, k) => ctx.fillRect(x + w * 0.06, y + h * f, w * (k ? 0.45 : 0.7), lw * 1.6));
+          ctx.globalAlpha = 1;
+        }
+        break;
+      }
+      case 'storyboard': {
+        /* тонкий квадрат кадра и белый ярлык над левым углом */
+        ctx.lineWidth = Math.max(1, s * 0.018);
+        ctx.strokeRect(-s * 0.8, -s * 0.7, s * 1.6, s * 1.5);
+        ctx.fillRect(-s * 0.8, -s * 0.9, s * 1.05, s * 0.2);
+        break;
+      }
+      case 'squares': {
+        /* белые квадратики вразброс, два слиплись ступенькой */
+        const q = s * 0.17;
+        [[-0.85, -0.6], [-0.45, -0.85], [0.2, -0.75], [0.36, -0.59], [0.75, -0.95], [0.6, -0.2], [-0.95, 0.05], [-0.2, 0.55], [0.3, 0.5], [0.1, 0.8], [0.85, 0.35], [-0.6, 0.85]]
+          .forEach(([dx, dy]) => ctx.fillRect(dx * s - q / 2, dy * s - q / 2, q, q));
+        break;
+      }
       default: break;
     }
     ctx.restore();

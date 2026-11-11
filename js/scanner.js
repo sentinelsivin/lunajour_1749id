@@ -37,6 +37,8 @@ window.Scanner = (function () {
       dossier: D({}) } },
     { id: 'feelings', name: 'Детектор чувств', set: { color: '#f472b6', shape: 'corners', label: 'plate', text: 'longing {0.}, nostalgia {%}, tenderness {%}, quiet joy {0.}, butterflies {%}', lens: 'none', zoom: 1, zoomLook: 'duo', zoomLine: 'one', zoomText: 'SUBJECT #{hex}', links: 'none', glow: true, hud: ['corners', 'rec', 'time'], amount: 0.6,
       dossier: D({ style: 'card', title: 'EMOTION SCAN', rows: 'SUBJECT: {id}\nMOOD: {mood}\nTENDERNESS: {%}\nUntil the weekend [62%]' }) } },
+    /* лица с глазами и шкалами чувств под рамкой */
+    { id: 'faceFront', name: 'Шкалы чувств', set: { color: '#5b5bff', shape: 'eyes', label: 'meters', text: 'Face.Front, Angry, Happy, Sad, Surprised, Gender: Male', line: 1, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 0.6 } },
     { id: 'surf', name: 'Флажки', set: { color: '#ff2020', shape: 'full', label: 'flag', text: '', line: 0.8, lens: 'none', zoom: 0, links: 'none', glow: false, hud: [], amount: 1 } },
     /* для видео: как в роликах с цветами */
     { id: 'glassFlash', name: 'Стекло', set: { color: '#ffffff', shape: 'full', label: 'center', text: '{.4}', line: 0.6, lens: 'glass', lensOut: false, zoom: 0, links: 'chain', glow: false, hud: [], amount: 1, motion: 'flash' } },
@@ -48,8 +50,8 @@ window.Scanner = (function () {
     { id: 'coordArcs', name: 'Координаты с дугами', set: { color: '#ff3b3b', shape: 'target', label: 'corner', text: 'x: {x}  y: {y}', line: 0.7, lens: 'none', zoom: 0, links: 'arcs', glow: false, hud: [], amount: 2.2 } },
   ];
 
-  const SHAPES = [['full', 'Рамка'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['target', 'Мишень'], ['xbox', 'С крестом'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
-  const LABELS = [['plate', 'Плашка'], ['flag', 'Флажок'], ['below', 'Снизу'], ['corner', 'Мелко сверху'], ['center', 'В центре'], ['none', 'Без подписи']];
+  const SHAPES = [['full', 'Рамка'], ['eyes', 'С глазами'], ['corners', 'Уголки'], ['dashed', 'Пунктир'], ['cross', 'Прицел'], ['target', 'Мишень'], ['xbox', 'С крестом'], ['nodes', 'С узлами'], ['double', 'Двойная'], ['oval', 'Овал']];
+  const LABELS = [['plate', 'Плашка'], ['flag', 'Флажок'], ['meters', 'Шкалы'], ['below', 'Снизу'], ['corner', 'Мелко сверху'], ['center', 'В центре'], ['none', 'Без подписи']];
   const LENSES = [['none', 'Нет'], ['thermal', 'Тепловизор'], ['invert', 'Негатив'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['tint', 'Заливка'], ['duo', 'Два цвета'], ['xray', 'Рентген'], ['glass', 'Стекло']];
   const LOOKS = [['same', 'Как есть'], ['bw', 'Ч/б'], ['pixel', 'Пиксели'], ['invert', 'Негатив'], ['thermal', 'Тепловизор'], ['duo', 'Два цвета']];
   const ZOOM_LINES = [['one', 'Линия'], ['funnel', 'Воронка'], ['elbow', 'Уголком']];
@@ -259,6 +261,16 @@ window.Scanner = (function () {
       ctx.strokeRect(x + o, y + o * 0.6, w - o * 0.3, h - o * 0.2);
       ctx.restore();
     }
+    if (kind === 'eyes') {
+      /* два кружка-глаза в верхней части рамки */
+      ctx.save();
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = Math.max(1.5, lw * 1.4);
+      ctx.beginPath();
+      [0.34, 0.66].forEach((fx) => { ctx.moveTo(x + w * fx + k * 0.07, y + h * 0.4); ctx.arc(x + w * fx, y + h * 0.4, k * 0.07, 0, TAU); });
+      ctx.stroke();
+      ctx.restore();
+    }
     if (kind === 'nodes') {
       /* маленькие квадраты на углах и на середине одной стороны, как на ботаническом плакате */
       const s = Math.max(10 * u, k * 0.12);
@@ -280,9 +292,46 @@ window.Scanner = (function () {
     return { w, h };
   }
 
-  function drawLabel(ctx, sc, text, x, y, w, h, W, H, u, col, f) {
+  function drawLabel(ctx, sc, text, x, y, w, h, W, H, u, col, f, i = 0) {
     if (sc.label === 'none') return;
     const ink = isLight(col) ? '#0d0d0d' : '#ffffff';
+    if (sc.label === 'meters') {
+      /* первая строка шаблона над рамкой, остальные под ней: слово и шкала; «слово: значение» без шкалы,
+         значение красным. Одна шкала у рамки заполнена. */
+      const items = String(sc.text || 'Face.Front, Angry, Happy, Sad, Surprised').split(',').map((v) => v.trim()).filter(Boolean);
+      if (!items.length) return;
+      const size = Math.max(12 * u, Math.min(30 * u, w * 0.13));
+      const r = rngFor(sc.seed || 5, i * 17 + 3);
+      ctx.font = `${f.weight === 600 ? 400 : f.weight} ${size}px ${f.css}`;
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(items[0], x, Math.max(size, y - size * 0.3));
+      const rows = items.slice(1);
+      const keyW = Math.max(...rows.map((v) => ctx.measureText(v.split(':')[0]).width), 0) + size * 0.5;
+      const barW = Math.max(size * 3, w * 0.75);
+      const hot = Math.floor(r() * Math.max(1, rows.filter((v) => !v.includes(':')).length));
+      let n = 0;
+      rows.forEach((row, k) => {
+        const ty = y + h + size * (1.25 + k * 1.25);
+        const [key, val] = row.split(':').map((v) => v.trim());
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(key, x, ty);
+        if (val != null) {
+          ctx.fillStyle = '#ff2b2b';
+          ctx.fillText(val, x + keyW, ty);
+          return;
+        }
+        const bx = x + keyW, bh = size * 0.62, by = ty - bh * 1.05;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = Math.max(1.5, size * 0.09);
+        ctx.strokeRect(bx, by, barW, bh);
+        if (n++ === hot) {
+          ctx.fillStyle = '#ff2b2b';
+          ctx.fillRect(bx + ctx.lineWidth, by + ctx.lineWidth, (barW - ctx.lineWidth * 2) * (0.2 + r() * 0.75), bh - ctx.lineWidth * 2);
+        }
+      });
+      return;
+    }
     if (sc.label === 'plate') {
       if (!text) return;
       const size = 19 * u;
@@ -1053,7 +1102,7 @@ window.Scanner = (function () {
         const kept = clock != null && autoCache.get(ctx.canvas);
         if (kept && kept.key === key && clock >= kept.at) boxes = kept.boxes;
         else {
-          boxes = E.autoBoxes(look(), Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' ? 0.05 : 0.02);
+          boxes = E.autoBoxes(look(), Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' || sc.label === 'meters' ? 0.05 : 0.02);
           autoCache.set(ctx.canvas, { key, boxes, at: clock == null ? Infinity : clock });
         }
       }
@@ -1215,7 +1264,7 @@ window.Scanner = (function () {
       const tick = boxes[i].epoch != null ? boxes[i].epoch * 7 + 1 : settled ? null : Math.floor(T * 12);
       let text = fill(tpl, boxes[i], boxes[i].slot != null ? boxes[i].slot : i, W, H, seed, state.note, tick);
       if (T != null) text = text.slice(0, Math.max(0, Math.floor((T - appear(i) - 0.15) * 32)));
-      drawLabel(ctx, sc, text, b.x, b.y, b.w, b.h, W, H, u, col, f);
+      drawLabel(ctx, sc, text, b.x, b.y, b.w, b.h, W, H, u, col, f, i);
     });
     ctx.shadowBlur = 0;
 
