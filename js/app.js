@@ -32,12 +32,17 @@
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
     /* что делаем: картинку или ролик. motion: длина ролика (с), смена фото серии (с), музыка, её начало (с) и громкость */
     out: 'photo',
+    /* мой ник на этой карточке: true, false или не задан (тогда как в «Моём наборе») */
+    sign: null,
     motion: { dur: 5, per: 0.6, track: '', mStart: 0, mVol: 80 },
   });
 
   let state = defaults();
   let slots = [];
   const assets = { bg: null, bgBlob: null, mask: null, maskBlob: null, maskId: 0, stickers: {}, stickerBlobs: {} };
+  /* «Мой набор»: ник в углу и фирменные цвета. Один на все карточки, хранится отдельно от черновика */
+  let brand = { handle: '', pos: 'br', font: '', color: '#ffffff', size: 1, alpha: 90, auto: true, colors: [] };
+  assets.brand = brand;
   let phase = 'shoot';
   let mode = 'photo';
   let boothIndex = 0;
@@ -387,6 +392,7 @@
         Scanner.time = null;
         Scanner.clock = null;
         Effects.clock = null;
+        drawGuides();
         drawSelection();
         placeCtx();
         return;
@@ -398,6 +404,7 @@
       Scanner.clock = now / 1000;
       renderCard(ctx, state, slots, assets);
       Scanner.clock = null;
+      drawGuides();
       drawSelection();
       return;
     }
@@ -411,7 +418,10 @@
     if (!comparing) drawSplit();
     Scanner.clock = null;
     Effects.clock = null;
-    if (!comparing) drawSelection();
+    if (!comparing) {
+      drawGuides();
+      drawSelection();
+    }
     placeCtx();
   }
 
@@ -2242,9 +2252,12 @@
       b.onclick = () => pick('auto');
       parent.append(b);
     }
-    colors.forEach((c) => {
+    /* фирменные цвета из «Моего набора» стоят первыми в каждой палитре */
+    const mine = brand.colors || [];
+    [...mine, ...colors.filter((c) => !mine.includes(c))].forEach((c) => {
       const b = document.createElement('button');
       b.type = 'button';
+      if (mine.includes(c)) b.classList.add('mine');
       b.style.background = c;
       b.setAttribute('aria-label', `${t('Цвет')} ${c}`);
       b.classList.toggle('on', c === current);
@@ -2605,7 +2618,7 @@
   function syncRatios() {
     const list = $('ratioList');
     list.replaceChildren();
-    Object.entries(RATIOS).forEach(([id, [w, h]]) => {
+    Object.entries(RATIOS).filter(([id]) => !id.includes('×')).forEach(([id, [w, h]]) => {
       const b = document.createElement('button');
       b.type = 'button';
       b.classList.toggle('on', id === state.ratio);
@@ -2620,6 +2633,227 @@
       };
       list.append(b);
     });
+    /* карусель: сколько слайдов и какой они формы */
+    const n = carouselN();
+    const shape = n > 1 ? state.ratio.split('×')[1] : state.ratio === '1:1' ? '1:1' : '4:5';
+    const setCarousel = (count, form) => {
+      state.ratio = count > 1 ? `${count}×${form}` : form;
+      syncRatios();
+      sizeCanvas();
+      update();
+      if (count > 1 && n < 2) toast(t('Карусель: пунктир показывает, где пройдёт разрез между слайдами. В файл он не попадает.'));
+    };
+    const box = $('carouselN');
+    box.replaceChildren();
+    chip(box, t('Нет'), n < 2, () => setCarousel(1, shape));
+    for (let k = 2; k <= 10; k++) chip(box, String(k), n === k, () => setCarousel(k, shape));
+    $('carouselShape').hidden = n < 2;
+    markSeg($('carouselShape'), shape);
+    $('carouselShape').onclick = (e) => {
+      const b = e.target.closest('button');
+      if (b && n > 1) setCarousel(n, b.dataset.v);
+    };
+  }
+  const carouselN = () => {
+    const m = /^(\d+)×/.exec(state.ratio || '');
+    return m ? Number(m[1]) : 1;
+  };
+
+  /* ---------- безопасные зоны и разрезы карусели: только в превью, в файл не попадают ---------- */
+  let zones = '';
+  try { zones = localStorage.getItem('lunajour-zones') || ''; } catch { /* без памяти браузера зоны просто выключены */ }
+  /* зоны экрана 1080 × 1920, которые закрывает интерфейс: [x, y, ширина, высота, подпись] */
+  const SCREEN_ZONES = {
+    stories: [[0, 0, 1080, 250, 'ник и время'], [0, 1580, 1080, 340, 'ответ и реакции']],
+    reels: [[0, 0, 1080, 210, 'вкладки'], [0, 1440, 1080, 480, 'подпись и музыка'], [930, 880, 150, 560, 'кнопки']],
+    tiktok: [[0, 0, 1080, 160, 'вкладки'], [0, 1450, 1080, 470, 'подпись и музыка'], [945, 760, 135, 690, 'кнопки']],
+  };
+  function zoneRects(w, h) {
+    if (zones === 'grid') {
+      /* сетка профиля показывает середину карточки в пропорции 3:4 */
+      if (w / h > 3 / 4) {
+        const vw = (h * 3) / 4;
+        return [[0, 0, (w - vw) / 2, h, ''], [(w + vw) / 2, 0, (w - vw) / 2, h, '']];
+      }
+      const vh = (w * 4) / 3;
+      return [[0, 0, w, (h - vh) / 2, ''], [0, (h + vh) / 2, w, (h - vh) / 2, '']];
+    }
+    const list = SCREEN_ZONES[zones];
+    if (!list) return [];
+    /* карточка вписана в экран телефона целиком, по центру */
+    const k = Math.min(1080 / w, 1920 / h);
+    const ox = (1080 - w * k) / 2;
+    const oy = (1920 - h * k) / 2;
+    return list.map(([x, y, zw, zh, label]) => [(x - ox) / k, (y - oy) / k, zw / k, zh / k, label]);
+  }
+  function drawGuides() {
+    const n = carouselN();
+    if (!zones && n < 2) return;
+    const sw = card.width / n;
+    const sh = card.height;
+    const fs = Math.max(10, card.width / n / 34);
+    ctx.save();
+    for (let i = 0; i < n; i++) {
+      const x0 = i * sw;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(x0, 0, sw, sh);
+      ctx.clip();
+      zoneRects(sw, sh).forEach(([x, y, w, h, label]) => {
+        ctx.fillStyle = 'rgba(255, 64, 110, .28)';
+        ctx.fillRect(x0 + x, y, w, h);
+        ctx.setLineDash([fs * 0.6, fs * 0.4]);
+        ctx.lineWidth = Math.max(1, fs / 8);
+        ctx.strokeStyle = 'rgba(255, 120, 150, .9)';
+        ctx.strokeRect(x0 + x, y, w, h);
+        if (!label || w < fs * 4) return;
+        ctx.setLineDash([]);
+        ctx.font = `600 ${fs}px "Golos Text", system-ui, sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillStyle = '#ffffff';
+        const cx = x0 + Math.min(Math.max(x + w / 2, fs * 4), sw - fs * 4);
+        const cy = Math.min(Math.max(y + h / 2, fs), sh - fs);
+        ctx.fillText(t(label), cx, cy);
+      });
+      ctx.restore();
+      if (n > 1) {
+        /* номер слайда и линия разреза */
+        ctx.font = `600 ${fs}px "Golos Text", system-ui, sans-serif`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+        const tag = String(i + 1);
+        const tw = ctx.measureText(tag).width + fs;
+        ctx.fillStyle = 'rgba(0, 0, 0, .55)';
+        ctx.fillRect(x0 + fs * 0.6, fs * 0.6, tw, fs * 1.5);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(tag, x0 + fs * 1.1, fs * 0.85);
+        if (i) {
+          ctx.setLineDash([fs * 0.7, fs * 0.5]);
+          ctx.lineWidth = Math.max(1.5, fs / 7);
+          ctx.strokeStyle = 'rgba(255, 255, 255, .9)';
+          ctx.shadowColor = 'rgba(0, 0, 0, .6)';
+          ctx.shadowBlur = 3;
+          ctx.beginPath();
+          ctx.moveTo(x0, 0);
+          ctx.lineTo(x0, sh);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+          ctx.setLineDash([]);
+        }
+      }
+    }
+    ctx.restore();
+  }
+
+  /* ---------- «Мой набор»: ник и фирменные цвета ---------- */
+  function syncSign() {
+    const has = !!String(brand.handle || '').trim();
+    $('signField').hidden = !has;
+    $('noteSign').checked = !!(state.sign ?? brand.auto);
+  }
+  function saveBrand() {
+    assets.brand = brand;
+    Store.set('brand', brand).catch(() => {});
+    syncSign();
+    invalidate();
+  }
+  function syncBrand() {
+    $('brandHandle').value = brand.handle || '';
+    const pos = $('brandPos');
+    pos.replaceChildren();
+    [['tl', '↖ Сверху слева'], ['tr', '↗ Сверху справа'], ['bl', '↙ Снизу слева'], ['br', '↘ Снизу справа'], ['bc', '↓ Снизу по центру']].forEach(([v, name]) => chip(pos, t(name), brand.pos === v, () => {
+      brand = { ...brand, pos: v };
+      saveBrand();
+      syncBrand();
+    }));
+    fontSelect($('brandFont'), t('Как у приложения'), brand.font);
+    swatches($('brandColor'), ['#ffffff', '#111111', '#f6efe3', '#ffd6e0', '#cfe8ff', '#ffe08a'], brand.color, (c) => {
+      brand = { ...brand, color: c };
+      saveBrand();
+      syncBrand();
+    });
+    $('brandSize').value = brand.size;
+    $('brandAlpha').value = brand.alpha;
+    $('brandAuto').checked = !!brand.auto;
+    /* фирменные цвета: нажатие убирает цвет, «+» добавляет свой */
+    const row = $('brandColors');
+    row.replaceChildren();
+    (brand.colors || []).forEach((c) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'mine';
+      b.style.background = c;
+      b.title = t('Убрать этот цвет');
+      b.setAttribute('aria-label', `${t('Убрать этот цвет')} ${c}`);
+      b.onclick = () => {
+        brand = { ...brand, colors: brand.colors.filter((x) => x !== c) };
+        saveBrand();
+        syncBrand();
+        syncAll();
+      };
+      row.append(b);
+    });
+    if ((brand.colors || []).length < 8) {
+      const add = document.createElement('label');
+      add.title = t('Добавить фирменный цвет');
+      const input = document.createElement('input');
+      input.type = 'color';
+      input.value = '#e8a0b4';
+      input.setAttribute('aria-label', t('Добавить фирменный цвет'));
+      input.onchange = () => {
+        if ((brand.colors || []).includes(input.value)) return;
+        brand = { ...brand, colors: [...(brand.colors || []), input.value] };
+        saveBrand();
+        syncBrand();
+        syncAll();
+      };
+      add.append(input);
+      row.append(add);
+    }
+  }
+  function openBrand() {
+    setMore(false);
+    syncBrand();
+    $('brandSheet').showModal();
+  }
+  function bindBrand() {
+    $('brandBtn').onclick = openBrand;
+    $('signSetup').onclick = openBrand;
+    $('brandClose').onclick = () => $('brandSheet').close();
+    $('brandHandle').addEventListener('input', () => {
+      brand = { ...brand, handle: $('brandHandle').value };
+      saveBrand();
+    });
+    $('brandFont').addEventListener('change', () => {
+      brand = { ...brand, font: $('brandFont').value };
+      saveBrand();
+      syncBrand();
+    });
+    $('brandSize').addEventListener('input', () => { brand = { ...brand, size: Number($('brandSize').value) }; saveBrand(); });
+    $('brandAlpha').addEventListener('input', () => { brand = { ...brand, alpha: Number($('brandAlpha').value) }; saveBrand(); });
+    $('brandAuto').addEventListener('change', () => { brand = { ...brand, auto: $('brandAuto').checked }; saveBrand(); });
+    $('noteSign').addEventListener('change', () => {
+      state.sign = $('noteSign').checked;
+      update();
+    });
+    markSeg($('zoneSeg'), zones);
+    $('zoneSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      zones = b.dataset.v;
+      try { localStorage.setItem('lunajour-zones', zones); } catch { /* только на этот раз */ }
+      markSeg($('zoneSeg'), zones);
+      invalidate();
+    });
+    Store.get('brand').then((b) => {
+      if (!b || typeof b !== 'object') return;
+      brand = { ...brand, ...b };
+      assets.brand = brand;
+      syncSign();
+      syncAll();
+      invalidate();
+    }).catch(() => {});
   }
 
   /* ---------- кадрирование ---------- */
@@ -4607,6 +4841,23 @@
     ['saveCard', 'saveVideo', 'shareCard', 'saveAll', 'shareAll'].forEach((id) => { $(id).disabled = disabled; });
   }
 
+  /* карусель: каждый слайд отдельным файлом, по порядку */
+  async function saveCarousel() {
+    const status = $('exportStatus');
+    exportButtons(true);
+    status.textContent = t('Собираю файл…');
+    try {
+      if (state.adjust && state.adjust.lut) await Render.loadLut(state.adjust.lut);
+      const blobs = await Export.slides(state, slots, assets, carouselN());
+      const stamp = Date.now();
+      const how = await deliver(blobs, blobs.map((b, k) => `lunajour-${stamp}-slide-${String(k + 1).padStart(2, '0')}.png`));
+      status.textContent = how === 'cancelled' ? '' : `${t('Сохранено слайдов')}: ${blobs.length}`;
+    } catch {
+      status.textContent = t('Не получилось сохранить карусель.');
+    }
+    exportButtons(false);
+  }
+
   async function runExport(make, label) {
     const status = $('exportStatus');
     exportButtons(true);
@@ -4736,7 +4987,8 @@
       syncSeries();
       stopPreview();
       /* в режиме «Видео» сохраняется ролик, в режиме «Фото» картинка */
-      const video = state.out === 'video';
+      const slidesN = carouselN();
+      const video = state.out === 'video' && slidesN < 2;
       $('exportTitle').textContent = t(video ? 'Сохранить ролик' : 'Куда отправить карточку');
       $('saveVideo').hidden = !video || !Camera.videoMime();
       $('saveVideo').textContent = t(phoneSave() ? 'Сохранить ролик в «Фото»' : 'Сохранить ролик');
@@ -4745,10 +4997,17 @@
       $('saveCard').hidden = video;
       if (video) { $('saveAll').hidden = true; $('shareAll').hidden = true; }
       $('videoNote').hidden = !video || !!Camera.videoMime();
+      if (slidesN > 1) {
+        $('saveCard').textContent = `${t(phoneSave() ? 'Сохранить слайды в «Фото»' : 'Сохранить карусель')}: ${slidesN}`;
+        $('shareCard').hidden = true;
+        $('saveAll').hidden = true;
+        $('shareAll').hidden = true;
+        $('saveVideo').hidden = true;
+      }
       $('exportSheet').showModal();
     };
     $('exportClose').onclick = () => $('exportSheet').close();
-    $('saveCard').onclick = () => runExport(() => Export.cardBlob(state, slots, assets), 'card');
+    $('saveCard').onclick = () => (carouselN() > 1 ? saveCarousel() : runExport(() => Export.cardBlob(state, slots, assets), 'card'));
     $('saveVideo').onclick = () => {
       /* звук разрешается только прямо в нажатии, до любых ожиданий */
       Music.unlock();
@@ -4922,6 +5181,7 @@
 
   function syncAll() {
     syncMotion();
+    syncSign();
     syncFx();
     syncColor();
     syncStyles();
@@ -4964,6 +5224,7 @@
       syncColor();
       invalidate();
     }).catch(() => {});
+    bindBrand();
     Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});

@@ -425,6 +425,11 @@ button { cursor: pointer; }
   color: var(--bone);
 }
 .sheet::backdrop { background: rgba(0, 0, 0, .72); }
+.sheet-body { display: flex; flex-direction: column; gap: 14px; max-height: min(70vh, 640px); overflow-y: auto; overflow-x: hidden; padding: 4px 8px 4px 4px; }
+.sheet-body > * { min-width: 0; }
+/* фирменные цвета: тонкое кольцо, чтобы их было видно среди остальных */
+.swatches .mine { outline: 2px dashed rgba(255, 255, 255, .55); outline-offset: 2px; }
+.seg.zones button { padding: 6px 2px; font-size: 12px; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .sheet h2 { margin: 0; font: 400 26px/1.2 var(--display); text-wrap: balance; }
 .sheet-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }

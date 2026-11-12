@@ -10,6 +10,11 @@
     '4:3': [1440, 1080],
     '16:9': [1920, 1080],
   };
+  /* карусель Instagram: N слайдов в ряд на одной широкой карточке, при сохранении она режется на слайды */
+  for (let n = 2; n <= 10; n++) {
+    RATIOS[`${n}×4:5`] = [1080 * n, 1350];
+    RATIOS[`${n}×1:1`] = [1080 * n, 1080];
+  }
 
   const PAPERS = [
     { id: 'smooth', name: 'Гладкая' },
@@ -1515,6 +1520,32 @@
   }
 
   function renderCard(ctx, s, slots, assets = {}) {
+    renderCardBody(ctx, s, slots, assets);
+    drawSign(ctx, s, assets, ctx.canvas.width, ctx.canvas.height);
+  }
+  /* мой ник из «Моего набора» в углу карточки. s.sign: на этой карточке да или нет; не задан — как в наборе */
+  function drawSign(ctx, s, assets, W, H) {
+    const b = assets && assets.brand;
+    const text = b && String(b.handle || '').trim();
+    if (!text || !(s.sign ?? b.auto)) return;
+    const u = Math.min(W, H) / 1080;
+    const size = 30 * u * (Number(b.size) || 1);
+    const f = window.Effects && window.Effects.fonts().find((x) => x.id === b.font);
+    const pos = b.pos || 'br';
+    const pad = 40 * u;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, Math.max(0.1, (Number(b.alpha) || 90) / 100));
+    ctx.font = `600 ${size}px ${f ? f.css : '"Golos Text", system-ui, sans-serif'}`;
+    ctx.textAlign = pos.endsWith('l') ? 'left' : pos.endsWith('r') ? 'right' : 'center';
+    ctx.textBaseline = pos.startsWith('t') ? 'top' : 'alphabetic';
+    ctx.shadowColor = 'rgba(0,0,0,.35)';
+    ctx.shadowBlur = 6 * u;
+    ctx.shadowOffsetY = u;
+    ctx.fillStyle = b.color || '#ffffff';
+    ctx.fillText(text, pos.endsWith('l') ? pad : pos.endsWith('r') ? W - pad : W / 2, pos.startsWith('t') ? pad : H - pad);
+    ctx.restore();
+  }
+  function renderCardBody(ctx, s, slots, assets = {}) {
     const W = ctx.canvas.width;
     const H = ctx.canvas.height;
     const L = layout(s, W, H);

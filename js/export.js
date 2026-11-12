@@ -19,6 +19,19 @@
     return toBlob(fullCard(s, slots, assets));
   }
 
+  /* карусель: широкая карточка режется на n одинаковых слайдов */
+  async function slides(s, slots, assets, n) {
+    const full = fullCard(s, slots, assets);
+    const sw = Math.round(full.width / n);
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const c = canvas(sw, full.height);
+      c.getContext('2d').drawImage(full, i * sw, 0, sw, full.height, 0, 0, sw, full.height);
+      out.push(await toBlob(c));
+    }
+    return out;
+  }
+
   /* Видео: сама карточка во весь кадр, в её пропорциях, без фона и покачивания.
      Клип внутри карточки продолжает играть, сканер оживает. Стороны чётные: так видео принимают все кодеки. */
   /* opts.seq: серия, список наборов фото; каждая карточка держится opts.per мс, по кругу (как гифка). */
@@ -139,5 +152,5 @@
     return blob.type.includes('mp4') ? 'mp4' : blob.type.includes('webm') ? 'webm' : 'png';
   }
 
-  window.Export = { cardBlob, videoBlob, save, extension };
+  window.Export = { cardBlob, slides, videoBlob, save, extension };
 })();

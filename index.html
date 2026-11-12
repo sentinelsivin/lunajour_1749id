@@ -46,6 +46,17 @@
         <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
           <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
         </div>
+        <button class="btn" id="brandBtn" type="button">Мой набор: ник и цвета</button>
+        <div class="group"><span class="label">Безопасные зоны</span>
+          <div class="seg zones" id="zoneSeg" role="radiogroup" aria-label="Безопасные зоны">
+            <button type="button" data-v="">Нет</button>
+            <button type="button" data-v="grid">Сетка</button>
+            <button type="button" data-v="stories">Stories</button>
+            <button type="button" data-v="reels">Reels</button>
+            <button type="button" data-v="tiktok">TikTok</button>
+          </div>
+          <p class="hint">Розовым видно, что закроют кнопки и подписи. «Сетка»: что останется в профиле. В файл не попадает.</p>
+        </div>
         <button class="btn" id="keysBtn" type="button">Клавиши</button>
         <div class="group"><span class="label">Язык</span>
           <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
@@ -548,6 +559,10 @@
       </section>
 
       <section class="panel" data-panel="note" hidden>
+        <div class="row" id="signField" hidden>
+          <label class="check grow"><input id="noteSign" type="checkbox">Мой ник на карточке</label>
+          <button class="btn small" id="signSetup" type="button">Мой набор</button>
+        </div>
         <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
         <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
         <label class="field">Дата<input id="noteDate" type="date" data-bind="note.date"></label>
@@ -579,6 +594,14 @@
         <div class="group"><span class="label">Размер карточки</span>
           <div class="ratios" id="ratioList"></div>
         </div>
+        <div class="group"><span class="label">Карусель: одна картинка на несколько слайдов</span>
+          <div class="chips" id="carouselN"></div>
+          <div class="seg" id="carouselShape" hidden>
+            <button type="button" data-v="4:5">Слайды 4:5</button>
+            <button type="button" data-v="1:1">Слайды 1:1</button>
+          </div>
+          <p class="hint">Карточка становится широкой, а при сохранении режется на слайды. В Instagram они листаются как одна панорама.</p>
+        </div>
       </section>
     </div>
     <nav class="tools subtools" id="scanSub" aria-label="Настройки сканера" hidden>
@@ -605,6 +628,25 @@
     <button class="btn" id="retakeFresh" type="button">Начать с нуля</button>
   </div>
   <p class="hint">Оформление: формат, бумага, фигура, коллаж, эффекты, цвет, сканер, стикеры и подпись.</p>
+</dialog>
+<dialog class="sheet" id="brandSheet" aria-labelledby="brandTitle">
+  <div class="sheet-head">
+    <h2 id="brandTitle">Мой набор</h2>
+    <button class="btn small primary" id="brandClose" type="button">Готово</button>
+  </div>
+  <div class="sheet-body">
+    <label class="field">Ник или подпись<input id="brandHandle" type="text" maxlength="40" placeholder="@my.blog"></label>
+    <div class="group"><span class="label">Где на карточке</span><div class="chips" id="brandPos"></div></div>
+    <label class="field">Шрифт<select id="brandFont"></select></label>
+    <div class="group"><span class="label">Цвет ника</span><div class="swatches" id="brandColor"></div></div>
+    <label class="slider">Размер<input id="brandSize" type="range" min="0.5" max="2.5" step="0.05"></label>
+    <label class="slider">Прозрачность<input id="brandAlpha" type="range" min="20" max="100"></label>
+    <label class="check"><input id="brandAuto" type="checkbox">Ставить ник на новые карточки</label>
+    <div class="group"><span class="label">Фирменные цвета</span>
+      <div class="swatches" id="brandColors"></div>
+      <p class="hint">Встают первыми во всех палитрах: бумага, текст, стикеры, блёстки. Нажми на цвет, чтобы убрать его.</p>
+    </div>
+  </div>
 </dialog>
 <dialog class="sheet" id="exportSheet" aria-labelledby="exportTitle">
   <div class="sheet-head">
