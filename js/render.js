@@ -668,7 +668,11 @@
   function coverGeom(slot, rect) {
     const { sw, sh } = slot.src;
     const sideways = slot.turn % 180 !== 0;
-    const k = Math.max(rect.w / (sideways ? sh : sw), rect.h / (sideways ? sw : sh)) * slot.zoom;
+    /* наклон: окно, повёрнутое на угол, должно целиком лежать на снимке */
+    const a = Math.abs(((slot.tilt || 0) * Math.PI) / 180);
+    const bw = rect.w * Math.cos(a) + rect.h * Math.sin(a);
+    const bh = rect.w * Math.sin(a) + rect.h * Math.cos(a);
+    const k = Math.max(bw / (sideways ? sh : sw), bh / (sideways ? sw : sh)) * slot.zoom;
     return {
       dw: sw * k,
       dh: sh * k,
@@ -684,7 +688,8 @@
      k резкость (плюс резче, минус мягче), tsC/tsA тонировка теней цветом и силой, thC/thA то же для светов.
      gl свечение (размытая копия в «Экране»), glR его радиус, glN шум в свечении, cl чёткость (цветовой контраст
      в «Мягком свете»), ca сдвиг красного канала, kR и kT радиус и порог резкости, stC/stA тонировка мягким светом.
-     lut/lutA цветовая таблица шаблона и её сила, lkA/lkC/lkS засветка (сила, цвет, край), spA блёстки.
+     lut/lutA цветовая таблица шаблона и её сила, lkA/lkC/lkS засветка (сила, цвет, край),
+     spA/spT/spS/spC блёстки (сколько, вид, размер, цвет).
      g зерно рисуется отдельно. Поля, которых нет в старом черновике, считаются нулём. */
   const ADJ_KEYS = ['b', 'c', 's', 'w', 't', 'sh', 'hl', 'f', 'v', 'k', 'tsA', 'thA', 'gl', 'cl', 'ca', 'stA', 'lut', 'lkA', 'spA'];
   function neutral(a) { return ADJ_KEYS.every((key) => !a[key]); }
@@ -711,11 +716,44 @@
   /* цветовая таблица шаблона из js/luts.js: раскодируем один раз */
   const LUT_N = 17;
   const lutCache = new Map();
+  /* Таблицы лежат по файлам в luts/ и подгружаются, только когда шаблон выбран. Пока файл едет,
+     фото рисуется без таблицы, а когда приехал, готовые снимки сбрасываются и карточка перерисовывается.
+     Свои таблицы из .cube регистрируются прямо из памяти. */
+  const lutData = {};
+  const lutWait = new Map();
+  let lutListener = null;
+  function loadLut(id) {
+    if (!id) return Promise.resolve(null);
+    if (lutData[id]) return Promise.resolve(lutTable(id));
+    if (!lutWait.has(id)) {
+      lutWait.set(id, fetch(`luts/${encodeURIComponent(id)}.txt`)
+        .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+        .then((text) => {
+          lutData[id] = text.trim();
+          photoMemo.clear();
+          if (lutListener) lutListener(id);
+          return lutTable(id);
+        })
+        .catch(() => {
+          lutWait.delete(id);
+          return null;
+        }));
+    }
+    return lutWait.get(id);
+  }
+  function registerLut(id, b64) {
+    lutData[id] = b64;
+    lutCache.delete(id);
+    photoMemo.clear();
+  }
   function lutTable(id) {
     if (!id) return null;
     if (lutCache.has(id)) return lutCache.get(id);
-    const src = window.LUTS && window.LUTS[id];
-    if (!src) return null;
+    const src = lutData[id];
+    if (!src) {
+      loadLut(id);
+      return null;
+    }
     const bin = atob(src);
     const t = new Float32Array(bin.length);
     for (let i = 0; i < bin.length; i++) t[i] = bin.charCodeAt(i);
@@ -742,36 +780,115 @@
     ctx.fillRect(0, 0, w, h);
     ctx.restore();
   }
-  /* Блёстки: белые искры с лучами и мягким ореолом поверх фото, раскладка всегда одна и та же. */
-  function drawSparkles(ctx, w, h, amount) {
+  /* Блёстки поверх фото. Вид (spT), размер (spS, множитель) и цвет (spC); раскладка всегда одна и та же.
+     rays: искры с лучами, как в BlueBlue; glitter: мелкая переливчатая пыль; twinkle: звёздочки ✦;
+     stars: пятиконечные звёзды; hearts: сердечки; bokeh: мягкие круги света, как огни не в фокусе. */
+  const SPARKLE_TYPES = ['rays', 'glitter', 'twinkle', 'stars', 'hearts', 'bokeh'];
+  function drawSparkles(ctx, w, h, a) {
+    const amount = Number(a.spA) || 0;
+    const type = SPARKLE_TYPES.includes(a.spT) ? a.spT : 'rays';
+    const size = Math.min(4, Math.max(0.1, Number(a.spS) || 1));
+    const [cr, cg, cb] = hexRgb(a.spC || '#ffffff');
+    const col = (alpha, mix = 0) => {
+      /* mix: насколько оттенок уходит к белому в середине искры */
+      const r = cr + (255 - cr) * mix, g = cg + (255 - cg) * mix, b = cb + (255 - cb) * mix;
+      return `rgba(${r | 0},${g | 0},${b | 0},${alpha})`;
+    };
     const m = Math.max(w, h);
     let seed = 11;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-    const n = Math.round((amount / 100) * 70);
+    const k = amount / 100;
+    const glow = (x, y, r, alpha) => {
+      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+      g.addColorStop(0, col(alpha, 0.7));
+      g.addColorStop(0.3, col(alpha * 0.45, 0.2));
+      g.addColorStop(1, col(0));
+      ctx.fillStyle = g;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    };
+    const starPath = (x, y, r, points, inner, rot) => {
+      ctx.beginPath();
+      for (let i = 0; i < points * 2; i++) {
+        const rr = i % 2 ? r * inner : r;
+        const ang = rot + (i * Math.PI) / points - Math.PI / 2;
+        ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(ang) * rr, y + Math.sin(ang) * rr);
+      }
+      ctx.closePath();
+    };
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    for (let i = 0; i < n; i++) {
-      const x = rnd() * w;
-      const y = rnd() * h;
-      const big = rnd() < 0.18;
-      const s = m * (big ? 0.02 + rnd() * 0.035 : 0.004 + rnd() * 0.01);
-      const glow = ctx.createRadialGradient(x, y, 0, x, y, s * 0.9);
-      glow.addColorStop(0, 'rgba(255,255,255,.95)');
-      glow.addColorStop(0.25, 'rgba(255,245,255,.45)');
-      glow.addColorStop(1, 'rgba(255,240,255,0)');
-      ctx.fillStyle = glow;
-      ctx.fillRect(x - s, y - s, s * 2, s * 2);
-      if (!big) continue;
-      /* лучи крестом: длинные по вертикали и горизонтали, короткие по диагонали */
-      ctx.strokeStyle = 'rgba(255,255,255,.85)';
-      ctx.lineCap = 'round';
-      [[1, 0, 1], [0, 1, 1], [0.7, 0.7, 0.4], [0.7, -0.7, 0.4]].forEach(([dx, dy, len]) => {
-        ctx.lineWidth = Math.max(1, m * 0.0016 * len);
+    if (type === 'glitter') {
+      /* много мелких точек, часть переливается соседними оттенками */
+      const n = Math.round(k * 900);
+      for (let i = 0; i < n; i++) {
+        const x = rnd() * w, y = rnd() * h;
+        /* не тоньше полупикселя, иначе самая мелкая пыль пропадает совсем */
+        const r = Math.max(0.5, m * 0.0026 * size * (0.4 + rnd() * 1.2));
+        const hue = rnd();
+        ctx.fillStyle = hue < 0.55 ? col(0.55 + rnd() * 0.45, 0.4) : `hsla(${(hue * 720) % 360},90%,85%,${0.5 + rnd() * 0.4})`;
         ctx.beginPath();
-        ctx.moveTo(x - dx * s * 2.2 * len, y - dy * s * 2.2 * len);
-        ctx.lineTo(x + dx * s * 2.2 * len, y + dy * s * 2.2 * len);
-        ctx.stroke();
-      });
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+        if (rnd() < 0.1) glow(x, y, r * 7, 0.8);
+      }
+    } else if (type === 'bokeh') {
+      /* мягкие круги света с более светлой кромкой */
+      const n = Math.round(k * 40);
+      for (let i = 0; i < n; i++) {
+        const x = rnd() * w, y = rnd() * h;
+        const r = m * (0.02 + rnd() * 0.05) * size;
+        const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
+        const al = 0.18 + rnd() * 0.25;
+        g.addColorStop(0, col(al * 0.6, 0.3));
+        g.addColorStop(0.85, col(al, 0.2));
+        g.addColorStop(1, col(0));
+        ctx.fillStyle = g;
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else {
+      const n = Math.round(k * (type === 'rays' ? 70 : 45));
+      for (let i = 0; i < n; i++) {
+        const x = rnd() * w, y = rnd() * h;
+        const big = rnd() < (type === 'rays' ? 0.18 : 0.35);
+        const s = m * size * (big ? 0.02 + rnd() * 0.035 : 0.006 + rnd() * 0.012);
+        glow(x, y, s * (type === 'rays' ? 0.9 : 1.6), type === 'rays' ? 0.95 : 0.6);
+        if (type === 'rays') {
+          if (!big) continue;
+          /* лучи крестом: длинные по вертикали и горизонтали, короткие по диагонали */
+          ctx.strokeStyle = col(0.85, 0.6);
+          ctx.lineCap = 'round';
+          [[1, 0, 1], [0, 1, 1], [0.7, 0.7, 0.4], [0.7, -0.7, 0.4]].forEach(([dx, dy, len]) => {
+            ctx.lineWidth = Math.max(1, m * 0.0016 * len * size);
+            ctx.beginPath();
+            ctx.moveTo(x - dx * s * 2.2 * len, y - dy * s * 2.2 * len);
+            ctx.lineTo(x + dx * s * 2.2 * len, y + dy * s * 2.2 * len);
+            ctx.stroke();
+          });
+          continue;
+        }
+        ctx.fillStyle = col(0.95, 0.55);
+        if (type === 'twinkle') starPath(x, y, s, 4, 0.22, 0);
+        else if (type === 'stars') starPath(x, y, s * 0.9, 5, 0.45, rnd() * 0.6 - 0.3);
+        else {
+          /* сердечко из двух дуг и острого низа */
+          const r = s * 0.55;
+          const rot = (rnd() - 0.5) * 0.6;
+          ctx.save();
+          ctx.translate(x, y);
+          ctx.rotate(rot);
+          ctx.beginPath();
+          ctx.moveTo(0, r * 1.3);
+          ctx.bezierCurveTo(-r * 2.1, -r * 0.1, -r * 1.1, -r * 1.7, 0, -r * 0.6);
+          ctx.bezierCurveTo(r * 1.1, -r * 1.7, r * 2.1, -r * 0.1, 0, r * 1.3);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+          continue;
+        }
+        ctx.fill();
+      }
     }
     ctx.restore();
   }
@@ -988,7 +1105,7 @@
     }
     ctx.putImageData(img, 0, 0);
     if (Number(a.lkA)) drawLeak(ctx, w, h, a);
-    if (Number(a.spA)) drawSparkles(ctx, w, h, Number(a.spA));
+    if (Number(a.spA)) drawSparkles(ctx, w, h, a);
   }
 
   /* Готовые шаблоны цвета. adjust: значения ползунков при силе 100%. */
@@ -1061,7 +1178,7 @@
   function drawPhoto(s, slots, w, h, name) {
     const bname = neutral(s.adjust) ? name : `${name}-read`;
     const still = slots.every((sl) => !sl.src || (sl.src.kind !== 'video' && sl.src.kind !== 'live'));
-    const key = still ? JSON.stringify([Math.round(w), Math.round(h), s.adjust, slots.map((sl) => [srcId(sl.src), sl.x, sl.y, sl.zoom, sl.flip, sl.turn])]) : null;
+    const key = still ? JSON.stringify([Math.round(w), Math.round(h), s.adjust, slots.map((sl) => [srcId(sl.src), sl.x, sl.y, sl.zoom, sl.flip, sl.turn, sl.tilt || 0])]) : null;
     if (key && photoMemo.get(bname) === key && buffers.has(bname)) return buffers.get(bname).c;
     const { c, x } = buffer(bname, w, h, { willReadFrequently: !neutral(s.adjust) });
     slots.forEach((slot, i) => {
@@ -1081,7 +1198,7 @@
         x.scale(-1, 1);
       }
       x.translate(g.cx, g.cy);
-      x.rotate((slot.turn * Math.PI) / 180);
+      x.rotate(((slot.turn + (slot.flip ? -(slot.tilt || 0) : slot.tilt || 0)) * Math.PI) / 180);
       x.drawImage(slot.src.el, -g.dw / 2, -g.dh / 2, g.dw, g.dh);
       x.restore();
     });
@@ -1815,7 +1932,8 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, LOOKS, applyAdjust, layerThumb, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
+    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
+    onLut: (fn) => { lutListener = fn; }, layerThumb, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
   };
 })();

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const root = fileURLToPath(new URL('.', import.meta.url));
 const dist = join(root, 'dist');
-const files = ['index.html', 'style.css', 'manifest.webmanifest', 'sw.js', 'icons', 'js', 'fonts', 'templates'];
+const files = ['index.html', 'style.css', 'manifest.webmanifest', 'sw.js', 'icons', 'js', 'fonts', 'templates', 'luts'];
 
 await rm(dist, { recursive: true, force: true });
 await mkdir(dist);

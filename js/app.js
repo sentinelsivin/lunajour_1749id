@@ -26,7 +26,7 @@
     /* цвет фото: значения ползунков; look и mix помнят выбранный шаблон и его силу */
     adjust: {
       b: 0, c: 0, s: 0, w: 0, g: 0, t: 0, sh: 0, hl: 0, f: 0, v: 0, k: 0, kR: 8, kT: 0, cl: 0, gl: 0, glR: 40, glN: 0, ca: 0,
-      tsC: '#1f6f78', tsA: 0, thC: '#ffb680', thA: 0, stC: '#e1d3b3', stA: 0, lut: '', lutA: 100, lkA: 0, lkC: '#ff9a2e', lkS: 'right', spA: 0,
+      tsC: '#1f6f78', tsA: 0, thC: '#ffb680', thA: 0, stC: '#e1d3b3', stA: 0, lut: '', lutA: 100, lkA: 0, lkC: '#ff9a2e', lkS: 'right', spA: 0, spT: 'rays', spS: 1, spC: '#ffffff',
       look: '', mix: 1,
     },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
@@ -49,7 +49,7 @@
 
   const sample = sampleScene();
   const sampleSrc = { kind: 'sample', el: sample, sw: sample.width, sh: sample.height };
-  const newSlot = (src) => ({ src, x: 0, y: 0, zoom: 1, flip: false, turn: 0 });
+  const newSlot = (src) => ({ src, x: 0, y: 0, zoom: 1, flip: false, turn: 0, tilt: 0 });
 
   /* ---------- коллаж ---------- */
   const collageTpl = () => (state.collage ? Collages.byId(state.collage) : null);
@@ -252,7 +252,8 @@
     lastFrame = now;
     Scanner.clock = videoClock();
     Effects.clock = Scanner.clock;
-    renderCard(ctx, comparing ? { ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false } } : state, slots, assets);
+    renderCard(ctx, comparing ? plainState() : state, slots, assets);
+    if (!comparing) drawSplit();
     Scanner.clock = null;
     Effects.clock = null;
     if (!comparing) drawSelection();
@@ -727,11 +728,11 @@
       Store.set('draft', {
         state,
         mode,
-        slots: slots.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, blob: s.src && s.src.blob, kind: s.src && s.src.kind })),
+        slots: slots.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, tilt: s.tilt || 0, blob: s.src && s.src.blob, kind: s.src && s.src.kind })),
         bgBlob: assets.bgBlob,
         maskBlob: assets.maskBlob,
         stickers: Object.entries(assets.stickerBlobs).filter(([id]) => !id.startsWith('c') || state.layers.some((l) => l.img === id)),
-        series: series ? { i: series.i, items: series.items.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, blob: s.src && s.src.blob, kind: s.src && s.src.kind })) } : null,
+        series: series ? { i: series.i, items: series.items.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, tilt: s.tilt || 0, blob: s.src && s.src.blob, kind: s.src && s.src.kind })) } : null,
       });
     }, 700);
   }
@@ -756,7 +757,7 @@
       /* пустая ячейка коллажа так и остаётся пустой, а не превращается в пример */
       const empty = draft.state.collage && s.kind !== 'sample';
       const src = !s.blob ? (empty ? null : sampleSrc) : s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
-      restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0 });
+      restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0, tilt: s.tilt || 0 });
     }
     slots = restored;
     if (draft.bgBlob) {
@@ -776,7 +777,7 @@
         const items = [];
         for (const s of draft.series.items) {
           const src = s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
-          items.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0 });
+          items.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0, tilt: s.tilt || 0 });
         }
         series = { items, i: Math.min(draft.series.i || 0, items.length - 1) };
         slots = [series.items[series.i]];
@@ -793,6 +794,173 @@
     syncAll();
     goEdit();
     resetHistory();
+  }
+
+  /* ---------- телефон: сохранение в «Фото» через системное меню «Поделиться» ---------- */
+  /* Загрузка на телефоне кладёт файл в «Файлы» или «Загрузки». Через «Поделиться» в меню есть
+     «Сохранить изображение», и карточка попадает прямо в галерею. */
+  const canShareFiles = () => !!(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
+  const phoneSave = () => matchMedia('(pointer: coarse)').matches && canShareFiles();
+  async function deliver(blobs, names) {
+    if (phoneSave()) {
+      try {
+        await navigator.share({ files: blobs.map((b, k) => new File([b], names[k], { type: b.type || 'image/png' })) });
+        return 'shared';
+      } catch (err) {
+        if (err && err.name === 'AbortError') return 'cancelled';
+        /* браузер не дал открыть меню (например, файл собирался слишком долго): обычная загрузка */
+      }
+    }
+    for (let k = 0; k < blobs.length; k++) {
+      Export.save(blobs[k], names[k]);
+      if (blobs.length > 1) await new Promise((r) => setTimeout(r, 350));
+    }
+    return 'saved';
+  }
+
+  /* ---------- свои цветовые таблицы .cube ---------- */
+  /* Читает .cube (LUT_3D_SIZE, строки «R G B» от 0 до 1, красный меняется быстрее всего)
+     и пересчитывает в нашу сетку 17 × 17 × 17, где быстрее всего меняется синий. */
+  function parseCube(text) {
+    let n = 0;
+    let dmin = [0, 0, 0];
+    let dmax = [1, 1, 1];
+    const vals = [];
+    text.split(/\r?\n/).forEach((raw) => {
+      const line = raw.trim();
+      if (!line || line[0] === '#') return;
+      const p = line.split(/\s+/);
+      if (p[0] === 'LUT_3D_SIZE') n = Number(p[1]);
+      else if (p[0] === 'LUT_1D_SIZE') throw new Error('1d');
+      else if (p[0] === 'DOMAIN_MIN') dmin = p.slice(1, 4).map(Number);
+      else if (p[0] === 'DOMAIN_MAX') dmax = p.slice(1, 4).map(Number);
+      else if (/^[-+\d.]/.test(p[0]) && p.length >= 3) vals.push(Number(p[0]), Number(p[1]), Number(p[2]));
+    });
+    if (!n || vals.length < n * n * n * 3) throw new Error('size');
+    const at = (r, g, b, c) => vals[((b * n + g) * n + r) * 3 + c];
+    const N = 17;
+    const out = new Uint8Array(N * N * N * 3);
+    const coord = (v, c) => Math.min(n - 1, Math.max(0, ((v - dmin[c]) / Math.max(1e-6, dmax[c] - dmin[c])) * (n - 1)));
+    for (let ri = 0; ri < N; ri++) {
+      for (let gi = 0; gi < N; gi++) {
+        for (let bi = 0; bi < N; bi++) {
+          const x = coord(ri / (N - 1), 0), y = coord(gi / (N - 1), 1), z = coord(bi / (N - 1), 2);
+          const x0 = Math.min(n - 2, Math.floor(x)), y0 = Math.min(n - 2, Math.floor(y)), z0 = Math.min(n - 2, Math.floor(z));
+          const fx = x - x0, fy = y - y0, fz = z - z0;
+          for (let c = 0; c < 3; c++) {
+            const v = ((at(x0, y0, z0, c) * (1 - fz) + at(x0, y0, z0 + 1, c) * fz) * (1 - fy) + (at(x0, y0 + 1, z0, c) * (1 - fz) + at(x0, y0 + 1, z0 + 1, c) * fz) * fy) * (1 - fx)
+              + ((at(x0 + 1, y0, z0, c) * (1 - fz) + at(x0 + 1, y0, z0 + 1, c) * fz) * (1 - fy) + (at(x0 + 1, y0 + 1, z0, c) * (1 - fz) + at(x0 + 1, y0 + 1, z0 + 1, c) * fz) * fy) * fx;
+            out[((ri * N + gi) * N + bi) * 3 + c] = Math.round(Math.min(1, Math.max(0, v)) * 255);
+          }
+        }
+      }
+    }
+    let bin = '';
+    for (let i = 0; i < out.length; i++) bin += String.fromCharCode(out[i]);
+    return btoa(bin);
+  }
+  async function addCubeFiles(files) {
+    for (const file of [...files]) {
+      try {
+        const b64 = parseCube(await file.text());
+        const n = myLooks.reduce((m, l) => Math.max(m, l.n || 0), 0) + 1;
+        const id = `cube${Date.now()}${n}`;
+        Render.registerLut(id, b64);
+        const look = { id: `my${Date.now()}${n}`, n, name: file.name.replace(/\.cube$/i, '') || `${t('Мой')} ${n}`, mine: true, adjust: { lut: id, lutA: 100 }, lutId: id, lutData: b64 };
+        myLooks = [...myLooks, look];
+        await Store.set('looks', myLooks);
+        setLook(look.id, 1);
+        toast(t('Таблица загружена, она в конце ряда шаблонов.'));
+      } catch {
+        toast(t('Этот файл не читается как таблица .cube. Нужна трёхмерная таблица (LUT_3D_SIZE).'));
+      }
+    }
+  }
+
+  /* ---------- шторка «до / после» ---------- */
+  /* «До»: то же оформление, но без эффектов, сканера и цвета. Шторка делит карточку линией,
+     слева «до», справа «после»; линию тянут пальцем или мышью. */
+  let splitX = null;
+  const plainState = () => ({ ...state, fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false }, adjust: { ...defaults().adjust } });
+  let splitCanvas = null;
+  function drawSplit() {
+    if (splitX == null) return;
+    splitCanvas = splitCanvas || document.createElement('canvas');
+    splitCanvas.width = card.width;
+    splitCanvas.height = card.height;
+    renderCard(splitCanvas.getContext('2d'), plainState(), slots, assets);
+    const x = Math.round(card.width * splitX);
+    ctx.drawImage(splitCanvas, 0, 0, x, card.height, 0, 0, x, card.height);
+    /* линия с круглой ручкой и подписи */
+    const u = card.width / 1000;
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,.45)';
+    ctx.shadowBlur = 6 * u;
+    ctx.fillRect(x - 1.5 * u, 0, 3 * u, card.height);
+    ctx.beginPath();
+    ctx.arc(x, card.height / 2, 18 * u, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#111111';
+    ctx.font = `600 ${16 * u}px "Golos Text", system-ui, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('‹›', x, card.height / 2 + u);
+    ctx.fillStyle = 'rgba(0,0,0,.55)';
+    const tag = (text, tx, align) => {
+      ctx.font = `600 ${15 * u}px "Golos Text", system-ui, sans-serif`;
+      const w = ctx.measureText(text).width + 16 * u;
+      const left = align === 'left' ? tx : tx - w;
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(left, 12 * u, w, 26 * u);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.fillText(text, left + w / 2, 25 * u);
+    };
+    if (x > 90 * u) tag(t('до'), x - 10 * u, 'right');
+    if (x < card.width - 90 * u) tag(t('после'), x + 10 * u, 'left');
+    ctx.restore();
+  }
+  function setSplit(on) {
+    splitX = on ? 0.5 : null;
+    $('compareBtn').classList.toggle('primary', on);
+    $('compareBtn').setAttribute('aria-pressed', String(on));
+    invalidate();
+    if (on) toast(t('Шторка: слева до, справа после. Тяни линию. Нажми на кнопку ещё раз, чтобы убрать.'));
+  }
+  function bindSplit() {
+    /* линию тянут раньше всех остальных жестов на карточке: слушатель в фазе захвата */
+    let drag = false;
+    const near = (e) => {
+      const r = card.getBoundingClientRect();
+      return Math.abs(e.clientX - (r.left + r.width * splitX)) < Math.max(24, r.width * 0.05);
+    };
+    const move = (e) => {
+      const r = card.getBoundingClientRect();
+      splitX = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width));
+      invalidate();
+    };
+    card.addEventListener('pointerdown', (e) => {
+      if (splitX == null || !near(e)) return;
+      drag = true;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      try { card.setPointerCapture(e.pointerId); } catch { /* без захвата тоже работает */ }
+      move(e);
+    }, true);
+    card.addEventListener('pointermove', (e) => {
+      if (!drag) return;
+      e.stopImmediatePropagation();
+      move(e);
+    }, true);
+    const up = (e) => {
+      if (!drag) return;
+      drag = false;
+      e.stopImmediatePropagation();
+    };
+    card.addEventListener('pointerup', up, true);
+    card.addEventListener('pointercancel', up, true);
   }
 
   /* ---------- снимки: замена, отмена, обмен в коллаже, серия ---------- */
@@ -911,7 +1079,8 @@
     const on = !!series && series.items.length > 1 && phase === 'edit' && !collageTpl();
     $('seriesBar').hidden = !on;
     $('saveAll').hidden = !on;
-    $('shareAll').hidden = !on || !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
+    /* на телефоне «Сохранить всю серию» и так открывает «Поделиться», вторая кнопка не нужна */
+    $('shareAll').hidden = !on || !canShareFiles() || phoneSave();
     if (on) $('seriesCount').textContent = `${series.i + 1} / ${series.items.length}`;
   }
   /* карточка для каждого фото серии с общим оформлением и своим кадрированием */
@@ -928,14 +1097,12 @@
     const status = $('exportStatus');
     exportButtons(true);
     try {
+      if (state.adjust && state.adjust.lut) await Render.loadLut(state.adjust.lut);
       const blobs = await seriesBlobs((k) => { status.textContent = `${t('Собираю карточки')}: ${k + 1} / ${series.items.length}`; });
       const stamp = Date.now();
-      for (let k = 0; k < blobs.length; k++) {
-        Export.save(blobs[k], `lunajour-${stamp}-${String(k + 1).padStart(2, '0')}.${Export.extension(blobs[k])}`);
-        /* браузер не любит много загрузок разом */
-        await new Promise((r) => setTimeout(r, 350));
-      }
-      status.textContent = `${t('Сохранено карточек')}: ${blobs.length}`;
+      /* на телефоне все карточки уходят в меню «Поделиться» разом, на компьютере загрузками по очереди */
+      const how = await deliver(blobs, blobs.map((b, k) => `lunajour-${stamp}-${String(k + 1).padStart(2, '0')}.${Export.extension(b)}`));
+      status.textContent = how === 'cancelled' ? '' : `${t('Сохранено карточек')}: ${blobs.length}`;
     } catch {
       status.textContent = t('Не получилось сохранить серию.');
     }
@@ -1252,6 +1419,20 @@
       syncInputs();
       update();
     });
+    /* блёстки: вид, размер и цвет; пока блёсток нет, настройки спрятаны */
+    $('sparkTools').hidden = !Number(a.spA);
+    const kind = $('sparkType');
+    kind.replaceChildren();
+    [['rays', 'Искры с лучами'], ['glitter', 'Пыль'], ['twinkle', 'Звёздочки ✦'], ['stars', 'Звёзды'], ['hearts', 'Сердечки'], ['bokeh', 'Боке']].forEach(([v, name]) => chip(kind, t(name), (a.spT || 'rays') === v, () => {
+      state.adjust = { ...state.adjust, spT: v };
+      syncColor();
+      update();
+    }));
+    swatches($('sparkColor'), ['#ffffff', '#fff0b8', '#ffd6ea', '#cfe8ff', '#e2d4ff', '#c8ffe4', '#ffb3c7'], a.spC || '#ffffff', (c) => {
+      state.adjust = { ...state.adjust, spC: c };
+      syncColor();
+      update();
+    });
     /* засветка: с какого края и каким цветом; без силы настройки не показываем */
     $('leakTools').hidden = !Number(a.lkA);
     const side = $('leakSide');
@@ -1309,8 +1490,21 @@
       update();
     };
     $('lookSave').onclick = saveLook;
+    $('lookCube').onclick = () => $('fileCube').click();
+    $('fileCube').onchange = (e) => { addCubeFiles(e.target.files); e.target.value = ''; };
+    /* таблица приехала: перерисовать карточку и миниатюры шаблонов */
+    let lutTimer = null;
+    Render.onLut(() => {
+      invalidate();
+      clearTimeout(lutTimer);
+      lutTimer = setTimeout(() => {
+        $('lookGrid').dataset.key = '';
+        if (tab === 'color') syncColor();
+      }, 80);
+    });
     /* настройки засветки показываются, как только у неё появилась сила */
     $('adjLk').addEventListener('input', () => { $('leakTools').hidden = !Number(state.adjust.lkA); });
+    $('adjSp').addEventListener('input', () => { $('sparkTools').hidden = !Number(state.adjust.spA); });
   }
 
   /* ---------- выбранное в ряду всегда на виду ---------- */
@@ -1633,7 +1827,7 @@
       const a = document.activeElement;
       return !!a && (/TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && a.type !== 'range' && a.type !== 'checkbox'));
     };
-    const cmpSet = (on) => { comparing = on; $('compareBtn').classList.toggle('primary', on); invalidate(); };
+    const cmpSet = (on) => { comparing = on; $('compareBtn').classList.toggle('primary', on || splitX != null); invalidate(); };
     /* клавиши по месту на клавиатуре (e.code), чтобы работали и в русской раскладке */
     document.addEventListener('keydown', (e) => {
       if (typing()) return;
@@ -1694,6 +1888,8 @@
       show(false);
       const files = [...e.dataTransfer.files];
       if (!files.length) return;
+      const cubes = files.filter((f) => /\.cube$/i.test(f.name));
+      if (cubes.length) { addCubeFiles(cubes); return; }
       const images = files.filter(isImage);
       if (phase === 'edit' && (e.shiftKey || layersMode()) && images.length) stickersFrom(images);
       else handleFiles(files);
@@ -2194,6 +2390,7 @@
     const s = slots[activeSlot];
     if (!s) return;
     $('slotZoom').value = s.zoom;
+    $('slotTilt').value = s.tilt || 0;
     $('slotX').value = s.x;
     $('slotY').value = s.y;
   }
@@ -4172,9 +4369,10 @@
     exportButtons(true);
     status.textContent = t('Собираю файл…');
     try {
+      if (state.adjust && state.adjust.lut) await Render.loadLut(state.adjust.lut);
       const blob = await make();
-      Export.save(blob, `lunajour-${label}-${Date.now()}.${Export.extension(blob)}`);
-      status.textContent = t('Файл сохранён в загрузки.');
+      const how = await deliver([blob], [`lunajour-${label}-${Date.now()}.${Export.extension(blob)}`]);
+      status.textContent = how === 'shared' ? t('Готово. Если в меню выбрано «Сохранить изображение», карточка уже в «Фото».') : how === 'cancelled' ? '' : t('Файл сохранён в загрузки.');
     } catch {
       status.textContent = t('Этот браузер не умеет записывать видео. Сохрани карточку как картинку.');
     }
@@ -4233,9 +4431,29 @@
     $('toolCancel').onclick = () => closeTool(false);
     /* удерживай, чтобы увидеть фото без эффектов и сканера */
     const cmp = $('compareBtn');
-    const cmpOn = (on) => { comparing = on; cmp.classList.toggle('primary', on); invalidate(); };
-    cmp.addEventListener('pointerdown', (e) => { e.preventDefault(); cmpOn(true); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev) => cmp.addEventListener(ev, () => { if (comparing) cmpOn(false); }));
+    const cmpOn = (on) => { comparing = on; cmp.classList.toggle('primary', on || splitX != null); invalidate(); };
+    /* короткое нажатие включает и выключает шторку, удержание показывает «до» целиком */
+    let holdTimer = null;
+    let held = false;
+    cmp.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      held = false;
+      holdTimer = setTimeout(() => { held = true; holdTimer = null; cmpOn(true); }, 260);
+    });
+    cmp.addEventListener('pointerup', () => {
+      if (holdTimer) {
+        clearTimeout(holdTimer);
+        holdTimer = null;
+        setSplit(splitX == null);
+      } else if (held) cmpOn(false);
+      held = false;
+    });
+    ['pointerleave', 'pointercancel'].forEach((ev) => cmp.addEventListener(ev, () => {
+      clearTimeout(holdTimer);
+      holdTimer = null;
+      if (held) cmpOn(false);
+      held = false;
+    }));
     cmp.addEventListener('contextmenu', (e) => e.preventDefault());
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && tab && !document.querySelector('.app').classList.contains('view')) closeTool(true);
@@ -4271,6 +4489,7 @@
 
     $('finish').onclick = () => {
       $('exportStatus').textContent = '';
+      $('saveCard').textContent = t(phoneSave() ? 'Сохранить в «Фото»' : 'Сохранить карточку');
       syncSeries();
       $('saveVideo').hidden = !Camera.videoMime();
       $('exportSheet').showModal();
@@ -4324,6 +4543,10 @@
       if (s) { s.flip = !s.flip; update(); }
     };
     /* У отражённого снимка поворот идёт в обратную сторону, а на экране всегда по часовой. */
+    $('slotTilt').oninput = (e) => {
+      const s = slots[activeSlot];
+      if (s) { s.tilt = Number(e.target.value); update(); }
+    };
     $('slotTurn').onclick = () => {
       const s = slots[activeSlot];
       if (s) { s.turn = (s.turn + (s.flip ? 270 : 90)) % 360; update(); }
@@ -4331,7 +4554,7 @@
     $('slotReset').onclick = () => {
       const s = slots[activeSlot];
       if (!s) return;
-      Object.assign(s, { x: 0, y: 0, zoom: 1, turn: 0 });
+      Object.assign(s, { x: 0, y: 0, zoom: 1, turn: 0, tilt: 0 });
       syncSlotUI();
       update();
     };
@@ -4353,6 +4576,7 @@
     bindStrips();
     bindSliderReset();
     bindMore();
+    bindSplit();
     bindPhotos();
     bindColor();
     bindLowRes();
@@ -4383,7 +4607,11 @@
     if (tab === 'layers') syncLayerTools();
     if (tab === 'motif') syncMotifs();
     if (tab === 'collage') syncCollages();
-    if (tab === 'color') syncColor();
+    if (tab === 'color') {
+      /* миниатюрам шаблонов нужны все таблицы: подгружаем их, когда вкладку открыли */
+      Render.LOOKS.forEach((l) => { if (l.adjust.lut) Render.loadLut(l.adjust.lut); });
+      syncColor();
+    }
     /* открытая вкладка: ряды встают на выбранное, давно знакомые подсказки сворачиваются в «?» */
     const openPanel = tab && document.querySelector(`[data-panel="${tab}"]`);
     if (openPanel) {
@@ -4458,7 +4686,14 @@
     bindEvents();
     setTab('');
     Store.get('recent').then((r) => { if (r && typeof r === 'object') { recent = r; syncMotifs(); syncFx(); syncStickers(); } }).catch(() => {});
-    Store.get('looks').then((list) => { if (Array.isArray(list)) { myLooks = list; syncColor(); } }).catch(() => {});
+    Store.get('looks').then((list) => {
+      if (!Array.isArray(list)) return;
+      /* свои таблицы .cube хранятся вместе с шаблоном */
+      list.forEach((l) => { if (l.lutData) Render.registerLut(l.lutId || l.adjust.lut, l.lutData); });
+      myLooks = list;
+      syncColor();
+      invalidate();
+    }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
     markSeg($('modeSeg'), mode);
