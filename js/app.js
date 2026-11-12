@@ -67,6 +67,8 @@
   /* Переход между карточкой и коллажами. Свои снимки переезжают по порядку, пустые места остаются пустыми.
      Пока своих снимков нет, во всех ячейках пример, чтобы шаблон было видно. */
   function setCollage(id) {
+    /* в коллаже серия не нужна: остаётся текущее фото */
+    if (id && series) endSeries();
     const own = slots.filter(hasPhoto);
     state.collage = id;
     selectedMark = -1;
@@ -203,8 +205,8 @@
   /* ---------- отрисовка ---------- */
   function sizeCanvas() {
     const [W, H] = RATIOS[state.ratio];
-    /* пока тянут ползунок у тяжёлого эффекта, превью считается вдвое меньше и не тормозит */
-    const k = (Camera.active ? 800 : lowRes ? 560 : 1100) / Math.max(W, H);
+    /* пока тянут ползунок у тяжёлого эффекта, превью считается в размер экрана, а не в 1100 px, и не тормозит */
+    const k = (Camera.active ? 800 : lowRes || 1100) / Math.max(W, H);
     card.width = Math.round(W * k);
     card.height = Math.round(H * k);
     $('readout').textContent = `${W} × ${H} · ${state.ratio}`;
@@ -343,6 +345,16 @@
       ctx.setLineDash([10, 7]);
       ctx.strokeRect(-c.w / 2 - 4, -c.h / 2 - 4, c.w + 8, c.h + 8);
       ctx.restore();
+      const h = swapHover >= 0 && Collages.cellOf(collageGeo(), swapHover);
+      if (h) {
+        ctx.save();
+        ctx.translate(h.x + h.w / 2, h.y + h.h / 2);
+        ctx.rotate(h.rot);
+        ctx.strokeStyle = '#f472b6';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(-h.w / 2 - 4, -h.h / 2 - 4, h.w + 8, h.h + 8);
+        ctx.restore();
+      }
       return;
     }
     const p = handMode() && state.pieces[selected];
@@ -380,6 +392,7 @@
   /* ---------- этапы ---------- */
   function setPhase(next) {
     phase = next;
+    if ($('seriesBar')) syncSeries();
     $('shootBar').hidden = next !== 'shoot';
     document.querySelector('.app').classList.toggle('editing', next === 'edit');
     syncStarter();
@@ -400,6 +413,8 @@
     Camera.stop();
     sizeCanvas();
     setPhase('edit');
+    finishReshoot();
+    syncSeries();
     scheduleDraft();
     offerStyles();
   }
@@ -538,6 +553,7 @@
   }
 
   async function takePhoto() {
+    if (!reshoot) series = null;
     const flip = Camera.mirrored;
     const { turn } = slots[activeSlot] || slots[0];
     const src = await imageSrc(await Camera.snapshot());
@@ -548,6 +564,7 @@
   }
 
   async function takeClip() {
+    if (!reshoot) series = null;
     if (recording) return recording.stop();
     const flip = Camera.mirrored;
     const { turn } = slots[activeSlot] || slots[0];
@@ -597,8 +614,19 @@
   async function handleFiles(files) {
     const list = [...files];
     if (!list.length) return;
+    /* в редакторе новое фото встаёт на место старого, оформление остаётся */
+    if (phase === 'edit') return replacePhotos(list);
     clearSampleNote();
     try {
+      if (list.length > 1 && !collageTpl() && mode !== 'booth') {
+        const srcs = [];
+        for (const f of list) srcs.push(await srcOf(f));
+        startSeries(srcs);
+        goEdit();
+        return toast(t('Фото открыты серией, оформление общее. Листай стрелками под карточкой.'));
+      }
+      /* одно новое фото на старте: прежняя серия больше не нужна */
+      series = null;
       if (collageTpl()) {
         /* первое фото в выбранную ячейку, остальные по пустым ячейкам дальше */
         let i = activeSlot;
@@ -703,6 +731,7 @@
         bgBlob: assets.bgBlob,
         maskBlob: assets.maskBlob,
         stickers: Object.entries(assets.stickerBlobs).filter(([id]) => !id.startsWith('c') || state.layers.some((l) => l.img === id)),
+        series: series ? { i: series.i, items: series.items.map((s) => ({ x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn, blob: s.src && s.src.blob, kind: s.src && s.src.kind })) } : null,
       });
     }, 700);
   }
@@ -740,6 +769,19 @@
       await setMask(draft.maskBlob);
       state.motif = motif;
     }
+    /* серия из черновика: снимки по порядку и тот, на котором остановились */
+    series = null;
+    if (draft.series && draft.series.items && draft.series.items.length > 1) {
+      try {
+        const items = [];
+        for (const s of draft.series.items) {
+          const src = s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
+          items.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0 });
+        }
+        series = { items, i: Math.min(draft.series.i || 0, items.length - 1) };
+        slots = [series.items[series.i]];
+      } catch { series = null; }
+    }
     for (const [id, blob] of draft.stickers || []) {
       try {
         assets.stickers[id] = (await imageSrc(blob)).el;
@@ -751,6 +793,220 @@
     syncAll();
     goEdit();
     resetHistory();
+  }
+
+  /* ---------- снимки: замена, отмена, обмен в коллаже, серия ---------- */
+  /* Снимки не входят в state, поэтому для отмены каждый набор снимков лежит в банке под своим номером,
+     а номер (state.pv) попадает в историю вместе с остальными настройками. Банк живёт только в памяти. */
+  const photoBank = new Map();
+  let photoRev = 0;
+  const cloneSlots = (list) => list.map((s) => ({ ...s }));
+  function bankBefore() {
+    const pv = state.pv || 0;
+    if (!photoBank.has(pv)) photoBank.set(pv, cloneSlots(slots));
+    commitHistory();
+  }
+  function bankAfter() {
+    photoRev = Math.max(photoRev, state.pv || 0) + 1;
+    state.pv = photoRev;
+    photoBank.set(photoRev, cloneSlots(slots));
+    if (photoBank.size > 30) photoBank.delete(photoBank.keys().next().value);
+    if (series && slots[0]) series.items[series.i] = slots[0];
+  }
+  const undoToast = (text) => toast(t(text), { label: t('Вернуть прежнее'), run: undo });
+  const srcOf = (file) => (isVideoFile(file) ? videoSrc(file) : imageSrc(file));
+
+  /* Новое фото на место старого, оформление остаётся. Несколько фото в обычной карточке становятся серией,
+     в коллаже раскладываются по ячейкам начиная с выбранной. */
+  async function replacePhotos(files) {
+    const list = [...files];
+    if (!list.length) return;
+    let srcs;
+    try {
+      srcs = [];
+      for (const f of list) srcs.push(await srcOf(f));
+    } catch {
+      toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      return;
+    }
+    bankBefore();
+    if (collageTpl()) {
+      let i = activeSlot;
+      for (const src of srcs) {
+        slots[i] = newSlot(src);
+        activeSlot = i;
+        i = nextEmpty(i);
+        if (i < 0) break;
+      }
+    } else if (srcs.length > 1 && mode !== 'booth') {
+      startSeries(srcs);
+    } else {
+      slots[activeSlot] = newSlot(srcs[0]);
+    }
+    bankAfter();
+    syncSlotUI();
+    syncSeries();
+    update();
+    undoToast(srcs.length > 1 && !collageTpl() ? 'Фото открыты серией, оформление общее.' : 'Фото заменено, оформление осталось.');
+  }
+  const pickReplacement = () => $('filePhoto').click();
+
+  /* Снять заново: камера встаёт на место снимка, оформление остаётся. Пока камера открыта, можно отменить. */
+  let reshoot = null;
+  async function reshootPhoto() {
+    bankBefore();
+    reshoot = { slots: cloneSlots(slots), active: activeSlot };
+    setPhase('shoot');
+    const ok = await openCamera(Camera.start);
+    if (!ok) {
+      cancelReshoot();
+      return;
+    }
+    toast(t('Сними новый кадр, оформление останется.'), { label: t('Отмена'), run: cancelReshoot });
+  }
+  function cancelReshoot() {
+    if (!reshoot) return;
+    slots = reshoot.slots;
+    activeSlot = reshoot.active;
+    reshoot = null;
+    goEdit();
+    syncSlotUI();
+    update();
+  }
+  /* вызывается из goEdit: новый кадр снят */
+  function finishReshoot() {
+    if (!reshoot) return;
+    reshoot = null;
+    bankAfter();
+    syncSeries();
+    undoToast('Фото заменено, оформление осталось.');
+  }
+
+  /* ---------- серия: много фото, одно оформление ---------- */
+  let series = null;
+  function startSeries(srcs) {
+    series = { items: srcs.map((src) => newSlot(src)), i: 0 };
+    slots = [series.items[0]];
+    activeSlot = 0;
+  }
+  function goSeries(step) {
+    if (!series || series.items.length < 2) return;
+    series.items[series.i] = slots[0];
+    const n = series.items.length;
+    series.i = (series.i + step + n) % n;
+    slots = [series.items[series.i]];
+    activeSlot = 0;
+    syncSeries();
+    syncSlotUI();
+    invalidate();
+    scheduleDraft();
+  }
+  function endSeries() {
+    if (!series) return;
+    series = null;
+    syncSeries();
+    scheduleDraft();
+  }
+  function syncSeries() {
+    const on = !!series && series.items.length > 1 && phase === 'edit' && !collageTpl();
+    $('seriesBar').hidden = !on;
+    $('saveAll').hidden = !on;
+    $('shareAll').hidden = !on || !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
+    if (on) $('seriesCount').textContent = `${series.i + 1} / ${series.items.length}`;
+  }
+  /* карточка для каждого фото серии с общим оформлением и своим кадрированием */
+  async function seriesBlobs(onStep) {
+    series.items[series.i] = slots[0];
+    const out = [];
+    for (let k = 0; k < series.items.length; k++) {
+      onStep(k);
+      out.push(await Export.cardBlob(state, [series.items[k]], assets));
+    }
+    return out;
+  }
+  async function saveSeries() {
+    const status = $('exportStatus');
+    exportButtons(true);
+    try {
+      const blobs = await seriesBlobs((k) => { status.textContent = `${t('Собираю карточки')}: ${k + 1} / ${series.items.length}`; });
+      const stamp = Date.now();
+      for (let k = 0; k < blobs.length; k++) {
+        Export.save(blobs[k], `lunajour-${stamp}-${String(k + 1).padStart(2, '0')}.${Export.extension(blobs[k])}`);
+        /* браузер не любит много загрузок разом */
+        await new Promise((r) => setTimeout(r, 350));
+      }
+      status.textContent = `${t('Сохранено карточек')}: ${blobs.length}`;
+    } catch {
+      status.textContent = t('Не получилось сохранить серию.');
+    }
+    exportButtons(false);
+  }
+  async function shareSeries() {
+    const status = $('exportStatus');
+    exportButtons(true);
+    try {
+      const blobs = await seriesBlobs((k) => { status.textContent = `${t('Собираю карточки')}: ${k + 1} / ${series.items.length}`; });
+      const files = blobs.map((b, k) => new File([b], `lunajour-${String(k + 1).padStart(2, '0')}.png`, { type: b.type || 'image/png' }));
+      status.textContent = '';
+      await navigator.share({ files });
+    } catch (err) {
+      if (!err || err.name !== 'AbortError') status.textContent = t('Не получилось поделиться. Сохрани файл и отправь его вручную.');
+    }
+    exportButtons(false);
+  }
+
+  /* ---------- новый снимок: оставить оформление или начать с нуля ---------- */
+  function startFresh() {
+    clearTimeout(draftTimer);
+    Store.del('draft');
+    endSeries();
+    const ratio = state.ratio;
+    state = { ...defaults(), ratio };
+    /* сначала экран съёмки: тогда сброс коллажа не запишет пустой черновик */
+    setPhase('shoot');
+    setCollage('');
+    resetHistory();
+    resetSlots();
+    syncAll();
+    openCamera(Camera.start).then((ok) => { if (!ok) syncStarter(); });
+  }
+
+  function bindPhotos() {
+    const sheet = $('retakeSheet');
+    $('retake').onclick = () => sheet.showModal();
+    $('retakeClose').onclick = () => sheet.close();
+    $('retakeKeep').onclick = () => { sheet.close(); reshootPhoto(); };
+    $('retakeGallery').onclick = () => { sheet.close(); pickReplacement(); };
+    $('retakeFresh').onclick = () => { sheet.close(); startFresh(); };
+    $('photoReplace').onclick = pickReplacement;
+    $('photoReshoot').onclick = reshootPhoto;
+    $('moreReplace').onclick = () => { setMore(false); pickReplacement(); };
+    $('seriesPrev').onclick = () => goSeries(-1);
+    $('seriesNext').onclick = () => goSeries(1);
+    $('seriesEnd').onclick = () => {
+      endSeries();
+      toast(t('Серия закрыта, осталось это фото.'));
+    };
+    $('saveAll').onclick = saveSeries;
+    $('shareAll').onclick = shareSeries;
+    /* стрелки на компьютере листают серию, если не выбран стикер */
+    document.addEventListener('keydown', (e) => {
+      if (!series || phase !== 'edit' || (layersMode() && layerAt(selectedLayer))) return;
+      const a = document.activeElement;
+      if (a && (/TEXTAREA|SELECT/.test(a.tagName) || (a.tagName === 'INPUT' && a.type !== 'range' && a.type !== 'checkbox'))) return;
+      if (a && a.type === 'range') return;
+      if (e.key === 'ArrowLeft') { e.preventDefault(); goSeries(-1); }
+      if (e.key === 'ArrowRight') { e.preventDefault(); goSeries(1); }
+    });
+    /* свайп по карточке листает серию, когда не открыт инструмент, которому нужны жесты */
+    let sx = null;
+    card.addEventListener('pointerdown', (e) => { sx = series && ['', 'color', 'format', 'paper', 'note'].includes(tab) ? [e.clientX, e.clientY] : null; });
+    card.addEventListener('pointerup', (e) => {
+      if (!sx) return;
+      const dx = e.clientX - sx[0], dy = e.clientY - sx[1];
+      sx = null;
+      if (Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy) * 1.5) goSeries(dx < 0 ? 1 : -1);
+    });
   }
 
   /* ---------- незаконченная карточка: предложение на стартовом экране, а не всплывашкой поверх кнопок ---------- */
@@ -1114,19 +1370,27 @@
     });
   }
 
-  /* ---------- ползунок у тяжёлых эффектов: превью в половину размера, пока его тянут ---------- */
-  let lowRes = false;
+  /* ---------- ползунок у тяжёлых эффектов: превью меньше, пока его тянут ---------- */
+  /* Холст на экране не бывает больше своего настоящего размера, поэтому разрешение на время ползунка
+     не меньше, чем карточка сейчас занимает на экране: иначе на большом экране она съёживалась.
+     На телефоне панель в это время прячется и карточка растёт, поэтому там берём запас в полтора раза. */
+  let lowRes = 0;
   const heavyCard = () => !!(state.fx.id || state.fx2.id || (state.scan && state.scan.on) || state.layers.some((l) => l.fx && l.fx.id));
   function bindLowRes() {
     document.addEventListener('pointerdown', (e) => {
       const el = e.target.closest && e.target.closest('input[type="range"]');
       if (!el || !heavyCard() || lowRes) return;
-      lowRes = true;
+      const r = card.getBoundingClientRect();
+      const grows = matchMedia('(max-width: 860px)').matches ? 1.6 : 1;
+      const need = Math.ceil(Math.max(r.width, r.height) * grows);
+      /* если экономить нечего, разрешение не трогаем */
+      if (need >= 1000) return;
+      lowRes = Math.max(560, need);
       sizeCanvas();
     });
     const end = () => {
       if (!lowRes) return;
-      lowRes = false;
+      lowRes = 0;
       sizeCanvas();
     };
     ['pointerup', 'pointercancel'].forEach((ev) => document.addEventListener(ev, end));
@@ -1141,10 +1405,11 @@
     let B;
     try { A = JSON.parse(a); B = JSON.parse(b); } catch { return ''; }
     const differs = (k) => JSON.stringify(A[k]) !== JSON.stringify(B[k]);
-    const order = ['layers', 'fx', 'fx2', 'scan', 'motif', 'pieces', 'collage', 'tints', 'marks', 'paper', 'paperColor', 'note', 'adjust', 'ratio', 'paperPos'];
+    const order = ['pv', 'layers', 'fx', 'fx2', 'scan', 'motif', 'pieces', 'collage', 'tints', 'marks', 'paper', 'paperColor', 'note', 'adjust', 'ratio', 'paperPos'];
     const k = order.find(differs) || Object.keys({ ...A, ...B }).find(differs);
     if (!k) return '';
     const named = (what, name) => (name ? `${t(what)} «${t(name)}»` : t(what));
+    if (k === 'pv') return t('фото');
     if (k === 'layers') {
       const da = (A.layers || []).length, db = (B.layers || []).length;
       return t(db > da ? 'добавление стикера' : db < da ? 'удаление стикера' : 'правка стикера');
@@ -1230,6 +1495,7 @@
     s.fx2 = { ...s.fx2, boxes: [], brush: [] };
     s.scan = { ...s.scan, boxes: [] };
     delete s.note.date;
+    delete s.pv;
     return s;
   }
   function styleThumb() {
@@ -1255,6 +1521,7 @@
     next.scan = { ...Scanner.defaults(), ...s.scan };
     /* свои картинки-стикеры остаются на карточке */
     next.layers = [...state.layers.filter((l) => l.img), ...(s.layers || [])];
+    next.pv = state.pv;
     const collage = next.collage;
     next.collage = state.collage;
     state = next;
@@ -1319,7 +1586,7 @@
   function resetCard() {
     commitHistory();
     const had = state.collage;
-    state = { ...defaults(), ratio: state.ratio, collage: had };
+    state = { ...defaults(), ratio: state.ratio, collage: had, pv: state.pv };
     selectedLayer = -1;
     multiMode = false;
     multi = new Set();
@@ -1964,6 +2231,39 @@
   function bindDrag() {
     const pointers = new Map();
     let pinch = 0;
+    /* в коллаже фото можно утащить на другую ячейку: они поменяются местами */
+    let swap = null;
+    card.addEventListener('pointermove', (e) => {
+      if (!swap || e.pointerId !== swap.id) return;
+      if (!swap.moved && Math.hypot(e.clientX - swap.x, e.clientY - swap.y) < 12) return;
+      if (!swap.moved) {
+        swap.moved = true;
+        try { card.setPointerCapture(e.pointerId); } catch { /* без захвата тоже работает */ }
+      }
+      const box = card.getBoundingClientRect();
+      const j = slotAt(((e.clientX - box.left) / box.width) * card.width, ((e.clientY - box.top) / box.height) * card.height);
+      const next = j >= 0 && j !== swap.from ? j : -1;
+      if (next !== swapHover) { swapHover = next; invalidate(); }
+    });
+    const endSwap = () => {
+      if (!swap) return;
+      const s = swap;
+      const j = swapHover;
+      swap = null;
+      swapHover = -1;
+      if (s.moved && j >= 0) {
+        bankBefore();
+        [slots[s.from], slots[j]] = [slots[j], slots[s.from]];
+        activeSlot = j;
+        bankAfter();
+        syncSlotUI();
+        update();
+        undoToast('Фото поменялись местами.');
+      }
+      invalidate();
+    };
+    card.addEventListener('pointerup', endSwap);
+    card.addEventListener('pointercancel', endSwap);
 
     card.addEventListener('pointerdown', (e) => {
       if (tab === 'collage' && collageTpl() && collageTpl().marks) return;
@@ -1984,7 +2284,10 @@
         }
         syncSlotUI();
       }
-      if (picking) return;
+      if (picking) {
+        if (phase === 'edit' && hasPhoto(slots[activeSlot])) swap = { from: activeSlot, x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
+        return;
+      }
       pointers.set(e.pointerId, e);
       card.setPointerCapture(e.pointerId);
     });
@@ -2992,6 +3295,8 @@
   /* ---------- стикеры и текст поверх карточки ---------- */
   const EMOJIS = ['🌸', '🌷', '🌹', '🌼', '🌻', '💐', '🍀', '🌿', '🍒', '🍓', '🍰', '🧁', '🍩', '☕', '🎀', '💌', '💖', '💗', '💕', '💘', '🤍', '🦋', '🐚', '⭐', '🌟', '✨', '🌙', '☁️', '🌈', '🔮', '💿', '📷', '📼', '🎧', '🔒', '🗝️', '🕯️', '🪞', '🧸', '🐱', '🐰', '🫧', '💎', '👑', '🍓', '🎞️', '📌', '✂️'].filter((e, i, a) => a.indexOf(e) === i);
   const LAYER_COLORS = ['#111111', '#ffffff', '#f472b6', '#d64545', '#e8913a', '#ffe27a', '#86c96b', '#6c9fe0', '#1f3a8a', '#a78bfa'];
+  /* ячейка коллажа, над которой сейчас тащат фото */
+  let swapHover = -1;
   let selectedLayer = -1;
   /* линии середины, пока стикер к ней прилип */
   let snapGuides = { x: false, y: false };
@@ -3700,7 +4005,15 @@
   function applySnap(json) {
     restoring = true;
     const before = state.collage;
+    const pvBefore = state.pv || 0;
     state = JSON.parse(json);
+    /* у этого шага истории были другие снимки: достаём их из банка */
+    if ((state.pv || 0) !== pvBefore && photoBank.has(state.pv || 0)) {
+      slots = cloneSlots(photoBank.get(state.pv || 0));
+      activeSlot = Math.min(activeSlot, slots.length - 1);
+      if (series && slots[0] && !collageTpl()) series.items[series.i] = slots[0];
+      syncSlotUI();
+    }
     selectedLayer = -1;
     selectedMark = -1;
     if (state.collage !== before) setCollage(state.collage);
@@ -3956,15 +4269,9 @@
       $('torchBtn').classList.toggle('primary', on);
     };
 
-    $('retake').onclick = () => {
-      clearTimeout(draftTimer);
-      Store.del('draft');
-      setPhase('shoot');
-      resetSlots();
-      openCamera(Camera.start).then((ok) => { if (!ok) syncStarter(); });
-    };
     $('finish').onclick = () => {
       $('exportStatus').textContent = '';
+      syncSeries();
       $('saveVideo').hidden = !Camera.videoMime();
       $('exportSheet').showModal();
     };
@@ -4046,6 +4353,7 @@
     bindStrips();
     bindSliderReset();
     bindMore();
+    bindPhotos();
     bindColor();
     bindLowRes();
     bindKeysSheet();

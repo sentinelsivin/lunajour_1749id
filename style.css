@@ -814,3 +814,33 @@ button { cursor: pointer; }
 }
 /* на телефоне клавиатуры нет: кнопку шпаргалки прячем */
 @media (hover: none) { #keysBtn { display: none; } }
+
+/* ---------- серия: листалка под карточкой ---------- */
+.series-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, .86);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.series-bar[hidden] { display: none; }
+.series-bar button {
+  width: 40px;
+  height: 36px;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+  color: var(--bone);
+  font-size: 22px;
+  line-height: 1;
+}
+.series-bar button:hover { background: rgba(255, 255, 255, .08); }
+#seriesEnd { font-size: 18px; color: var(--muted); }
+#seriesCount { min-width: 56px; text-align: center; font: 13px var(--mono); color: var(--bone); }

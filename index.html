@@ -38,6 +38,7 @@
   </header>
 
   <div class="more-menu" id="moreMenu" hidden>
+        <button class="btn primary" id="moreReplace" type="button">Заменить фото</button>
         <div class="group"><span class="label">Мои стили</span>
           <div class="thumbs" id="styleGrid"></div>
           <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
@@ -84,6 +85,12 @@
       <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path d="M2 6V2h4M10 2h4v4M14 10v4h-4M6 14H2v-4" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>
     </button>
     <div class="countdown" id="countdown" hidden></div>
+    <div class="series-bar" id="seriesBar" hidden>
+      <button type="button" id="seriesPrev" aria-label="Предыдущее фото" title="Предыдущее фото (←)">‹</button>
+      <span id="seriesCount"></span>
+      <button type="button" id="seriesNext" aria-label="Следующее фото" title="Следующее фото (→)">›</button>
+      <button type="button" id="seriesEnd" aria-label="Закончить серию" title="Закончить серию, оставить это фото">×</button>
+    </div>
     <div class="resume" id="resumeCard" hidden>
       <img id="resumeThumb" alt="">
       <div class="resume-text"><b>Незаконченная карточка</b><span>Можно продолжить с того же места.</span></div>
@@ -175,7 +182,7 @@
         <div class="thumbs" id="collageGrid"></div>
         <div class="group" id="cellTools" hidden>
           <div class="group" id="cellButtons">
-            <p class="hint">Нажми на ячейку на карточке, чтобы выбрать её. Несколько фото из галереи разложатся по пустым ячейкам. Текст и окошки фраз пишутся во вкладке «Подпись»: () ставит окошко.</p>
+            <p class="hint">Нажми на ячейку на карточке, чтобы выбрать её. Несколько фото из галереи разложатся по пустым ячейкам. Перетащи фото на другую ячейку, чтобы поменять их местами. Текст и окошки фраз пишутся во вкладке «Подпись»: () ставит окошко.</p>
             <div class="row">
               <button class="btn" id="cellUpload" type="button">Фото в ячейку</button>
               <button class="btn" id="cellShoot" type="button">Снять в ячейку</button>
@@ -312,6 +319,11 @@
       </section>
 
       <section class="panel" data-panel="photo" hidden>
+        <div class="row">
+          <button class="btn primary" id="photoReplace" type="button">Заменить фото</button>
+          <button class="btn" id="photoReshoot" type="button">Снять заново</button>
+        </div>
+        <p class="hint">Новое фото встаёт на место старого, всё оформление остаётся. Можно выбрать сразу несколько: получится серия.</p>
         <p class="hint">Двигай снимок прямо на карточке. На компьютере масштаб меняется колесом мыши.</p>
         <p class="hint" id="cellHint" hidden>В коллаже сначала нажми на ячейку, потом двигай в ней снимок.</p>
         <div class="group" id="slotGroup" hidden><span class="label">Какой снимок</span>
@@ -547,6 +559,18 @@
   </aside>
 </div>
 
+<dialog class="sheet" id="retakeSheet" aria-labelledby="retakeTitle">
+  <div class="sheet-head">
+    <h2 id="retakeTitle">Новый снимок</h2>
+    <button class="btn small" id="retakeClose" type="button">Закрыть</button>
+  </div>
+  <div class="sheet-list">
+    <button class="btn primary" id="retakeKeep" type="button">Снять, оформление оставить</button>
+    <button class="btn" id="retakeGallery" type="button">Из галереи, оформление оставить</button>
+    <button class="btn" id="retakeFresh" type="button">Начать с нуля</button>
+  </div>
+  <p class="hint">Оформление: формат, бумага, фигура, коллаж, эффекты, цвет, сканер, стикеры и подпись.</p>
+</dialog>
 <dialog class="sheet" id="exportSheet" aria-labelledby="exportTitle">
   <div class="sheet-head">
     <h2 id="exportTitle">Куда отправить карточку</h2>
@@ -556,6 +580,8 @@
     <button class="btn primary" id="saveCard" type="button" title="Сохранить карточку (Ctrl+S)">Сохранить карточку</button>
     <button class="btn" id="saveVideo" type="button">Сохранить видео</button>
     <button class="btn" id="shareCard" type="button" hidden>Поделиться</button>
+    <button class="btn primary" id="saveAll" type="button" hidden>Сохранить всю серию</button>
+    <button class="btn" id="shareAll" type="button" hidden>Поделиться всей серией</button>
   </div>
   <p class="hint" id="exportStatus" role="status"></p>
 </dialog>
