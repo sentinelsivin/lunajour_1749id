@@ -65,6 +65,8 @@
     /* серия: минимум два круга и не меньше трёх секунд */
     const total = opts.total || (seq ? Math.max(3000, seq.length * per * 2) : Math.max(CLIP_MS, longest));
     const sparkles = Number(s.adjust && s.adjust.spA) > 0;
+    /* блёстки, надписи по очереди и шторка «до / после» зависят от времени ролика */
+    const timed = sparkles || !!(s.motion && (s.motion.txt || s.motion.wipe));
 
     if (moving) {
       for (const slot of slots) {
@@ -99,13 +101,13 @@
       /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
       const live = (window.Scanner && window.Scanner.animates(s)) || (window.Effects && window.Effects.animates(s));
       const k = seq ? Math.floor(t / per) % seq.length : 0;
-      if (moving || live || sparkles) {
+      if (moving || live || timed) {
         if (window.Scanner) {
           if (live) window.Scanner.time = t / 1000;
           window.Scanner.clock = t / 1000;
         }
         if (window.Effects) window.Effects.clock = t / 1000;
-        window.Render.setClock(sparkles ? t / 1000 : null);
+        window.Render.setClock(timed ? t / 1000 : null);
         renderCard(still.getContext('2d'), s, seq ? seq[k] : slots, assets);
         window.Render.setClock(null);
         if (window.Scanner) { window.Scanner.time = null; window.Scanner.clock = null; }

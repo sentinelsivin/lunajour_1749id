@@ -1367,18 +1367,29 @@
     const moodW = n.mood ? bw * 0.3 : 0;
     const textW = bw - pad * 2 - moodW;
     let titleSize = 0;
+    /* в ролике строки подписи появляются по очереди; размер считается по полной строке, чтобы не прыгал */
+    const line = (str, x, y) => {
+      const a = textStep(s, u, str.length, true);
+      if (!a) return;
+      ctx.save();
+      ctx.translate(x, y);
+      a.apply(ctx);
+      ctx.fillText(a.cut(str), 0, 0);
+      ctx.restore();
+    };
     if (n.title) {
       ctx.textAlign = 'left';
       titleSize = fitText(ctx, n.title, font, textW, (meta ? 66 : 80) * u * scale);
-      ctx.fillText(n.title, pad, bh / 2 + (meta ? -4 * u : titleSize * 0.34));
+      line(n.title, pad, bh / 2 + (meta ? -4 * u : titleSize * 0.34));
     }
     if (meta) {
       ctx.textAlign = 'left';
       const small = { ...font, weight: Math.min(font.weight, 500) };
       const size = fitText(ctx, meta, small, textW, 32 * u * scale);
-      ctx.fillText(meta, pad, n.title ? bh / 2 + size + 16 * u : bh / 2 + size * 0.34);
+      line(meta, pad, n.title ? bh / 2 + size + 16 * u : bh / 2 + size * 0.34);
     }
-    if (n.mood) {
+    const stamp = n.mood ? textStep(s, u, n.mood.length, true) : null;
+    if (n.mood && stamp) {
       /* настроение печатается штампом в углу полосы */
       ctx.shadowBlur = 0;
       const size = fitText(ctx, n.mood, FONTS.find((f) => f.id === 'mono'), moodW - 56 * u, 30 * u);
@@ -1387,12 +1398,13 @@
       const sh = size + 34 * u;
       ctx.translate(bw - pad - sw / 2, bh / 2);
       ctx.rotate(-0.07);
+      stamp.apply(ctx);
       ctx.strokeStyle = color;
       ctx.lineWidth = 3.5 * u;
       ctx.strokeRect(-sw / 2, -sh / 2, sw, sh);
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(n.mood, 0, 2 * u);
+      ctx.fillText(stamp.cut(n.mood), 0, 2 * u);
     }
     ctx.restore();
   }
@@ -1520,8 +1532,112 @@
   }
 
   function renderCard(ctx, s, slots, assets = {}) {
+    textIdx = 0;
     renderCardBody(ctx, s, slots, assets);
+    if (sparkClock != null && s.motion && s.motion.wipe) drawWipe(ctx, s, slots, assets);
     drawSign(ctx, s, assets, ctx.canvas.width, ctx.canvas.height);
+  }
+
+  /* ---------- ролик «до / после»: шторка ездит по кадру, слева исходное фото, справа обработка ---------- */
+  const smooth = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x));
+  /* доля кадра, которую занимает «до»: держим «до», ведём к «после», держим «после», возвращаем */
+  function wipeAt(t, len) {
+    const p = (t % len) / len;
+    if (p < 0.12) return 1;
+    if (p < 0.5) return 1 - smooth((p - 0.12) / 0.38);
+    if (p < 0.78) return 0;
+    return smooth((p - 0.78) / 0.22);
+  }
+  const plainOf = (s) => ({ ...s, fx: { ...s.fx, id: '' }, fx2: { ...s.fx2, id: '' }, scan: { ...s.scan, on: false }, adjust: {}, motion: { ...s.motion, wipe: false } });
+  const tr = (text) => (window.I18n ? window.I18n.t(text) : text);
+  function drawWipe(ctx, s, slots, assets) {
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    const x = Math.round(W * wipeAt(sparkClock, Math.max(1, Number(s.motion.dur) || 5)));
+    const u = Math.min(W, H) / 1080;
+    if (x > 0) {
+      const keep = textIdx;
+      const before = buffer('wipe', W, H);
+      before.x.clearRect(0, 0, W, H);
+      textIdx = 0;
+      renderCardBody(before.x, plainOf(s), slots, assets);
+      textIdx = keep;
+      ctx.drawImage(before.c, 0, 0, x, H, 0, 0, x, H);
+    }
+    ctx.save();
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = 'rgba(0,0,0,.45)';
+    ctx.shadowBlur = 8 * u;
+    if (x > 0 && x < W) {
+      ctx.fillRect(x - 2 * u, 0, 4 * u, H);
+      ctx.beginPath();
+      ctx.arc(x, H / 2, 22 * u, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#111111';
+      ctx.font = `600 ${20 * u}px "Golos Text", system-ui, sans-serif`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('‹›', x, H / 2 + u);
+    }
+    ctx.shadowBlur = 0;
+    const tag = (text, tx, right) => {
+      ctx.font = `600 ${26 * u}px "Golos Text", system-ui, sans-serif`;
+      const w = ctx.measureText(text).width + 28 * u;
+      const left = right ? tx - w : tx;
+      ctx.fillStyle = 'rgba(0,0,0,.55)';
+      ctx.fillRect(left, 24 * u, w, 44 * u);
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, left + w / 2, 46 * u + u);
+    };
+    if (x > 150 * u) tag(tr('ДО'), x - 18 * u, true);
+    if (x < W - 150 * u) tag(tr('ПОСЛЕ'), x + 18 * u, false);
+    ctx.restore();
+  }
+
+  /* ---------- надписи появляются по ходу ролика ----------
+     motion.txt: '' сразу, 'type' печатается, 'fade' проявляется, 'rise' выезжает снизу, 'pop' выпрыгивает.
+     k-я надпись на карточке начинается через txtAt + k·txtGap секунд. txtAll: стикеры тоже появляются. */
+  let textIdx = 0;
+  const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+  const easeBack = (x) => 1 + 2.2 * Math.pow(x - 1, 3) + 1.2 * Math.pow(x - 1, 2);
+  function textStep(s, u, chars, isText) {
+    const m = s && s.motion;
+    const same = { apply() {}, cut: (str) => str, cutLines: (lines) => lines };
+    if (sparkClock == null || !m || !m.txt || (!isText && !m.txtAll)) return same;
+    const k = textIdx++;
+    const mode = m.txt === 'type' && !isText ? 'pop' : m.txt;
+    const start = (Number(m.txtAt) || 0) + k * (Number(m.txtGap) || 0.7);
+    const len = mode === 'type' ? Math.max(0.4, Math.min(2.5, chars * 0.06)) : 0.6;
+    const p = Math.min(1, (sparkClock - start) / len);
+    if (p <= 0) return null;
+    const total = Math.ceil(chars * p);
+    return {
+      apply(ctx) {
+        if (mode === 'fade') ctx.globalAlpha *= easeOut(p);
+        if (mode === 'rise') {
+          ctx.globalAlpha *= easeOut(p);
+          ctx.translate(0, (1 - easeOut(p)) * 60 * u);
+        }
+        if (mode === 'pop') {
+          const k2 = Math.max(0.01, 0.3 + 0.7 * easeBack(p));
+          ctx.globalAlpha *= Math.min(1, p * 3);
+          ctx.scale(k2, k2);
+        }
+      },
+      cut: (str) => (mode === 'type' ? str.slice(0, total) : str),
+      cutLines: (lines) => {
+        if (mode !== 'type') return lines;
+        let left = total;
+        return lines.map((ln) => {
+          const part = ln.slice(0, Math.max(0, left));
+          left -= ln.length;
+          return part;
+        });
+      },
+    };
   }
   /* мой ник из «Моего набора» в углу карточки. s.sign: на этой карточке да или нет; не задан — как в наборе */
   function drawSign(ctx, s, assets, W, H) {
@@ -1879,13 +1995,18 @@
   }
 
   function drawLayers(ctx, s, assets, W, H) {
+    const u = Math.min(W, H) / 1080;
     (s.layers || []).forEach((l) => {
       const b = layerBox(ctx, l, assets, W, H);
+      /* в ролике надпись или стикер появляется в свою очередь */
+      const a = textStep(s, u, l.type === 'text' ? (b.lines || []).join('').length : 0, l.type === 'text');
+      if (!a) return;
       ctx.save();
       ctx.translate(l.x * W, l.y * H);
       ctx.rotate(l.rot || 0);
       if (l.flip) ctx.scale(-1, 1);
       ctx.globalAlpha = l.opacity ?? 1;
+      a.apply(ctx);
       if (l.type === 'text') {
         const f = layerFont(l);
         layerShadow(ctx, l, 'none', b.size * 1.6);
@@ -1897,7 +2018,10 @@
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
         ctx.lineJoin = 'round';
-        b.lines.forEach((ln, i) => {
+        const shown = a.cutLines(b.lines);
+        b.lines.forEach((full, i) => {
+          const ln = shown[i];
+          if (!ln) return;
           const y = (i - (b.lines.length - 1) / 2) * b.size * 1.2;
           if (l.style === 'outline') {
             ctx.strokeStyle = l.bg || '#ffffff';

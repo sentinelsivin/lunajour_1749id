@@ -430,6 +430,14 @@ button { cursor: pointer; }
 /* фирменные цвета: тонкое кольцо, чтобы их было видно среди остальных */
 .swatches .mine { outline: 2px dashed rgba(255, 255, 255, .55); outline-offset: 2px; }
 .seg.zones button { padding: 6px 2px; font-size: 12px; }
+/* план ленты: сетка профиля 3 × 3 */
+.feed-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2px; }
+.feed-cell { position: relative; aspect-ratio: 3 / 4; background: var(--surface2); overflow: hidden; }
+.feed-cell img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.feed-cell.now { outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.feed-cell span { position: absolute; left: 4px; top: 4px; padding: 1px 6px; border-radius: 3px; background: rgba(0, 0, 0, .6); color: #fff; font-size: 11px; }
+.feed-cell button { position: absolute; right: 3px; top: 3px; width: 26px; height: 26px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .55); color: #fff; font-size: 16px; line-height: 1; opacity: .85; }
+.feed-cell.empty { background: repeating-linear-gradient(45deg, var(--surface2), var(--surface2) 6px, transparent 6px, transparent 12px); opacity: .5; }
 .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
 .sheet h2 { margin: 0; font: 400 26px/1.2 var(--display); text-wrap: balance; }
 .sheet-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }

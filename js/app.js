@@ -34,7 +34,7 @@
     out: 'photo',
     /* мой ник на этой карточке: true, false или не задан (тогда как в «Моём наборе») */
     sign: null,
-    motion: { dur: 5, per: 0.6, track: '', mStart: 0, mVol: 80 },
+    motion: { dur: 5, per: 0.6, track: '', mStart: 0, mVol: 80, wipe: false, txt: '', txtAt: 0.5, txtGap: 0.7, txtAll: false },
   });
 
   let state = defaults();
@@ -235,7 +235,9 @@
   const videoOut = () => state.out === 'video' && phase === 'edit';
   const seriesOn = () => !!series && series.items.length > 1 && !collageTpl();
   /* что вообще шевелится в ролике; если ничего, превью не перерисовывается зря */
-  const livePreview = () => Number(state.adjust.spA) > 0 || Effects.animates(state) || Scanner.animates(state) || seriesOn() || isMoving();
+  const livePreview = () => Number(state.adjust.spA) > 0 || Effects.animates(state) || Scanner.animates(state) || seriesOn() || isMoving() || !!state.motion.wipe || !!state.motion.txt;
+  /* пока открыта «Подпись» или «Стикеры», надписи видны целиком: их же правят */
+  const previewState = () => (state.motion.txt && ['note', 'layers'].includes(tab) ? { ...state, motion: { ...state.motion, txt: '' } } : state);
   /* фото серии сменяются по кругу; пока открыт «Кадр», стоит то фото, которое двигают */
   function previewSlots(T) {
     if (!seriesOn() || tab === 'photo') return slots;
@@ -322,6 +324,22 @@
     $('musicStartField').hidden = m.track !== 'file';
     if (m.track === 'file') Music.duration('file').then((d) => { if (d) $('musicStart').max = String(Math.max(0, Math.floor(d - 1))); }).catch(() => {});
     $('motPerField').hidden = !seriesOn();
+    const kinds = $('txtKind');
+    kinds.replaceChildren();
+    [['', 'Сразу'], ['type', 'Печатается'], ['fade', 'Проявляется'], ['rise', 'Выезжает'], ['pop', 'Выпрыгивает']].forEach(([v, name]) => chip(kinds, t(name), (m.txt || '') === v, () => {
+      state.motion = { ...state.motion, txt: v };
+      syncMotion();
+      update();
+      startPreviewSoft();
+    }));
+    $('txtTools').hidden = !m.txt;
+  }
+  /* ролик с начала, но без музыки, если её не включали: чтобы сразу увидеть, как появляется текст */
+  function startPreviewSoft() {
+    if (musicLoop) return startPreview();
+    playT0 = performance.now();
+    lastT = 0;
+    invalidate();
   }
   async function loadMusic(f) {
     if (!f) return;
@@ -382,12 +400,11 @@
       if (livePreview() && (dirty || now - lastFrame > 33)) {
         dirty = false;
         lastFrame = now;
-        const sparkle = Number(state.adjust.spA) > 0;
         if (Scanner.animates(state)) Scanner.time = T;
         Scanner.clock = videoClock() ?? T;
         Effects.clock = Scanner.clock;
-        Render.setClock(sparkle ? T : null);
-        renderCard(ctx, state, previewSlots(T), assets);
+        Render.setClock(T);
+        renderCard(ctx, previewState(), previewSlots(T), assets);
         Render.setClock(null);
         Scanner.time = null;
         Scanner.clock = null;
@@ -4841,6 +4858,97 @@
     ['saveCard', 'saveVideo', 'shareCard', 'saveAll', 'shareAll'].forEach((id) => { $(id).disabled = disabled; });
   }
 
+  /* ---------- план ленты: сетка 3 × 3, как профиль ---------- */
+  /* После каждого сохранения карточка встаёт в план. В профиле видна середина в пропорции 3:4,
+     у карусели первый слайд. Свои старые посты можно добавить картинками. */
+  let feed = [];
+  const FEED_MAX = 30;
+  function cropFeed(src, sw, sh) {
+    const out = canvas(300, 400);
+    const x = out.getContext('2d');
+    let cw = sw, ch = sh;
+    if (sw / sh > 3 / 4) cw = (sh * 3) / 4;
+    else ch = (sw * 4) / 3;
+    x.drawImage(src, (sw - cw) / 2, (sh - ch) / 2, cw, ch, 0, 0, 300, 400);
+    return out.toDataURL('image/jpeg', 0.82);
+  }
+  function feedThumb() {
+    const [W, H] = RATIOS[state.ratio];
+    const n = carouselN();
+    const k = 420 / (W / n);
+    const c = canvas(Math.round(W * k), Math.round(H * k));
+    renderCard(c.getContext('2d'), state, slots, assets);
+    return cropFeed(c, c.width / n, c.height);
+  }
+  function addToFeed() {
+    try {
+      feed = [{ id: `f${Date.now()}`, thumb: feedThumb() }, ...feed].slice(0, FEED_MAX);
+      Store.set('feed', feed).catch(() => {});
+    } catch { /* план ленты не главное, сохранение уже прошло */ }
+  }
+  function syncFeed() {
+    const grid = $('feedGrid');
+    grid.replaceChildren();
+    const now = document.createElement('div');
+    now.className = 'feed-cell now';
+    const img = document.createElement('img');
+    img.alt = t('Эта карточка');
+    img.src = feedThumb();
+    const tag = document.createElement('span');
+    tag.textContent = t('сейчас');
+    now.append(img, tag);
+    grid.append(now);
+    feed.forEach((it) => {
+      const cell = document.createElement('div');
+      cell.className = 'feed-cell';
+      const pic = document.createElement('img');
+      pic.alt = '';
+      pic.src = it.thumb;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.textContent = '×';
+      del.title = t('Убрать из плана');
+      del.setAttribute('aria-label', t('Убрать из плана'));
+      del.onclick = () => {
+        feed = feed.filter((f) => f.id !== it.id);
+        Store.set('feed', feed).catch(() => {});
+        syncFeed();
+      };
+      cell.append(pic, del);
+      grid.append(cell);
+    });
+    /* пустые клетки до полного ряда, чтобы сетка читалась как профиль */
+    for (let i = (feed.length + 1) % 3 ? 3 - ((feed.length + 1) % 3) : 0; i > 0; i--) {
+      const empty = document.createElement('div');
+      empty.className = 'feed-cell empty';
+      grid.append(empty);
+    }
+  }
+  function openFeed() {
+    setMore(false);
+    if ($('exportSheet').open) $('exportSheet').close();
+    syncFeed();
+    $('feedSheet').showModal();
+  }
+  async function importFeed(files) {
+    for (const f of [...files]) {
+      try {
+        const src = await imageSrc(f);
+        feed = [...feed, { id: `f${Date.now()}${Math.random().toString(36).slice(2, 6)}`, thumb: cropFeed(src.el, src.sw, src.sh) }].slice(0, FEED_MAX);
+      } catch { /* эта картинка не открылась, остальные добавятся */ }
+    }
+    Store.set('feed', feed).catch(() => {});
+    syncFeed();
+  }
+  function bindFeed() {
+    $('feedBtn').onclick = openFeed;
+    $('feedFromExport').onclick = openFeed;
+    $('feedClose').onclick = () => $('feedSheet').close();
+    $('feedImport').onclick = () => $('fileFeed').click();
+    $('fileFeed').onchange = (e) => { importFeed(e.target.files); e.target.value = ''; };
+    Store.get('feed').then((list) => { if (Array.isArray(list)) feed = list; }).catch(() => {});
+  }
+
   /* карусель: каждый слайд отдельным файлом, по порядку */
   async function saveCarousel() {
     const status = $('exportStatus');
@@ -4852,6 +4960,7 @@
       const stamp = Date.now();
       const how = await deliver(blobs, blobs.map((b, k) => `lunajour-${stamp}-slide-${String(k + 1).padStart(2, '0')}.png`));
       status.textContent = how === 'cancelled' ? '' : `${t('Сохранено слайдов')}: ${blobs.length}`;
+      if (how !== 'cancelled') addToFeed();
     } catch {
       status.textContent = t('Не получилось сохранить карусель.');
     }
@@ -4866,6 +4975,7 @@
       if (state.adjust && state.adjust.lut) await Render.loadLut(state.adjust.lut);
       const blob = await make();
       const how = await deliver([blob], [`lunajour-${label}-${Date.now()}.${Export.extension(blob)}`]);
+      if (how !== 'cancelled') addToFeed();
       status.textContent = how === 'shared' ? t('Готово. Если в меню выбрано «Сохранить изображение», карточка уже в «Фото».') : how === 'cancelled' ? '' : t('Файл сохранён в загрузки.');
     } catch {
       status.textContent = t('Этот браузер не умеет записывать видео. Сохрани карточку как картинку.');
@@ -5025,6 +5135,7 @@
     $('musicVol').addEventListener('input', () => Music.setVolume(Number(state.motion.mVol)));
     /* длину и начало музыки меняли во время прослушивания: слушаем заново */
     ['motDur', 'musicStart'].forEach((id) => $(id).addEventListener('change', () => { if (musicLoop) startPreview(); }));
+    ['motWipe', 'txtAt', 'txtGap', 'txtAll'].forEach((id) => $(id).addEventListener('change', startPreviewSoft));
     document.addEventListener('visibilitychange', () => { if (document.hidden) stopPreview(); });
     $('shareCard').hidden = !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
     $('shareCard').onclick = shareCard;
@@ -5225,6 +5336,7 @@
       invalidate();
     }).catch(() => {});
     bindBrand();
+    bindFeed();
     Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
