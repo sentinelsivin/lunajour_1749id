@@ -50,7 +50,7 @@
       .map((slot) => slot.src.el.duration * 1000)
       .filter(Number.isFinite));
     /* серия: минимум два круга и не меньше трёх секунд */
-    const total = seq ? Math.max(3000, seq.length * per * 2) : Math.max(CLIP_MS, longest);
+    const total = opts.total || (seq ? Math.max(3000, seq.length * per * 2) : Math.max(CLIP_MS, longest));
     const sparkles = Number(s.adjust && s.adjust.spA) > 0;
 
     if (moving) {
@@ -62,9 +62,22 @@
       }
     }
 
-    const mimeType = window.Camera.videoMime();
-    if (!mimeType || !c.captureStream) throw new Error('unsupported');
-    const rec = new MediaRecorder(c.captureStream(30), { mimeType, videoBitsPerSecond: 6000000 });
+    if (!window.Camera.videoMime() || !c.captureStream) throw new Error('unsupported');
+    const picture = c.captureStream(30);
+    /* музыка: отдельная дорожка, склеенная с картинкой; если браузер не умеет, ролик выйдет без звука */
+    let sound = null;
+    if (opts.audio && window.Music && window.Music.mime()) {
+      try { sound = await window.Music.track(opts.audio.id, opts.audio.start, opts.audio.vol, total / 1000); } catch { sound = null; }
+    }
+    let rec;
+    try {
+      if (!sound) throw new Error('silent');
+      const both = new MediaStream([...picture.getVideoTracks(), ...sound.stream.getAudioTracks()]);
+      rec = new MediaRecorder(both, { mimeType: window.Music.mime(), videoBitsPerSecond: 6000000, audioBitsPerSecond: 160000 });
+    } catch {
+      if (sound) { sound.end(); sound = null; }
+      rec = new MediaRecorder(picture, { mimeType: window.Camera.videoMime(), videoBitsPerSecond: 6000000 });
+    }
     const chunks = [];
     rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
     const finished = new Promise((r) => { rec.onstop = r; });
@@ -93,6 +106,7 @@
 
     frame(0);
     rec.start();
+    if (sound) sound.begin();
     const started = performance.now();
     await new Promise((resolve) => {
       const tick = () => {
@@ -106,6 +120,7 @@
     });
     rec.stop();
     await finished;
+    if (sound) sound.end();
     return new Blob(chunks, { type: rec.mimeType });
   }
 

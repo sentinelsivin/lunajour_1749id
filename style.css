@@ -815,6 +815,29 @@ button { cursor: pointer; }
 /* на телефоне клавиатуры нет: кнопку шпаргалки прячем */
 @media (hover: none) { #keysBtn { display: none; } }
 
+/* ---------- что делаем: фото или видео, над карточкой ---------- */
+.out-bar {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px;
+  transform: translateX(-50%);
+  background: rgba(17, 17, 17, .86);
+  border: 1px solid var(--hairline);
+  border-radius: 999px;
+}
+.out-bar[hidden], .app.view .out-bar { display: none; }
+.out-bar .seg { border: 0; border-radius: 999px; }
+.out-bar .seg button { min-height: 32px; padding: 4px 14px; border: 0; border-radius: 999px; font-size: 13px; }
+.out-bar .seg button.on { background: var(--accent, #3171c6); color: #fff; }
+#playBtn { width: 36px; height: 32px; border: 0; border-radius: 999px; background: none; color: var(--bone); font-size: 13px; }
+#playBtn.primary { color: var(--accent-light); }
+#playBtn[hidden] { display: none; }
+
 /* ---------- серия: листалка под карточкой ---------- */
 .series-bar {
   position: absolute;

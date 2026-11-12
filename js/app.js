@@ -30,6 +30,9 @@
       look: '', mix: 1,
     },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
+    /* что делаем: картинку или ролик. motion: длина ролика (с), смена фото серии (с), музыка, её начало (с) и громкость */
+    out: 'photo',
+    motion: { dur: 5, per: 0.6, track: '', mStart: 0, mVol: 80 },
   });
 
   let state = defaults();
@@ -220,6 +223,134 @@
   };
   const isMoving = () => slots.some((s) => s.src && (s.src.kind === 'live' || s.src.kind === 'video'));
 
+  /* ---------- режим «Видео»: живое превью ролика и музыка ---------- */
+  let playT0 = performance.now();
+  let lastT = 0;
+  let musicLoop = false;
+  const videoOut = () => state.out === 'video' && phase === 'edit';
+  const seriesOn = () => !!series && series.items.length > 1 && !collageTpl();
+  /* что вообще шевелится в ролике; если ничего, превью не перерисовывается зря */
+  const livePreview = () => Number(state.adjust.spA) > 0 || Effects.animates(state) || Scanner.animates(state) || seriesOn() || isMoving();
+  /* фото серии сменяются по кругу; пока открыт «Кадр», стоит то фото, которое двигают */
+  function previewSlots(T) {
+    if (!seriesOn() || tab === 'photo') return slots;
+    series.items[series.i] = slots[0];
+    const per = Math.max(0.2, Number(state.motion.per) || 0.6);
+    return [series.items[Math.floor(T / per) % series.items.length]];
+  }
+  const musicId = () => {
+    const id = state.motion.track;
+    return id === 'file' && !Music.hasFile ? '' : id;
+  };
+  /* ролик с начала, с музыкой; на следующем круге музыка тоже начинается заново */
+  function startPreview() {
+    playT0 = performance.now();
+    lastT = 0;
+    invalidate();
+    const id = musicId();
+    if (!id) return;
+    const len = Math.max(1, Number(state.motion.dur) || 5);
+    Music.play(id, id === 'file' ? Number(state.motion.mStart) || 0 : 0, Number(state.motion.mVol), len).catch(() => toast(t('Музыка не открылась. Попробуй MP3 или M4A.')));
+  }
+  function stopPreview() {
+    musicLoop = false;
+    Music.stop();
+    syncPlay();
+  }
+  function syncPlay() {
+    const on = musicLoop;
+    ['playBtn', 'musicPlay'].forEach((id) => {
+      const b = $(id);
+      b.classList.toggle('primary', on);
+      b.setAttribute('aria-pressed', String(on));
+    });
+    $('playBtn').textContent = on ? '❚❚' : '▶';
+    $('musicPlay').textContent = on ? t('❚❚ Остановить') : t('▶ Слушать с начала');
+  }
+  function togglePlay() {
+    Music.unlock();
+    if (musicLoop) return stopPreview();
+    musicLoop = true;
+    syncPlay();
+    startPreview();
+  }
+  function setOut(v) {
+    if (state.out === v) return;
+    state.out = v;
+    if (v !== 'video') stopPreview();
+    else playT0 = performance.now();
+    syncMotion();
+    update();
+    if (v === 'video') toast(t('Режим видео: карточка двигается, как в ролике. Длина и музыка во вкладке «Движение».'));
+  }
+  /* загрузили видео: сразу режим «Видео», длина ролика по клипу */
+  function autoVideo() {
+    const clip = slots.find((s) => s.src && s.src.kind === 'video');
+    if (!clip || state.out === 'video') return;
+    state.out = 'video';
+    const d = clip.src.el.duration;
+    if (Number.isFinite(d) && d > 0) state.motion = { ...state.motion, dur: Math.min(30, Math.max(2, Math.round(d))) };
+    syncMotion();
+  }
+  function syncMotion() {
+    const video = state.out === 'video';
+    markSeg($('outSeg'), state.out);
+    $('outBar').hidden = phase !== 'edit';
+    $('playBtn').hidden = !video;
+    document.querySelector('#tools [data-tab="motion"]').hidden = !video;
+    if (!video && tab === 'motion') setTab('');
+    const m = state.motion;
+    const box = $('musicChips');
+    box.replaceChildren();
+    const pick = (id) => {
+      state.motion = { ...state.motion, track: id };
+      syncMotion();
+      update();
+      if (musicLoop) startPreview();
+      else if (id) { Music.unlock(); Music.buffer(id).catch(() => {}); }
+    };
+    chip(box, t('Без музыки'), !m.track, () => pick(''));
+    Music.TRACKS.forEach((tr) => chip(box, t(tr.name), m.track === tr.id, () => pick(tr.id)));
+    if (Music.hasFile) chip(box, `♪ ${Music.fileName}`, m.track === 'file', () => pick('file'));
+    chip(box, t('+ Свой трек'), false, () => $('fileMusic').click());
+    $('musicTools').hidden = !musicId();
+    $('musicStartField').hidden = m.track !== 'file';
+    if (m.track === 'file') Music.duration('file').then((d) => { if (d) $('musicStart').max = String(Math.max(0, Math.floor(d - 1))); }).catch(() => {});
+    $('motPerField').hidden = !seriesOn();
+  }
+  async function loadMusic(f) {
+    if (!f) return;
+    Music.unlock();
+    Music.setFile(f, f.name.replace(/\.[^.]+$/, ''));
+    try {
+      await Music.duration('file');
+    } catch {
+      Music.setFile(null);
+      toast(t('Этот файл не читается как музыка. Попробуй MP3, M4A или WAV.'));
+      syncMotion();
+      return;
+    }
+    Store.set('music', { blob: f, name: Music.fileName }).catch(() => {});
+    state.motion = { ...state.motion, track: 'file', mStart: 0 };
+    syncMotion();
+    syncInputs();
+    update();
+    if (musicLoop) startPreview();
+  }
+  /* настройки ролика для записи: длина, серия по кругу, музыка */
+  function videoOpts() {
+    const m = state.motion;
+    const o = { total: Math.round(Math.max(1, Number(m.dur) || 5) * 1000) };
+    if (seriesOn()) {
+      series.items[series.i] = slots[0];
+      o.seq = series.items.map((item) => [item]);
+      o.per = Math.max(0.2, Number(m.per) || 0.6) * 1000;
+    }
+    const id = musicId();
+    if (id) o.audio = { id, start: id === 'file' ? Number(m.mStart) || 0 : 0, vol: Number(m.mVol) };
+    return o;
+  }
+
   let lastFrame = 0;
   function loop(now) {
     requestAnimationFrame(loop);
@@ -234,6 +365,30 @@
         renderCard(ctx, state, slots, assets);
         Scanner.time = null;
         Effects.clock = null;
+        return;
+      }
+    }
+    /* режим «Видео»: карточка двигается так, как будет в ролике, и идёт по кругу длиной в ролик */
+    if (videoOut() && !comparing && splitX == null) {
+      const len = Math.max(1, Number(state.motion.dur) || 5);
+      const T = ((now - playT0) / 1000) % len;
+      if (T < lastT && musicLoop) startPreview();
+      lastT = T;
+      if (livePreview() && (dirty || now - lastFrame > 33)) {
+        dirty = false;
+        lastFrame = now;
+        const sparkle = Number(state.adjust.spA) > 0;
+        if (Scanner.animates(state)) Scanner.time = T;
+        Scanner.clock = videoClock() ?? T;
+        Effects.clock = Scanner.clock;
+        Render.setClock(sparkle ? T : null);
+        renderCard(ctx, state, previewSlots(T), assets);
+        Render.setClock(null);
+        Scanner.time = null;
+        Scanner.clock = null;
+        Effects.clock = null;
+        drawSelection();
+        placeCtx();
         return;
       }
     }
@@ -394,6 +549,10 @@
   function setPhase(next) {
     phase = next;
     if ($('seriesBar')) syncSeries();
+    if ($('outBar')) {
+      if (next !== 'edit') stopPreview();
+      syncMotion();
+    }
     $('shootBar').hidden = next !== 'shoot';
     document.querySelector('.app').classList.toggle('editing', next === 'edit');
     syncStarter();
@@ -413,6 +572,7 @@
   function goEdit() {
     Camera.stop();
     sizeCanvas();
+    autoVideo();
     setPhase('edit');
     finishReshoot();
     syncSeries();
@@ -503,16 +663,44 @@
 
   /* Длинное видео на телефоне открывается не сразу, поэтому ждём первый кадр с запасом. */
   const VIDEO_WAIT_MS = 60000;
-  const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp)$/i;
+  const VIDEO_EXT = /\.(mp4|m4v|mov|webm|mkv|3gp|avi)$/i;
 
+  /* MOV с айфона и QuickTime: Chrome и Edge не открывают тип video/quicktime, хотя внутри тот же MP4.
+     Поэтому такой файл открываем как MP4. Если и так кадра нет, значит видео в HEVC, которое браузер не умеет. */
+  let movFailed = false;
+  const isMov = (blob) => blob.type === 'video/quicktime' || /\.(mov|qt)$/i.test(blob.name || '');
   async function videoSrc(blob) {
+    /* старые фотоаппараты: MOV или AVI из JPEG-кадров, такие открываем своим проигрывателем */
+    if (isMov(blob) || blob.type === 'video/avi' || blob.type === 'video/x-msvideo' || /\.avi$/i.test(blob.name || '')) {
+      const el = await Mjpeg.open(blob);
+      if (el) return { kind: 'video', el, sw: el.videoWidth, sh: el.videoHeight, blob };
+    }
+    if (!isMov(blob)) return openVideo(blob, blob);
+    try {
+      return await openVideo(new Blob([blob], { type: 'video/mp4' }), blob);
+    } catch {
+      try {
+        return await openVideo(blob, blob);
+      } catch (err) {
+        movFailed = true;
+        throw err;
+      }
+    }
+  }
+  /* текст ошибки для неоткрывшегося файла: для MOV в HEVC подсказываем, что делать */
+  function fileError() {
+    const mov = movFailed;
+    movFailed = false;
+    return t(mov ? 'Видео не открылось: скорее всего, оно в формате HEVC, которое этот браузер не показывает. Открой Lunajour в Safari или на айфоне включи «Настройки → Камера → Форматы → Наиболее совместимый».' : 'Этот файл не открывается. Попробуй JPG, PNG или MP4.');
+  }
+  async function openVideo(play, blob) {
     const el = document.createElement('video');
     el.muted = true;
     el.loop = true;
     el.playsInline = true;
     el.setAttribute('playsinline', '');
     el.preload = 'auto';
-    el.src = URL.createObjectURL(blob);
+    el.src = URL.createObjectURL(play);
     /* Телефонные браузеры могут не грузить кадры, пока видео не запущено. */
     el.load();
     el.play().catch(() => {});
@@ -578,7 +766,7 @@
     try {
       src = await videoSrc(blob);
     } catch {
-      return toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      return toast(fileError());
     }
     if (collageTpl()) return putIntoCell(src, flip, turn);
     slots = [newSlot(src)];
@@ -679,7 +867,7 @@
       }
       goEdit();
     } catch {
-      toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      toast(fileError());
     }
   }
 
@@ -743,6 +931,7 @@
     state.fx = { ...defaults().fx, ...(draft.state.fx || {}) };
     state.fx2 = { ...defaults().fx2, ...(draft.state.fx2 || {}) };
     state.scan = { ...Scanner.defaults(), ...(draft.state.scan || {}) };
+    state.motion = { ...defaults().motion, ...(draft.state.motion || {}) };
     ['fx', 'fx2'].forEach((key) => {
       const f = state[key];
       const to = Scanner.fromEffect(f);
@@ -994,7 +1183,7 @@
       srcs = [];
       for (const f of list) srcs.push(await srcOf(f));
     } catch {
-      toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      toast(fileError());
       return;
     }
     bankBefore();
@@ -1012,6 +1201,7 @@
       slots[activeSlot] = newSlot(srcs[0]);
     }
     bankAfter();
+    autoVideo();
     syncSlotUI();
     syncSeries();
     update();
@@ -1084,7 +1274,7 @@
       srcs = [];
       for (const f of list) srcs.push(await srcOf(f));
     } catch {
-      toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      toast(fileError());
       return;
     }
     if (!series) series = { items: [slots[0]], i: 0 };
@@ -1105,8 +1295,6 @@
     $('seriesBar').hidden = !on;
     $('photoAdd').hidden = !canAddPhotos();
     $('saveAll').hidden = !on;
-    $('saveSeriesVideo').hidden = !on || !Camera.videoMime();
-    $('seriesPaceField').hidden = $('saveSeriesVideo').hidden;
     /* на телефоне «Сохранить всю серию» и так открывает «Поделиться», вторая кнопка не нужна */
     $('shareAll').hidden = !on || !canShareFiles() || phoneSave();
     if (on) $('seriesCount').textContent = `${series.i + 1} / ${series.items.length}`;
@@ -1135,13 +1323,6 @@
       status.textContent = t('Не получилось сохранить серию.');
     }
     exportButtons(false);
-  }
-  async function saveSeriesVideo() {
-    series.items[series.i] = slots[0];
-    const per = Number($('seriesPace').value) || 600;
-    await runExport(() => Export.videoBlob(state, slots, assets, (p) => {
-      $('exportStatus').textContent = `${t('Записываю видео')}: ${Math.round(p * 100)}%`;
-    }, { seq: series.items.map((item) => [item]), per }), 'series');
   }
   async function shareSeries() {
     const status = $('exportStatus');
@@ -1190,7 +1371,6 @@
       toast(t('Серия закрыта, осталось это фото.'));
     };
     $('saveAll').onclick = saveSeries;
-    $('saveSeriesVideo').onclick = saveSeriesVideo;
     $('photoAdd').onclick = () => $('fileMore').click();
     $('seriesAdd').onclick = () => $('fileMore').click();
     $('fileMore').onchange = (e) => { addToSeries(e.target.files); e.target.value = ''; };
@@ -1896,7 +2076,8 @@
       const mod = e.ctrlKey || e.metaKey;
       if (mod && e.code === 'KeyS') {
         e.preventDefault();
-        if (phase === 'edit' && !$('saveCard').disabled) $('saveCard').click();
+        const save = state.out === 'video' && Camera.videoMime() ? 'saveVideo' : 'saveCard';
+        if (phase === 'edit' && !$(save).disabled) $(save).click();
         return;
       }
       if (e.code === 'Space' && !mod && phase === 'edit') {
@@ -4423,7 +4604,7 @@
 
   /* ---------- экспорт ---------- */
   function exportButtons(disabled) {
-    ['saveCard', 'saveVideo', 'shareCard', 'saveAll', 'shareAll', 'saveSeriesVideo'].forEach((id) => { $(id).disabled = disabled; });
+    ['saveCard', 'saveVideo', 'shareCard', 'saveAll', 'shareAll'].forEach((id) => { $(id).disabled = disabled; });
   }
 
   async function runExport(make, label) {
@@ -4553,14 +4734,39 @@
       $('exportStatus').textContent = '';
       $('saveCard').textContent = t(phoneSave() ? 'Сохранить в «Фото»' : 'Сохранить карточку');
       syncSeries();
-      $('saveVideo').hidden = !Camera.videoMime();
+      stopPreview();
+      /* в режиме «Видео» сохраняется ролик, в режиме «Фото» картинка */
+      const video = state.out === 'video';
+      $('exportTitle').textContent = t(video ? 'Сохранить ролик' : 'Куда отправить карточку');
+      $('saveVideo').hidden = !video || !Camera.videoMime();
+      $('saveVideo').textContent = t(phoneSave() ? 'Сохранить ролик в «Фото»' : 'Сохранить ролик');
+      ['saveCard', 'shareCard'].forEach((id) => { if (video) $(id).hidden = true; });
+      if (!video) $('shareCard').hidden = !canShareFiles();
+      $('saveCard').hidden = video;
+      if (video) { $('saveAll').hidden = true; $('shareAll').hidden = true; }
+      $('videoNote').hidden = !video || !!Camera.videoMime();
       $('exportSheet').showModal();
     };
     $('exportClose').onclick = () => $('exportSheet').close();
     $('saveCard').onclick = () => runExport(() => Export.cardBlob(state, slots, assets), 'card');
-    $('saveVideo').onclick = () => runExport(() => Export.videoBlob(state, slots, assets, (p) => {
-      $('exportStatus').textContent = `${t('Записываю видео')}: ${Math.round(p * 100)}%`;
-    }), 'video');
+    $('saveVideo').onclick = () => {
+      /* звук разрешается только прямо в нажатии, до любых ожиданий */
+      Music.unlock();
+      runExport(() => Export.videoBlob(state, slots, assets, (p) => {
+        $('exportStatus').textContent = `${t('Записываю видео')}: ${Math.round(p * 100)}%`;
+      }, videoOpts()), 'video');
+    };
+    $('outSeg').addEventListener('click', (e) => {
+      const b = e.target.closest('button');
+      if (b) setOut(b.dataset.v);
+    });
+    $('playBtn').onclick = togglePlay;
+    $('musicPlay').onclick = togglePlay;
+    $('fileMusic').onchange = (e) => { loadMusic(e.target.files[0]); e.target.value = ''; };
+    $('musicVol').addEventListener('input', () => Music.setVolume(Number(state.motion.mVol)));
+    /* длину и начало музыки меняли во время прослушивания: слушаем заново */
+    ['motDur', 'musicStart'].forEach((id) => $(id).addEventListener('change', () => { if (musicLoop) startPreview(); }));
+    document.addEventListener('visibilitychange', () => { if (document.hidden) stopPreview(); });
     $('shareCard').hidden = !(navigator.canShare && navigator.canShare({ files: [new File([''], 'a.png', { type: 'image/png' })] }));
     $('shareCard').onclick = shareCard;
 
@@ -4681,6 +4887,7 @@
       foldHints(openPanel);
     }
     if (tab === 'fx') syncFx();
+    if (tab === 'motion') syncMotion();
     syncCtx();
     invalidate();
   }
@@ -4714,6 +4921,7 @@
   }
 
   function syncAll() {
+    syncMotion();
     syncFx();
     syncColor();
     syncStyles();
@@ -4756,6 +4964,7 @@
       syncColor();
       invalidate();
     }).catch(() => {});
+    Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});
     markSeg($('modeSeg'), mode);
