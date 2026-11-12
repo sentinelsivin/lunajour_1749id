@@ -594,6 +594,7 @@
     $('modeSeg').hidden = idle;
     $('camTools').hidden = idle;
     $('startSample').hidden = !idle;
+    document.querySelector('.app').classList.toggle('idle', idle);
     /* предложение продолжить черновик живёт только на пустом стартовом экране */
     if (!idle) $('resumeCard').hidden = true;
   }
@@ -1594,7 +1595,7 @@
 
   /* ---------- вкладка «Цвет»: шаблоны и подвкладки ---------- */
   const TONE_COLORS = ['#1f6f78', '#16756f', '#3a5f9e', '#1d4a2f', '#6b3a8f', '#a33a5a', '#ffb680', '#ffcf9e', '#ffb3d1', '#ffe27a', '#e8913a', '#f0ede5'];
-  const ASUBS = [['light', 'Свет'], ['color', 'Цвет'], ['tone', 'Тонировка'], ['detail', 'Детали']];
+  const ASUBS = [['light', 'Свет'], ['color', 'Оттенки'], ['tone', 'Тонировка'], ['detail', 'Детали']];
   let adjSub = 'light';
   /* свои шаблоны цвета лежат на устройстве */
   let myLooks = [];
@@ -1825,9 +1826,9 @@
       let changed = false;
       panel.querySelectorAll('.hint[data-hk]').forEach((p) => {
         const n = hintSeen[p.dataset.hk] || 0;
-        p.classList.toggle('folded', n >= 2);
+        p.classList.toggle('folded', n >= 1);
         /* считаем только те подсказки, что правда видны сейчас */
-        if (n < 2 && p.offsetParent) {
+        if (n < 1 && p.offsetParent) {
           hintSeen[p.dataset.hk] = n + 1;
           changed = true;
         }
@@ -4834,18 +4835,48 @@
       setView(true);
     });
 
+    /* полоску над панелью можно тянуть: панель встаёт на нужную высоту и запоминает её.
+       Дотянула почти до верха — панель на весь экран */
     let startY = 0;
+    let startH = 0;
     let swiped = false;
+    let dragging = false;
+    const dock = document.querySelector('.dock');
+    try {
+      const k = Number(localStorage.getItem('lunajour-dock'));
+      if (k > 0.25 && k < 0.9) app.style.setProperty('--dock-open', `${Math.round(k * 100)}dvh`);
+    } catch { /* высота по умолчанию */ }
     grip.addEventListener('pointerdown', (e) => {
       startY = e.clientY;
+      startH = dock.getBoundingClientRect().height;
       swiped = false;
+      dragging = true;
       grip.setPointerCapture(e.pointerId);
     });
-    grip.addEventListener('pointerup', (e) => {
+    grip.addEventListener('pointermove', (e) => {
+      if (!dragging || app.classList.contains('dock-full')) return;
       const dy = e.clientY - startY;
-      if (Math.abs(dy) < 24) return;
+      if (Math.abs(dy) < 6 && !swiped) return;
       swiped = true;
-      setFull(dy < 0);
+      app.classList.add('dock-drag');
+      const h = Math.min(innerHeight * 0.92, Math.max(innerHeight * 0.28, startH - dy));
+      app.style.setProperty('--dock-open', `${Math.round(h)}px`);
+    });
+    grip.addEventListener('pointerup', (e) => {
+      dragging = false;
+      app.classList.remove('dock-drag');
+      const dy = e.clientY - startY;
+      if (app.classList.contains('dock-full')) {
+        if (dy > 24) { swiped = true; setFull(false); }
+        return;
+      }
+      if (!swiped) return;
+      const h = dock.getBoundingClientRect().height;
+      if (h > innerHeight * 0.85) {
+        setFull(true);
+        return;
+      }
+      try { localStorage.setItem('lunajour-dock', String(h / innerHeight)); } catch { /* только на этот раз */ }
     });
     grip.addEventListener('click', () => {
       if (!swiped) setFull(!app.classList.contains('dock-full'));
@@ -5468,9 +5499,13 @@
     showHint(name);
   }
   function closeTool(keep) {
-    if (!keep && toolSnap && toolSnap !== JSON.stringify(state)) applySnap(toolSnap);
+    const now = JSON.stringify(state);
+    const undone = !keep && toolSnap && toolSnap !== now ? now : null;
+    if (undone) applySnap(toolSnap);
     toolSnap = null;
     setTab('');
+    /* отмена не молчит: можно передумать */
+    if (undone) toast(t('Изменения в разделе отменены.'), { label: t('Вернуть'), run: () => applySnap(undone) });
   }
 
   /* Подсказка при первом открытии инструмента, потом больше не показывается. */
@@ -5518,8 +5553,80 @@
     });
   }
 
+  /* ---------- ползунки: значение, отметка «изменено» и кнопка «↺» ---------- */
+  /* Значение по умолчанию: data-def у ползунка или то, что в новой карточке. */
+  function sliderDef(el) {
+    if (el.dataset.def != null) return el.dataset.def;
+    if (el.dataset.bind) {
+      const v = el.dataset.bind.split('.').reduce((o, k) => (o == null ? o : o[k]), defaults());
+      if (v != null) return v;
+    }
+    return null;
+  }
+  function sliderText(el) {
+    const v = Number(el.value);
+    const min = Number(el.min);
+    const max = Number(el.max);
+    if (min >= 0 && max <= 1) return `${Math.round(v * 100)}%`;
+    const step = Number(el.step) || 1;
+    const digits = step >= 1 ? 0 : step >= 0.1 ? 1 : 2;
+    const text = (min < 0 && v > 0 ? '+' : '') + v.toFixed(digits);
+    return I18n.lang === 'ru' ? text.replace('.', ',') : text;
+  }
+  function refreshSlider(lab) {
+    const el = lab.querySelector('input[type="range"]');
+    const head = lab.querySelector('.sl-head');
+    if (!el || !head) return;
+    head.querySelector('.sl-val').textContent = sliderText(el);
+    const def = sliderDef(el);
+    const changed = def != null && Math.abs(Number(el.value) - Number(def)) > 1e-6;
+    lab.classList.toggle('changed', changed);
+    head.querySelector('.sl-reset').hidden = !changed;
+  }
+  function decorateSliders() {
+    document.querySelectorAll('label.slider').forEach((lab) => {
+      const el = lab.querySelector('input[type="range"]');
+      if (!el || lab.querySelector('.sl-head')) return;
+      const head = document.createElement('span');
+      head.className = 'sl-head';
+      const name = document.createElement('span');
+      name.className = 'sl-name';
+      [...lab.childNodes].forEach((n) => { if (n.nodeType === 3 && n.textContent.trim()) name.append(n); });
+      const val = document.createElement('span');
+      val.className = 'sl-val';
+      const reset = document.createElement('button');
+      reset.type = 'button';
+      reset.className = 'sl-reset';
+      reset.textContent = '↺';
+      reset.title = 'Вернуть как было';
+      reset.setAttribute('aria-label', 'Вернуть как было');
+      reset.hidden = true;
+      reset.addEventListener('click', (e) => {
+        e.preventDefault();
+        const def = sliderDef(el);
+        if (def == null) return;
+        el.value = def;
+        el.dispatchEvent(new Event('input', { bubbles: true }));
+        el.dispatchEvent(new Event('change', { bubbles: true }));
+        refreshSlider(lab);
+      });
+      head.append(name, val, reset);
+      lab.insertBefore(head, el);
+    });
+    /* значения меняются и из кода (шаблоны, отмена), поэтому видимые ползунки сверяются сами */
+    document.addEventListener('input', (e) => {
+      const lab = e.target.closest && e.target.closest('label.slider');
+      if (lab) refreshSlider(lab);
+    });
+    setInterval(() => {
+      if (document.hidden) return;
+      document.querySelectorAll('label.slider').forEach((lab) => { if (lab.offsetParent) refreshSlider(lab); });
+    }, 400);
+  }
+
   async function boot() {
     prepHints();
+    decorateSliders();
     I18n.capture();
     I18n.apply();
     markSeg($('langSeg'), I18n.lang);
@@ -5538,6 +5645,9 @@
     bindBrand();
     bindFeed();
     bindSearch();
+    $('starterPick').onclick = () => $('uploadBtn').click();
+    $('starterCam').onclick = () => $('shutter').click();
+    $('starterSample').onclick = () => $('startSample').click();
     Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});

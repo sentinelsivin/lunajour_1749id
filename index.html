@@ -54,7 +54,7 @@
         <span class="menu-head">Эта карточка</span>
         <div class="group"><span class="label">Мои стили</span>
           <div class="thumbs" id="styleGrid"></div>
-          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
+          <p class="hint">Стиль запоминает всё оформление, кроме самих фото.</p>
         </div>
         <button class="btn" id="retake" type="button">Новый снимок</button>
         <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
@@ -134,6 +134,13 @@
         <button type="button" data-v="video">Видео 5 с</button>
         <button type="button" data-v="booth">Будка</button>
       </div>
+      <div class="starter" id="starter">
+        <button class="btn primary" id="starterPick" type="button">Выбрать фото или видео</button>
+        <div class="row">
+          <button class="btn" id="starterCam" type="button">Снять камерой</button>
+          <button class="btn" id="starterSample" type="button">Попробовать на примере</button>
+        </div>
+      </div>
       <div class="shoot-row">
         <button class="btn small" id="uploadBtn" type="button">Галерея</button>
         <button class="shutter" id="shutter" type="button" aria-label="Камера"></button>
@@ -156,9 +163,9 @@
       <button type="button" data-sec="video" hidden><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l9 6-9 6z"/><path d="M16.5 6.5c1 1 1 6 0 7" stroke-linecap="round"/></svg><span>Видео</span></button>
     </nav>
     <div class="panel-head" id="panelHead">
-      <button class="icon-btn" id="toolCancel" type="button" aria-label="Отменить изменения">✕</button>
+      <button class="btn small" id="toolCancel" type="button" title="Отменить изменения в этом разделе">Отменить</button>
       <span class="panel-title" id="toolTitle"></span>
-      <button class="icon-btn ok" id="toolDone" type="button" aria-label="Готово">✓</button>
+      <button class="btn small primary" id="toolDone" type="button" title="Оставить изменения и закрыть">Готово</button>
     </div>
     <div class="chips sec-tabs" id="secTabs" hidden></div>
 
@@ -173,13 +180,13 @@
         </div>
         <div class="row"><button class="btn" id="musicPlay" type="button" aria-pressed="false">▶ Слушать с начала</button></div>
         <label class="check"><input id="motWipe" type="checkbox" data-bind="motion.wipe">Шторка «до / после»</label>
-        <p class="hint">Линия едет по кадру: слева исходное фото, справа с цветом и эффектами. Готовый формат для роликов про обработку.</p>
+        <p class="hint">Слева исходное фото, справа обработка, линия ездит по кадру.</p>
         <div class="group"><span class="label">Текст появляется</span><div class="chips" id="txtKind"></div></div>
         <div class="group" id="txtTools" hidden>
           <label class="slider">Первая надпись через, секунд<input id="txtAt" type="range" min="0" max="5" step="0.1" data-def="0.5" data-bind="motion.txtAt"></label>
           <label class="slider">Следующая через, секунд<input id="txtGap" type="range" min="0.1" max="3" step="0.1" data-def="0.7" data-bind="motion.txtGap"></label>
           <label class="check"><input id="txtAll" type="checkbox" data-bind="motion.txtAll">Стикеры тоже появляются по очереди</label>
-          <p class="hint">По очереди: подпись, место с датой, штамп, потом надписи-стикеры снизу вверх по слоям. Пока открыты «Подпись» или «Стикеры», текст виден целиком.</p>
+          <p class="hint">По очереди: подпись, место и дата, штамп, потом надписи. Пока открыт «Текст», всё видно целиком.</p>
         </div>
         <div class="group" id="motScan" hidden>
           <div class="group"><span class="label">Сканер в ролике</span><div class="chips" id="scanMotion"></div></div>
@@ -187,7 +194,7 @@
           <label class="check"><input type="checkbox" data-bind="scan.anim">Живое сканирование: рамки появляются по одной, подписи печатаются</label>
         </div>
         <p class="hint" id="motFxHint" hidden>Глитч в ролике ломается заново несколько раз в секунду. Выключить: «Эффекты» → эффект → «Живой в видео».</p>
-        <p class="hint">Карточка двигается так, как будет в ролике: блёстки мерцают, глитч дёргается, фото серии сменяются. Свой трек: MP3, M4A или WAV. В конце ролика музыка плавно затихает.</p>
+        <p class="hint">Карточка двигается, как в ролике. Свой трек: MP3, M4A или WAV, в конце он плавно затихает.</p>
       </section>
 
       <section class="panel" data-panel="motif">
@@ -261,7 +268,8 @@
           <button class="btn small" id="multiToggle" type="button" hidden>Несколько</button>
         </div>
         <div class="group" id="stickerCatalog">
-          <p class="hint">Нажми на стикер, чтобы добавить его. На карточке двигай одним пальцем, двумя меняй размер и поворачивай.</p>
+          <p class="hint" data-dev="touch">Нажми на стикер, чтобы добавить. На карточке один палец двигает, два меняют размер и поворот.</p>
+          <p class="hint" data-dev="desk">Нажми на стикер, чтобы добавить. На карточке тяни мышью, колесо меняет размер, правый клик открывает эффекты.</p>
           <div class="chips" id="stickerTabs"></div>
           <div class="stickers" id="stickerGrid"></div>
           <div class="row">
@@ -373,8 +381,9 @@
           <button class="btn" id="photoReshoot" type="button">Снять заново</button>
           <button class="btn" id="photoAdd" type="button" title="Новые фото получат то же оформление и цвет, получится серия">+ Ещё фото</button>
         </div>
-        <p class="hint">Новое фото встаёт на место старого, всё оформление остаётся. Можно выбрать сразу несколько: получится серия. «+ Ещё фото» добавляет снимки к этому, с той же обработкой.</p>
-        <p class="hint">Двигай снимок прямо на карточке. На компьютере масштаб меняется колесом мыши.</p>
+        <p class="hint">Новое фото встаёт на место старого, оформление остаётся. «+ Ещё фото» — серия с той же обработкой.</p>
+        <p class="hint" data-dev="touch">Двигай снимок пальцем, двумя пальцами меняй масштаб.</p>
+        <p class="hint" data-dev="desk">Двигай снимок мышью, колесо меняет масштаб.</p>
         <p class="hint" id="cellHint" hidden>В коллаже сначала нажми на ячейку, потом двигай в ней снимок.</p>
         <div class="group" id="slotGroup" hidden><span class="label">Какой снимок</span>
           <div class="seg" id="slotSeg">
@@ -387,10 +396,12 @@
           <button class="btn" id="slotTurn" type="button">Повернуть</button>
           <button class="btn" id="slotReset" type="button">Сбросить</button>
         </div>
-        <label class="slider">Влево и вправо<input id="slotX" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
-        <label class="slider">Вверх и вниз<input id="slotY" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
-        <label class="slider">Масштаб<input id="slotZoom" type="range" data-def="1" min="1" max="4" step="0.01"></label>
         <label class="slider">Наклон: выпрямить горизонт<input id="slotTilt" type="range" data-def="0" min="-15" max="15" step="0.1"></label>
+        <details class="fine"><summary>Точнее: сдвиг и масштаб</summary>
+          <label class="slider">Влево и вправо<input id="slotX" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
+          <label class="slider">Вверх и вниз<input id="slotY" type="range" data-def="0" min="-1" max="1" step="0.01"></label>
+          <label class="slider">Масштаб<input id="slotZoom" type="range" data-def="1" min="1" max="4" step="0.01"></label>
+        </details>
       </section>
 
       <section class="panel" data-panel="color" hidden>
@@ -421,10 +432,12 @@
         </div>
         <div class="group" data-asub="detail" hidden>
           <label class="slider">Резкость: мягче или резче<input id="adjK" type="range" min="-100" max="100" data-bind="adjust.k"></label>
-          <label class="slider">Радиус резкости<input id="adjKR" type="range" min="2" max="30" data-bind="adjust.kR"></label>
           <label class="slider">Чёткость<input id="adjCl" type="range" min="0" max="100" data-bind="adjust.cl"></label>
           <label class="slider">Свечение<input id="adjGl" type="range" min="0" max="100" data-bind="adjust.gl"></label>
-          <label class="slider">Размер свечения<input id="adjGlR" type="range" min="0" max="100" data-bind="adjust.glR"></label>
+          <details class="fine"><summary>Точнее: радиус резкости и свечения</summary>
+            <label class="slider">Радиус резкости<input id="adjKR" type="range" min="2" max="30" data-bind="adjust.kR"></label>
+            <label class="slider">Размер свечения<input id="adjGlR" type="range" min="0" max="100" data-bind="adjust.glR"></label>
+          </details>
           <label class="slider">Сдвиг красного канала<input id="adjCa" type="range" min="0" max="12" step="0.5" data-bind="adjust.ca"></label>
           <label class="slider">Виньетка: светлее или темнее к краям<input id="adjV" type="range" min="-100" max="100" data-bind="adjust.v"></label>
         </div>
@@ -496,13 +509,13 @@
                 <label class="field">Заголовок<input type="text" maxlength="60" data-bind="scan.dossier.title" placeholder="OFFLINE ACTIVITY DETECTED"></label>
                 <label class="field">Строки<textarea rows="5" maxlength="400" data-bind="scan.dossier.rows"></textarea></label>
                 <p class="hint">Каждая строка с новой строки. Подстановки работают и тут. Строка с [62%] в конце станет полосой прогресса.</p>
-                <p class="hint">Досье можно перетащить пальцем, а нажатие по нему откроет меню.</p>
+                <p class="hint">Досье можно перетащить, а нажатие по нему откроет меню.</p>
                 <button class="btn small" id="scanDossierHome" type="button">Вернуть на место</button>
               </div>
             </div>
 
             <div class="group" data-sub="icons" hidden>
-              <p class="hint">Нажми на значок, и он появится на фото. Двигай его пальцем.</p>
+              <p class="hint">Нажми на значок, и он появится на фото. Его можно двигать.</p>
               <div class="chips icons" id="scanIcons"></div>
               <p class="hint">Нажми на значок на фото: рядом появятся размер, копия и удаление.</p>
             </div>
@@ -517,7 +530,7 @@
             </div>
 
             <div class="group" data-sub="zoom" hidden>
-              <p class="hint">Лупа показывает кусок из рамки крупно в свободном месте. Его можно перетащить пальцем.</p>
+              <p class="hint">Лупа показывает кусок из рамки крупно в свободном месте. Его можно перетащить.</p>
               <div class="group"><span class="label">Сколько</span><div class="chips" id="scanZoom"></div></div>
               <div class="group" id="scanZoomTools">
                 <div class="group"><span class="label">Вид</span><div class="chips" id="scanLooks"></div></div>
@@ -660,7 +673,7 @@
   <div class="sheet-body">
     <div class="feed-grid" id="feedGrid"></div>
     <button class="btn" id="feedImport" type="button">+ Посты из профиля</button>
-    <p class="hint">Первой стоит карточка, которую ты делаешь сейчас, дальше сохранённые раньше. В профиле видна середина 3:4, у карусели первый слайд. Свои старые посты можно добавить скриншотами.</p>
+    <p class="hint">Сначала эта карточка, дальше сохранённые раньше. Профиль показывает середину 3:4. Старые посты можно добавить скриншотами.</p>
   </div>
 </dialog>
 <dialog class="sheet" id="brandSheet" aria-labelledby="brandTitle">

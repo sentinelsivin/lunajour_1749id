@@ -218,14 +218,12 @@ button { cursor: pointer; }
   border: 1px solid var(--hairline);
   border-radius: 4px;
   background: var(--surface2);
-  font: 12px var(--mono);
-  letter-spacing: .12em;
-  text-transform: uppercase;
+  font: 500 14px/1.25 var(--body);
 }
 .btn:hover { border-color: var(--accent-light); }
 .btn:disabled { opacity: .5; cursor: progress; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.small { padding: 7px 10px; font-size: 11px; }
+.btn.small { padding: 7px 10px; font-size: 13px; }
 
 .seg { display: flex; border: 1px solid var(--hairline); border-radius: 4px; overflow: hidden; }
 .seg button {
@@ -236,9 +234,7 @@ button { cursor: pointer; }
   border-left: 1px solid var(--hairline);
   background: transparent;
   color: var(--muted);
-  font: 11px var(--mono);
-  letter-spacing: .08em;
-  text-transform: uppercase;
+  font: 500 13px var(--body);
 }
 .seg button:first-child { border-left: 0; }
 .seg button.on { background: rgba(49, 113, 198, .18); color: var(--bone); }
@@ -296,7 +292,7 @@ button { cursor: pointer; }
 .edit-only { display: none; }
 .app.editing .edit-only { display: inline-grid; place-items: center; }
 .btn.icon { padding: 4px 7px; }
-.history .btn.primary { font-size: 11px; padding: 4px 12px; }
+.history .btn.primary { font-size: 14px; padding: 4px 14px; }
 
 /* один ползунок на несколько величин, как в фоторедакторах */
 .one-slider { display: flex; flex-direction: column; gap: 8px; }
@@ -509,7 +505,8 @@ button { cursor: pointer; }
   .deco, .readout { display: none; }
   .seg.lang { width: 72px; }
   .app.editing { --dock-h: calc(84px + env(safe-area-inset-bottom)); }
-  .app.tool-open { --dock-h: 48dvh; }
+  .app.tool-open { --dock-h: var(--dock-open, 58dvh); }
+  .app.dock-drag .dock { transition: none; }
   .app.editing .seg.lang { display: none; }
   .app.editing .logo { font-size: 20px; }
   .top-side { flex-direction: row; align-items: center; }
@@ -825,8 +822,42 @@ button { cursor: pointer; }
 /* на телефоне клавиатуры нет: кнопку шпаргалки прячем */
 @media (hover: none) { #keysBtn { display: none; } }
 
+/* ---------- ползунки: значение и «↺» ---------- */
+.sl-head { display: flex; align-items: center; gap: 8px; min-height: 22px; }
+.sl-name { flex: 1; min-width: 0; }
+.sl-val { font: 500 12px var(--mono); letter-spacing: 0; color: var(--muted); font-variant-numeric: tabular-nums; }
+.slider.changed .sl-name, .slider.changed .sl-val { color: var(--accent-light); }
+.sl-reset { width: 28px; height: 24px; padding: 0; border: 1px solid var(--hairline); border-radius: 4px; background: var(--surface2); color: var(--bone); font-size: 14px; line-height: 1; }
+.sl-reset[hidden] { display: none; }
+/* тонкие настройки свёрнуты */
+details.fine { display: block; }
+details.fine > summary { cursor: pointer; padding: 6px 0; color: var(--muted); font: 500 13px var(--body); list-style: none; }
+details.fine > summary::-webkit-details-marker { display: none; }
+details.fine > summary::after { content: ' ▾'; }
+details.fine[open] > summary::after { content: ' ▴'; }
+details.fine > .slider { margin-top: 12px; }
+/* подсказки для своего устройства */
+@media (hover: none) { .hint[data-dev="desk"] { display: none !important; } }
+@media (hover: hover) and (pointer: fine) { .hint[data-dev="touch"] { display: none !important; } }
+/* стартовый экран: три понятные кнопки вместо затвора без подписи */
+.starter { display: none; flex-direction: column; gap: 8px; padding: 4px 12px 8px; }
+.starter .row { display: flex; gap: 8px; }
+.starter .row .btn { flex: 1; }
+.app.idle .starter { display: flex; }
+.app.idle .shoot-row, .app.idle #tools { display: none; }
+/* «Эффект 1 / Эффект 2» — переключатель, а не фильтр: выглядит сегментом */
+#fxSlots { gap: 0; }
+#fxSlots button { border-radius: 0; margin-left: -1px; }
+#fxSlots button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
+#fxSlots button:last-child { border-radius: 0 6px 6px 0; }
+@media (max-width: 860px) { .app.idle { --dock-h: calc(122px + env(safe-area-inset-bottom)); } }
+/* шапка панели: подписанные кнопки */
+.panel-head .btn { min-width: 84px; }
+
 /* ---------- вкладки раздела, меню по частям, поиск ---------- */
-.sec-tabs { flex: none; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; border-bottom: 1px solid var(--hairline); scrollbar-width: none; }
+.sec-tabs { flex: none; display: flex; flex-wrap: nowrap; gap: 4px; overflow-x: auto; padding: 0 10px; border-bottom: 1px solid var(--hairline); scrollbar-width: none; }
+.sec-tabs button { flex: none; padding: 11px 10px 9px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: none; color: var(--muted); font: 500 14px var(--body); }
+.sec-tabs button.on { color: var(--bone); border-bottom-color: var(--accent-light); background: none; }
 .app:not(.tool-open) .sec-tabs { display: none; }
 .menu-head { margin-top: 4px; font: 600 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-light); }
 .menu-head:first-child { margin-top: 0; }
