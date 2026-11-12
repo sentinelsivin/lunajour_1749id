@@ -26,7 +26,7 @@
     /* цвет фото: значения ползунков; look и mix помнят выбранный шаблон и его силу */
     adjust: {
       b: 0, c: 0, s: 0, w: 0, g: 0, t: 0, sh: 0, hl: 0, f: 0, v: 0, k: 0, kR: 8, kT: 0, cl: 0, gl: 0, glR: 40, glN: 0, ca: 0,
-      tsC: '#1f6f78', tsA: 0, thC: '#ffb680', thA: 0, stC: '#e1d3b3', stA: 0, lut: '', lutA: 100, lkA: 0, lkC: '#ff9a2e', lkS: 'right', spA: 0, spT: 'rays', spS: 1, spC: '#ffffff',
+      tsC: '#1f6f78', tsA: 0, thC: '#ffb680', thA: 0, stC: '#e1d3b3', stA: 0, lut: '', lutA: 100, lkA: 0, lkC: '#ff9a2e', lkS: 'right', spA: 0, spT: 'rays', spS: 1, spC: '#ffffff', fl: 0, ds: '', dsD: '', dsC: '#ff8a1f',
       look: '', mix: 1,
     },
     note: { title: '', place: '', date: today(), showDate: false, size: 'm', mood: '', font: 'sexsmith', color: 'auto' },
@@ -1075,10 +1075,38 @@
     syncSeries();
     scheduleDraft();
   }
+  /* ещё фото с той же обработкой: текущее остаётся, новые встают в серию после него */
+  async function addToSeries(files) {
+    const list = [...files];
+    if (!list.length) return;
+    let srcs;
+    try {
+      srcs = [];
+      for (const f of list) srcs.push(await srcOf(f));
+    } catch {
+      toast(t('Этот файл не открывается. Попробуй JPG, PNG или MP4.'));
+      return;
+    }
+    if (!series) series = { items: [slots[0]], i: 0 };
+    else series.items[series.i] = slots[0];
+    const start = series.items.length;
+    series.items.push(...srcs.map((src) => newSlot(src)));
+    series.i = start;
+    slots = [series.items[start]];
+    activeSlot = 0;
+    syncSeries();
+    syncSlotUI();
+    update();
+    toast(`${t('Добавлено фото')}: ${srcs.length}. ${t('Обработка та же, листай стрелками под карточкой.')}`);
+  }
+  const canAddPhotos = () => phase === 'edit' && !collageTpl() && slots.length === 1;
   function syncSeries() {
     const on = !!series && series.items.length > 1 && phase === 'edit' && !collageTpl();
     $('seriesBar').hidden = !on;
+    $('photoAdd').hidden = !canAddPhotos();
     $('saveAll').hidden = !on;
+    $('saveSeriesVideo').hidden = !on || !Camera.videoMime();
+    $('seriesPaceField').hidden = $('saveSeriesVideo').hidden;
     /* на телефоне «Сохранить всю серию» и так открывает «Поделиться», вторая кнопка не нужна */
     $('shareAll').hidden = !on || !canShareFiles() || phoneSave();
     if (on) $('seriesCount').textContent = `${series.i + 1} / ${series.items.length}`;
@@ -1107,6 +1135,13 @@
       status.textContent = t('Не получилось сохранить серию.');
     }
     exportButtons(false);
+  }
+  async function saveSeriesVideo() {
+    series.items[series.i] = slots[0];
+    const per = Number($('seriesPace').value) || 600;
+    await runExport(() => Export.videoBlob(state, slots, assets, (p) => {
+      $('exportStatus').textContent = `${t('Записываю видео')}: ${Math.round(p * 100)}%`;
+    }, { seq: series.items.map((item) => [item]), per }), 'series');
   }
   async function shareSeries() {
     const status = $('exportStatus');
@@ -1155,6 +1190,10 @@
       toast(t('Серия закрыта, осталось это фото.'));
     };
     $('saveAll').onclick = saveSeries;
+    $('saveSeriesVideo').onclick = saveSeriesVideo;
+    $('photoAdd').onclick = () => $('fileMore').click();
+    $('seriesAdd').onclick = () => $('fileMore').click();
+    $('fileMore').onchange = (e) => { addToSeries(e.target.files); e.target.value = ''; };
     $('shareAll').onclick = shareSeries;
     /* стрелки на компьютере листают серию, если не выбран стикер */
     document.addEventListener('keydown', (e) => {
@@ -1419,6 +1458,24 @@
       syncInputs();
       update();
     });
+    /* дата в углу: вид, день и цвет; пока даты нет, день и цвет спрятаны */
+    const stamp = $('stampType');
+    stamp.replaceChildren();
+    const today = new Date();
+    const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    [['', 'Без даты'], ['digi', `'${iso.slice(2, 4)} ${iso.slice(5, 7)} ${iso.slice(8)}`], ['dots', `${iso.slice(8)}.${iso.slice(5, 7)}.${iso.slice(0, 4)}`], ['en', `${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][today.getMonth()]} ${today.getDate()} '${iso.slice(2, 4)}`]]
+      .forEach(([v, name]) => chip(stamp, v ? name : t(name), (a.ds || '') === v, () => {
+        state.adjust = { ...state.adjust, ds: v };
+        syncColor();
+        update();
+      }));
+    $('stampTools').hidden = !a.ds;
+    $('adjDsD').value = a.dsD || iso;
+    swatches($('stampColor'), ['#ff8a1f', '#ffc21a', '#ff4a2e', '#ff5fa2', '#7cf2ff', '#ffffff'], a.dsC || '#ff8a1f', (c) => {
+      state.adjust = { ...state.adjust, dsC: c };
+      syncColor();
+      update();
+    });
     /* блёстки: вид, размер и цвет; пока блёсток нет, настройки спрятаны */
     $('sparkTools').hidden = !Number(a.spA);
     const kind = $('sparkType');
@@ -1505,6 +1562,11 @@
     /* настройки засветки показываются, как только у неё появилась сила */
     $('adjLk').addEventListener('input', () => { $('leakTools').hidden = !Number(state.adjust.lkA); });
     $('adjSp').addEventListener('input', () => { $('sparkTools').hidden = !Number(state.adjust.spA); });
+    /* пустое поле даты значит «сегодня» */
+    $('adjDsD').addEventListener('change', () => {
+      state.adjust = { ...state.adjust, dsD: $('adjDsD').value || '' };
+      update();
+    });
   }
 
   /* ---------- выбранное в ряду всегда на виду ---------- */
@@ -4361,7 +4423,7 @@
 
   /* ---------- экспорт ---------- */
   function exportButtons(disabled) {
-    ['saveCard', 'saveVideo', 'shareCard'].forEach((id) => { $(id).disabled = disabled; });
+    ['saveCard', 'saveVideo', 'shareCard', 'saveAll', 'shareAll', 'saveSeriesVideo'].forEach((id) => { $(id).disabled = disabled; });
   }
 
   async function runExport(make, label) {

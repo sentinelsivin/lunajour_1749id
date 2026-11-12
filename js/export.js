@@ -21,15 +21,27 @@
 
   /* Видео: сама карточка во весь кадр, в её пропорциях, без фона и покачивания.
      Клип внутри карточки продолжает играть, сканер оживает. Стороны чётные: так видео принимают все кодеки. */
-  async function videoBlob(s, slots, assets, onProgress) {
+  /* opts.seq: серия, список наборов фото; каждая карточка держится opts.per мс, по кругу (как гифка). */
+  async function videoBlob(s, slots, assets, onProgress, opts = {}) {
     const [RW, RH] = RATIOS[s.ratio];
     const W = 720;
     const H = Math.round((W * RH) / RW / 2) * 2;
-    const moving = slots.some((slot) => slot.src && slot.src.kind === 'video');
+    const seq = opts.seq && opts.seq.length > 1 ? opts.seq : null;
+    const per = opts.per || 600;
+    const moving = !seq && slots.some((slot) => slot.src && slot.src.kind === 'video');
     const c = canvas(W, H);
     const x = c.getContext('2d');
     const still = canvas(W, H);
-    renderCard(still.getContext('2d'), s, slots, assets);
+    /* кадры серии собираются заранее, чтобы смена шла ровно */
+    const stills = seq ? seq.map((items) => {
+      const one = canvas(W, H);
+      renderCard(one.getContext('2d'), s, items, assets);
+      return one;
+    }) : null;
+    if (seq) {
+      slots = seq[0];
+      still.getContext('2d').drawImage(stills[0], 0, 0);
+    } else renderCard(still.getContext('2d'), s, slots, assets);
 
     /* Длина ролика: целиком самое длинное загруженное видео, но не меньше пяти секунд.
        У клипа, снятого в браузере, длина бывает неизвестна (Infinity), такой не считаем. */
@@ -37,7 +49,9 @@
       .filter((slot) => slot.src && slot.src.kind === 'video')
       .map((slot) => slot.src.el.duration * 1000)
       .filter(Number.isFinite));
-    const total = Math.max(CLIP_MS, longest);
+    /* серия: минимум два круга и не меньше трёх секунд */
+    const total = seq ? Math.max(3000, seq.length * per * 2) : Math.max(CLIP_MS, longest);
+    const sparkles = Number(s.adjust && s.adjust.spA) > 0;
 
     if (moving) {
       for (const slot of slots) {
@@ -58,15 +72,20 @@
     function frame(t) {
       /* сканер в видео оживает: каждый кадр рисуется заново со своим временем */
       const live = (window.Scanner && window.Scanner.animates(s)) || (window.Effects && window.Effects.animates(s));
-      if (moving || live) {
+      const k = seq ? Math.floor(t / per) % seq.length : 0;
+      if (moving || live || sparkles) {
         if (window.Scanner) {
           if (live) window.Scanner.time = t / 1000;
           window.Scanner.clock = t / 1000;
         }
         if (window.Effects) window.Effects.clock = t / 1000;
-        renderCard(still.getContext('2d'), s, slots, assets);
+        window.Render.setClock(sparkles ? t / 1000 : null);
+        renderCard(still.getContext('2d'), s, seq ? seq[k] : slots, assets);
+        window.Render.setClock(null);
         if (window.Scanner) { window.Scanner.time = null; window.Scanner.clock = null; }
         if (window.Effects) window.Effects.clock = null;
+      } else if (seq) {
+        still.getContext('2d').drawImage(stills[k], 0, 0);
       }
       /* рисуем кадр каждый раз, даже неподвижный: иначе запись может пропустить кадры */
       x.drawImage(still, 0, 0);

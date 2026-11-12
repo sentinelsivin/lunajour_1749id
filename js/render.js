@@ -689,9 +689,9 @@
      gl свечение (размытая копия в «Экране»), glR его радиус, glN шум в свечении, cl чёткость (цветовой контраст
      в «Мягком свете»), ca сдвиг красного канала, kR и kT радиус и порог резкости, stC/stA тонировка мягким светом.
      lut/lutA цветовая таблица шаблона и её сила, lkA/lkC/lkS засветка (сила, цвет, край),
-     spA/spT/spS/spC блёстки (сколько, вид, размер, цвет).
+     spA/spT/spS/spC блёстки (сколько, вид, размер, цвет), fl вспышка, ds/dsD/dsC дата в углу (вид, дата, цвет).
      g зерно рисуется отдельно. Поля, которых нет в старом черновике, считаются нулём. */
-  const ADJ_KEYS = ['b', 'c', 's', 'w', 't', 'sh', 'hl', 'f', 'v', 'k', 'tsA', 'thA', 'gl', 'cl', 'ca', 'stA', 'lut', 'lkA', 'spA'];
+  const ADJ_KEYS = ['b', 'c', 's', 'w', 't', 'sh', 'hl', 'f', 'v', 'k', 'tsA', 'thA', 'gl', 'cl', 'ca', 'stA', 'lut', 'lkA', 'spA', 'fl', 'ds'];
   function neutral(a) { return ADJ_KEYS.every((key) => !a[key]); }
   const hexRgb = (hex) => {
     const n = parseInt(String(hex || '#808080').replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
@@ -783,6 +783,76 @@
   /* Блёстки поверх фото. Вид (spT), размер (spS, множитель) и цвет (spC); раскладка всегда одна и та же.
      rays: искры с лучами, как в BlueBlue; glitter: мелкая переливчатая пыль; twinkle: звёздочки ✦;
      stars: пятиконечные звёзды; hearts: сердечки; bokeh: мягкие круги света, как огни не в фокусе. */
+  /* Вспышка мыльницы: свет бьёт в лоб, середина кадра светлее и контрастнее,
+     к краям свет падает в темноту, самые яркие места выгорают в белое и чуть холодят. */
+  function drawFlash(ctx, w, h, a) {
+    const amt = Math.min(100, Math.max(0, Number(a.fl) || 0)) / 100;
+    const img = ctx.getImageData(0, 0, w, h);
+    const d = img.data;
+    const cx = w / 2, cy = h * 0.42;
+    const R2 = (w / 2) ** 2 + (h * 0.58) ** 2;
+    const con = 1 + amt * 0.25;
+    /* мягкое плечо: яркое подходит к белому плавно, лицо не превращается в пятно */
+    const knee = (v) => (v <= 200 ? v : 200 + (v - 200) / (1 + (v - 200) / 55));
+    for (let y = 0; y < h; y++) {
+      const dy2 = (y - cy) ** 2;
+      for (let x = 0; x < w; x++) {
+        const i = (y * w + x) * 4;
+        const fall = 1 / (1 + (((x - cx) ** 2 + dy2) / R2) * 2.4);
+        const lit = 1 + amt * (fall * 0.55 - 0.32);
+        let r = knee((d[i] * lit - 128) * con + 128 + amt * 10 * fall);
+        let g = knee((d[i + 1] * lit - 128) * con + 128 + amt * 10 * fall);
+        let b = knee((d[i + 2] * lit - 128) * con + 128 + amt * 15 * fall);
+        const l = r * 0.3 + g * 0.59 + b * 0.11;
+        if (l > 215) {
+          const k = Math.min(1, ((l - 215) / 40) * amt * 0.6);
+          r += (255 - r) * k; g += (255 - g) * k; b += (255 - b) * k;
+        }
+        d[i] = r; d[i + 1] = g; d[i + 2] = b;
+      }
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+
+  /* Дата в углу, как печатала цифровая мыльница: оранжевые цифры со свечением, чуть наклонные.
+     ds: вид ('digi' '26 11 12, 'dots' 12.11.2026, 'en' NOV 12 '26), dsD: дата (пусто значит сегодня), dsC: цвет. */
+  const STAMP_TYPES = ['digi', 'dots', 'en'];
+  function stampText(a) {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(a.dsD || '');
+    const now = new Date();
+    const Y = m ? m[1] : String(now.getFullYear());
+    const M = m ? m[2] : String(now.getMonth() + 1).padStart(2, '0');
+    const D = m ? m[3] : String(now.getDate()).padStart(2, '0');
+    if (a.ds === 'dots') return `${D}.${M}.${Y}`;
+    if (a.ds === 'en') return `${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][Number(M) - 1] || 'JAN'} ${Number(D)} '${Y.slice(2)}`;
+    return `'${Y.slice(2)} ${M} ${D}`;
+  }
+  function drawStamp(ctx, w, h, a) {
+    const m = Math.max(w, h);
+    const size = Math.max(7, m * 0.036);
+    const [r, g, b] = hexRgb(a.dsC || '#ff8a1f');
+    const text = stampText(a);
+    ctx.save();
+    ctx.font = `bold ${size}px "Courier New", ui-monospace, monospace`;
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'alphabetic';
+    const pad = m * 0.045;
+    ctx.translate(w - pad, h - pad);
+    ctx.transform(1, 0, -0.12, 1, 0, 0);
+    ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
+    ctx.shadowBlur = size * 0.45;
+    ctx.fillStyle = `rgb(${r},${g},${b})`;
+    ctx.fillText(text, 0, 0);
+    /* светлая сердцевина цифр, как у светодиодов */
+    ctx.shadowBlur = 0;
+    ctx.globalCompositeOperation = 'screen';
+    ctx.globalAlpha = 0.55;
+    ctx.fillStyle = `rgb(${(r + 255) >> 1},${(g + 230) >> 1},${(b + 180) >> 1})`;
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
+  }
+
+  let sparkClock = null;
   const SPARKLE_TYPES = ['rays', 'glitter', 'twinkle', 'stars', 'hearts', 'bokeh'];
   function drawSparkles(ctx, w, h, a) {
     const amount = Number(a.spA) || 0;
@@ -798,6 +868,8 @@
     let seed = 11;
     const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
     const k = amount / 100;
+    /* в видео каждая блёстка мерцает в своём ритме; на снимке горит ровно */
+    const blink = (i) => (sparkClock == null ? 1 : 0.25 + 0.75 * (0.5 + 0.5 * Math.sin(sparkClock * (2.2 + (i % 7) * 0.45) + i * 2.399)));
     const glow = (x, y, r, alpha) => {
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
       g.addColorStop(0, col(alpha, 0.7));
@@ -821,6 +893,7 @@
       /* много мелких точек, часть переливается соседними оттенками */
       const n = Math.round(k * 900);
       for (let i = 0; i < n; i++) {
+        ctx.globalAlpha = blink(i);
         const x = rnd() * w, y = rnd() * h;
         /* не тоньше полупикселя, иначе самая мелкая пыль пропадает совсем */
         const r = Math.max(0.5, m * 0.0026 * size * (0.4 + rnd() * 1.2));
@@ -835,6 +908,7 @@
       /* мягкие круги света с более светлой кромкой */
       const n = Math.round(k * 40);
       for (let i = 0; i < n; i++) {
+        ctx.globalAlpha = blink(i);
         const x = rnd() * w, y = rnd() * h;
         const r = m * (0.02 + rnd() * 0.05) * size;
         const g = ctx.createRadialGradient(x, y, r * 0.2, x, y, r);
@@ -850,6 +924,7 @@
     } else {
       const n = Math.round(k * (type === 'rays' ? 70 : 45));
       for (let i = 0; i < n; i++) {
+        ctx.globalAlpha = blink(i);
         const x = rnd() * w, y = rnd() * h;
         const big = rnd() < (type === 'rays' ? 0.18 : 0.35);
         const s = m * size * (big ? 0.02 + rnd() * 0.035 : 0.006 + rnd() * 0.012);
@@ -1104,13 +1179,16 @@
       }
     }
     ctx.putImageData(img, 0, 0);
+    if (Number(a.fl)) drawFlash(ctx, w, h, a);
     if (Number(a.lkA)) drawLeak(ctx, w, h, a);
     if (Number(a.spA)) drawSparkles(ctx, w, h, a);
+    if (STAMP_TYPES.includes(a.ds)) drawStamp(ctx, w, h, a);
   }
 
   /* Готовые шаблоны цвета. adjust: значения ползунков при силе 100%. */
   const LOOKS = [
     { id: 'film', name: 'Плёнка', adjust: { c: -8, f: 30, w: 8, t: 4, s: -12, tsC: '#2a6b6b', tsA: 30, thC: '#ffcf9e', thA: 22, g: 25 } },
+    { id: 'flash', name: 'Вспышка', adjust: { fl: 70, s: -6, w: -4, v: 10, g: 18 } },
     { id: 'warm', name: 'Тёплый вечер', adjust: { w: 30, t: 6, s: 10, hl: -20, thC: '#ffb36b', thA: 28, v: 18 } },
     { id: 'cold', name: 'Холодное утро', adjust: { w: -28, t: -4, b: 6, s: -15, f: 12, tsC: '#3a5f9e', tsA: 28 } },
     { id: 'bw', name: 'Ч/б с зерном', adjust: { s: -100, c: 18, g: 40, v: 15 } },
@@ -1175,7 +1253,19 @@
     if (!srcIds.has(src)) srcIds.set(src, ++srcCount);
     return srcIds.get(src);
   };
-  function drawPhoto(s, slots, w, h, name) {
+  function drawPhoto(s0, slots, w, h, name) {
+    /* в видео с блёстками фото обрабатывается один раз, а блёстки рисуются поверх в каждом кадре */
+    const twinkle = sparkClock != null && Number(s0.adjust.spA) > 0;
+    const s = twinkle ? { ...s0, adjust: { ...s0.adjust, spA: 0 } } : s0;
+    const base = drawPhotoBase(s, slots, w, h, name);
+    if (!twinkle) return base;
+    const top = buffer(`${name}-spark`, base.width, base.height);
+    top.x.clearRect(0, 0, base.width, base.height);
+    top.x.drawImage(base, 0, 0);
+    drawSparkles(top.x, base.width, base.height, s0.adjust);
+    return top.c;
+  }
+  function drawPhotoBase(s, slots, w, h, name) {
     const bname = neutral(s.adjust) ? name : `${name}-read`;
     const still = slots.every((sl) => !sl.src || (sl.src.kind !== 'video' && sl.src.kind !== 'live'));
     const key = still ? JSON.stringify([Math.round(w), Math.round(h), s.adjust, slots.map((sl) => [srcId(sl.src), sl.x, sl.y, sl.zoom, sl.flip, sl.turn, sl.tilt || 0])]) : null;
@@ -1935,5 +2025,7 @@
     RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
     onLut: (fn) => { lutListener = fn; }, layerThumb, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
+    /* время для мерцания блёсток в видео; null — неподвижная картинка */
+    setClock: (t) => { sparkClock = t; },
   };
 })();

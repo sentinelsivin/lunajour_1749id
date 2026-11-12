@@ -89,6 +89,7 @@
       <button type="button" id="seriesPrev" aria-label="Предыдущее фото" title="Предыдущее фото (←)">‹</button>
       <span id="seriesCount"></span>
       <button type="button" id="seriesNext" aria-label="Следующее фото" title="Следующее фото (→)">›</button>
+      <button type="button" id="seriesAdd" aria-label="Добавить фото в серию" title="Добавить фото с этой обработкой">+</button>
       <button type="button" id="seriesEnd" aria-label="Закончить серию" title="Закончить серию, оставить это фото">×</button>
     </div>
     <div class="resume" id="resumeCard" hidden>
@@ -322,8 +323,9 @@
         <div class="row">
           <button class="btn primary" id="photoReplace" type="button">Заменить фото</button>
           <button class="btn" id="photoReshoot" type="button">Снять заново</button>
+          <button class="btn" id="photoAdd" type="button" title="Новые фото получат то же оформление и цвет, получится серия">+ Ещё фото</button>
         </div>
-        <p class="hint">Новое фото встаёт на место старого, всё оформление остаётся. Можно выбрать сразу несколько: получится серия.</p>
+        <p class="hint">Новое фото встаёт на место старого, всё оформление остаётся. Можно выбрать сразу несколько: получится серия. «+ Ещё фото» добавляет снимки к этому, с той же обработкой.</p>
         <p class="hint">Двигай снимок прямо на карточке. На компьютере масштаб меняется колесом мыши.</p>
         <p class="hint" id="cellHint" hidden>В коллаже сначала нажми на ячейку, потом двигай в ней снимок.</p>
         <div class="group" id="slotGroup" hidden><span class="label">Какой снимок</span>
@@ -354,6 +356,12 @@
           <label class="slider">Тени<input id="adjSh" type="range" min="-100" max="100" data-bind="adjust.sh"></label>
           <label class="slider">Света<input id="adjHl" type="range" min="-100" max="100" data-bind="adjust.hl"></label>
           <label class="slider">Выцветание<input id="adjF" type="range" min="0" max="100" data-bind="adjust.f"></label>
+          <label class="slider">Вспышка мыльницы<input id="adjFl" type="range" min="0" max="100" data-bind="adjust.fl"></label>
+          <span class="label">Дата в углу</span><div class="chips" id="stampType"></div>
+          <div class="group" id="stampTools" hidden>
+            <label class="field">День на фото<input id="adjDsD" type="date"></label>
+            <div class="swatches" id="stampColor"></div>
+          </div>
         </div>
         <div class="group" data-asub="color" hidden>
           <label class="slider">Насыщенность<input id="adjS" type="range" min="-100" max="80" data-bind="adjust.s"></label>
@@ -589,12 +597,15 @@
     <button class="btn" id="shareCard" type="button" hidden>Поделиться</button>
     <button class="btn primary" id="saveAll" type="button" hidden>Сохранить всю серию</button>
     <button class="btn" id="shareAll" type="button" hidden>Поделиться всей серией</button>
+    <button class="btn" id="saveSeriesVideo" type="button" hidden>Видео из серии, как гифка</button>
+    <label class="field" id="seriesPaceField" hidden>Скорость смены кадров<select id="seriesPace"><option value="300">Быстро</option><option value="600" selected>Обычно</option><option value="1100">Медленно</option></select></label>
   </div>
   <p class="hint" id="exportStatus" role="status"></p>
 </dialog>
 
 <div class="toast" id="toast" role="status" hidden></div>
 <input id="filePhoto" type="file" accept="image/*,video/*" multiple hidden>
+<input id="fileMore" type="file" accept="image/*" multiple hidden>
 <input id="fileBg" type="file" accept="image/*" hidden>
 <input id="fileMask" type="file" accept="image/*" hidden>
 <input id="fileSticker" type="file" accept="image/*" multiple hidden>
