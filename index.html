@@ -26,11 +26,11 @@
     </div>
     <div class="top-side">
       <div class="history">
-        <button class="btn small icon edit-only" id="retake" type="button" aria-label="Новый снимок" title="Новый снимок"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 6.5h3l1.5-2h6l1.5 2h3v10h-15z"/><circle cx="10" cy="11" r="3.2"/></svg></button>
+        <button class="btn small icon" id="searchBtn" type="button" aria-label="Найти функцию" title="Найти функцию (Ctrl+K)"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="M13 13l4.5 4.5"/></svg></button>
         <button class="btn small" id="undoBtn" type="button" aria-label="Отменить" title="Отменить (Ctrl+Z)" disabled>↶</button>
         <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть (Ctrl+Shift+Z)" disabled>↷</button>
         <button class="btn small icon edit-only" id="compareBtn" type="button" aria-label="Сравнить с исходным фото" title="Нажми: шторка до и после. Удерживай: без эффектов и цвета (пробел)"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg></button>
-        <button class="btn small icon" id="moreBtn" type="button" aria-label="Ещё" title="Ещё: стили, начать заново, язык" aria-expanded="false" aria-controls="moreMenu">⋯</button>
+        <button class="btn small icon" id="moreBtn" type="button" aria-label="Ещё" title="Меню: план ленты, мой набор, стили, язык" aria-expanded="false" aria-controls="moreMenu">⋯</button>
         <button class="btn small primary edit-only" id="finish" type="button">Готово</button>
       </div>
       <span class="readout" id="readout"></span>
@@ -38,14 +38,7 @@
   </header>
 
   <div class="more-menu" id="moreMenu" hidden>
-        <button class="btn primary" id="moreReplace" type="button">Заменить фото</button>
-        <div class="group"><span class="label">Мои стили</span>
-          <div class="thumbs" id="styleGrid"></div>
-          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
-        </div>
-        <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
-          <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
-        </div>
+        <span class="menu-head">Для блога</span>
         <button class="btn" id="feedBtn" type="button">План ленты</button>
         <button class="btn" id="brandBtn" type="button">Мой набор: ник и цвета</button>
         <div class="group"><span class="label">Безопасные зоны</span>
@@ -58,13 +51,23 @@
           </div>
           <p class="hint">Розовым видно, что закроют кнопки и подписи. «Сетка»: что останется в профиле. В файл не попадает.</p>
         </div>
-        <button class="btn" id="keysBtn" type="button">Клавиши</button>
+        <span class="menu-head">Эта карточка</span>
+        <div class="group"><span class="label">Мои стили</span>
+          <div class="thumbs" id="styleGrid"></div>
+          <p class="hint">Стиль запоминает оформление: формат, бумагу, фигуру, коллаж, эффекты, сканер, подпись и стикеры. Твои фото не меняются.</p>
+        </div>
+        <button class="btn" id="retake" type="button">Новый снимок</button>
+        <div class="group"><button class="btn" id="resetCard" type="button">Начать заново</button>
+          <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
+        </div>
+        <span class="menu-head">Приложение</span>
         <div class="group"><span class="label">Язык</span>
           <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
             <button type="button" data-v="ru">RU</button>
             <button type="button" data-v="en">EN</button>
           </div>
         </div>
+        <button class="btn" id="keysBtn" type="button">Клавиши</button>
   </div>
 
   <div class="more-menu keys-sheet" id="keysSheet" role="dialog" aria-label="Клавиши" hidden>
@@ -72,6 +75,7 @@
     <dl class="keys">
       <dt><kbd>Ctrl+Z</kbd></dt><dd>Отменить</dd>
       <dt><kbd>Ctrl+Shift+Z</kbd> <kbd>Ctrl+Y</kbd></dt><dd>Вернуть</dd>
+      <dt><kbd>Ctrl+K</kbd> <kbd>/</kbd></dt><dd>Найти функцию</dd>
       <dt><kbd>Ctrl+S</kbd></dt><dd>Сохранить карточку</dd>
       <dt><kbd>Пробел</kbd></dt><dd>Удерживать: без эффектов</dd>
       <dt><kbd>Ctrl+V</kbd></dt><dd>Вставить картинку стикером</dd>
@@ -143,23 +147,20 @@
     </div>
 
 
-    <nav class="tools" id="tools" aria-label="Инструменты">
-      <button type="button" data-tab="motion" data-g="shape" hidden><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l9 6-9 6z"/><path d="M16.5 6.5c1 1 1 6 0 7" stroke-linecap="round"/></svg><span>Движение</span></button>
-      <button type="button" data-tab="motif" data-g="shape"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M10 2l2.4 5 5.6.6-4.2 3.8 1.2 5.6L10 14.3 5 17l1.2-5.6L2 7.6l5.6-.6z"/></svg><span>Фигуры</span></button>
-      <button type="button" data-tab="collage" data-g="shape"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg><span>Коллаж</span></button>
-      <button type="button" data-tab="format" data-g="shape"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="4.5" y="2.5" width="11" height="15" rx="1"/></svg><span>Формат</span></button>
-      <button type="button" data-tab="photo" data-g="photo"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 2v13h13M2 5h13v13"/></svg><span>Кадр</span></button>
-      <button type="button" data-tab="color" data-g="photo"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h14M3 14h14"/><circle cx="7" cy="6" r="2" fill="var(--surface1)"/><circle cx="13" cy="14" r="2" fill="var(--surface1)"/></svg><span>Цвет</span></button>
-      <button type="button" data-tab="fx" data-g="photo"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/></svg><span>Эффекты</span></button>
-      <button type="button" data-tab="layers" data-g="over"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7.5"/><path d="M7 12c1.6 1.6 4.4 1.6 6 0"/><path d="M7.5 8h.01M12.5 8h.01" stroke-linecap="round" stroke-width="2.4"/></svg><span>Стикеры</span></button>
-      <button type="button" data-tab="note" data-g="over"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12M10 4v13"/></svg><span>Подпись</span></button>
-      <button type="button" data-tab="paper" data-g="bg"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4 2h9l3 3v13H4z"/><path d="M13 2v3h3"/></svg><span>Бумага</span></button>
+    <nav class="tools" id="tools" aria-label="Разделы">
+      <button type="button" data-sec="photo"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="5" width="15" height="11" rx="1.5"/><circle cx="10" cy="10.5" r="3"/><path d="M7 5l1.2-2h3.6L13 5"/></svg><span>Фото</span></button>
+      <button type="button" data-sec="color"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h14M3 14h14"/><circle cx="7" cy="6" r="2" fill="var(--surface1)"/><circle cx="13" cy="14" r="2" fill="var(--surface1)"/></svg><span>Цвет</span></button>
+      <button type="button" data-sec="fx"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/></svg><span>Эффекты</span></button>
+      <button type="button" data-sec="layout"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/></svg><span>Макет</span></button>
+      <button type="button" data-sec="text"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h12M10 4v13"/></svg><span>Текст</span></button>
+      <button type="button" data-sec="video" hidden><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><path d="M5 4l9 6-9 6z"/><path d="M16.5 6.5c1 1 1 6 0 7" stroke-linecap="round"/></svg><span>Видео</span></button>
     </nav>
     <div class="panel-head" id="panelHead">
       <button class="icon-btn" id="toolCancel" type="button" aria-label="Отменить изменения">✕</button>
       <span class="panel-title" id="toolTitle"></span>
       <button class="icon-btn ok" id="toolDone" type="button" aria-label="Готово">✓</button>
     </div>
+    <div class="chips sec-tabs" id="secTabs" hidden></div>
 
     <div class="panels">
       <section class="panel" data-panel="motion" hidden>
@@ -180,6 +181,12 @@
           <label class="check"><input id="txtAll" type="checkbox" data-bind="motion.txtAll">Стикеры тоже появляются по очереди</label>
           <p class="hint">По очереди: подпись, место с датой, штамп, потом надписи-стикеры снизу вверх по слоям. Пока открыты «Подпись» или «Стикеры», текст виден целиком.</p>
         </div>
+        <div class="group" id="motScan" hidden>
+          <div class="group"><span class="label">Сканер в ролике</span><div class="chips" id="scanMotion"></div></div>
+          <p class="hint" id="scanMotionHint"></p>
+          <label class="check"><input type="checkbox" data-bind="scan.anim">Живое сканирование: рамки появляются по одной, подписи печатаются</label>
+        </div>
+        <p class="hint" id="motFxHint" hidden>Глитч в ролике ломается заново несколько раз в секунду. Выключить: «Эффекты» → эффект → «Живой в видео».</p>
         <p class="hint">Карточка двигается так, как будет в ролике: блёстки мерцают, глитч дёргается, фото серии сменяются. Свой трек: MP3, M4A или WAV. В конце ролика музыка плавно затихает.</p>
       </section>
 
@@ -397,12 +404,6 @@
           <label class="slider">Тени<input id="adjSh" type="range" min="-100" max="100" data-bind="adjust.sh"></label>
           <label class="slider">Света<input id="adjHl" type="range" min="-100" max="100" data-bind="adjust.hl"></label>
           <label class="slider">Выцветание<input id="adjF" type="range" min="0" max="100" data-bind="adjust.f"></label>
-          <label class="slider">Вспышка мыльницы<input id="adjFl" type="range" min="0" max="100" data-bind="adjust.fl"></label>
-          <span class="label">Дата в углу</span><div class="chips" id="stampType"></div>
-          <div class="group" id="stampTools" hidden>
-            <label class="field">День на фото<input id="adjDsD" type="date"></label>
-            <div class="swatches" id="stampColor"></div>
-          </div>
         </div>
         <div class="group" data-asub="color" hidden>
           <label class="slider">Насыщенность<input id="adjS" type="range" min="-100" max="80" data-bind="adjust.s"></label>
@@ -425,24 +426,34 @@
           <label class="slider">Свечение<input id="adjGl" type="range" min="0" max="100" data-bind="adjust.gl"></label>
           <label class="slider">Размер свечения<input id="adjGlR" type="range" min="0" max="100" data-bind="adjust.glR"></label>
           <label class="slider">Сдвиг красного канала<input id="adjCa" type="range" min="0" max="12" step="0.5" data-bind="adjust.ca"></label>
-          <label class="slider">Блёстки<input id="adjSp" type="range" min="0" max="100" data-bind="adjust.spA"></label>
-          <div class="group" id="sparkTools" hidden>
-            <span class="label">Вид блёсток</span><div class="chips" id="sparkType"></div>
-            <label class="slider">Размер блёсток<input id="adjSpS" type="range" min="0.1" max="3" step="0.02" data-def="1" data-bind="adjust.spS"></label>
-            <span class="label">Цвет блёсток</span><div class="swatches" id="sparkColor"></div>
-          </div>
-          <label class="slider">Засветка<input id="adjLk" type="range" min="0" max="100" data-bind="adjust.lkA"></label>
-          <div class="group" id="leakTools"><span class="label">Откуда засветка</span><div class="chips" id="leakSide"></div>
-            <div class="swatches" id="leakColor"></div>
-          </div>
           <label class="slider">Виньетка: светлее или темнее к краям<input id="adjV" type="range" min="-100" max="100" data-bind="adjust.v"></label>
-          <label class="slider">Зерно<input id="adjG" type="range" min="0" max="100" data-bind="adjust.g"></label>
         </div>
         <div class="row">
           <button class="btn" id="lookSave" type="button">Сохранить как шаблон</button>
           <button class="btn" id="lookCube" type="button" title="Цветовая таблица .cube: из Фотошопа, Lightroom или скачанная. Можно просто перетащить файл в окно.">Загрузить LUT</button>
           <button class="btn" id="adjReset" type="button">Сбросить цвет</button>
         </div>
+      </section>
+
+      <section class="panel" data-panel="film" hidden>
+        <p class="hint">Всё, что делает снимок похожим на плёнку или старый фотоаппарат.</p>
+        <label class="slider">Блёстки<input id="adjSp" type="range" min="0" max="100" data-bind="adjust.spA"></label>
+        <div class="group" id="sparkTools" hidden>
+          <span class="label">Вид блёсток</span><div class="chips" id="sparkType"></div>
+          <label class="slider">Размер блёсток<input id="adjSpS" type="range" min="0.1" max="3" step="0.02" data-def="1" data-bind="adjust.spS"></label>
+          <span class="label">Цвет блёсток</span><div class="swatches" id="sparkColor"></div>
+        </div>
+        <label class="slider">Засветка<input id="adjLk" type="range" min="0" max="100" data-bind="adjust.lkA"></label>
+        <div class="group" id="leakTools"><span class="label">Откуда засветка</span><div class="chips" id="leakSide"></div>
+          <div class="swatches" id="leakColor"></div>
+        </div>
+        <label class="slider">Вспышка мыльницы<input id="adjFl" type="range" min="0" max="100" data-bind="adjust.fl"></label>
+        <span class="label">Дата в углу</span><div class="chips" id="stampType"></div>
+        <div class="group" id="stampTools" hidden>
+          <label class="field">День на фото<input id="adjDsD" type="date"></label>
+          <div class="swatches" id="stampColor"></div>
+        </div>
+        <label class="slider">Зерно<input id="adjG" type="range" min="0" max="100" data-bind="adjust.g"></label>
       </section>
 
       <section class="panel" data-panel="fx" hidden>
@@ -523,11 +534,8 @@
               <label class="field" id="scanStatusField">Статусы внизу<input type="text" maxlength="200" data-bind="scan.status" placeholder="Biometric identification ON"></label>
             </div>
             <div class="group" data-sub="video" hidden>
-              <div class="group"><span class="label">Рамки в видео</span><div class="chips" id="scanMotion"></div></div>
-              <p class="hint" id="scanMotionHint"></p>
-              <label class="check"><input type="checkbox" data-bind="scan.anim">Живое сканирование: рамки появляются по одной, подписи печатаются</label>
-              <button class="btn" id="scanPlay" type="button">▶ Проиграть</button>
-              <p class="hint">Так сканер будет двигаться в сохранённом видео.</p>
+              <p class="hint">Как сканер двигается в ролике, теперь настраивается в разделе «Видео».</p>
+              <button class="btn" id="scanToVideo" type="button">Открыть «Видео»</button>
             </div>
           </div>
         </div>
@@ -638,6 +646,11 @@
     <button class="btn" id="retakeFresh" type="button">Начать с нуля</button>
   </div>
   <p class="hint">Оформление: формат, бумага, фигура, коллаж, эффекты, цвет, сканер, стикеры и подпись.</p>
+</dialog>
+<dialog class="sheet search-sheet" id="searchSheet" aria-label="Найти функцию">
+  <input id="searchInput" type="search" placeholder="Что найти: блёстки, музыка, ник…" autocomplete="off" aria-label="Что найти">
+  <div class="search-list" id="searchList" role="listbox"></div>
+  <p class="hint">↑ ↓ выбрать, Enter открыть, Esc закрыть.</p>
 </dialog>
 <dialog class="sheet" id="feedSheet" aria-labelledby="feedTitle">
   <div class="sheet-head">

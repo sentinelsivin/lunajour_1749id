@@ -97,7 +97,7 @@
   /* В коллаже фигуры, раскладка бумаги и будка не нужны: прячем их. */
   function syncKind() {
     const on = !!collageTpl();
-    document.querySelector('[data-tab="motif"]').hidden = on;
+    if ($('secTabs')) syncSecTabs();
     $('paperPosGroup').hidden = on;
     $('cellTools').hidden = !on;
     $('cellHint').hidden = !on;
@@ -288,7 +288,7 @@
     else playT0 = performance.now();
     syncMotion();
     update();
-    if (v === 'video') toast(t('Режим видео: карточка двигается, как в ролике. Длина и музыка во вкладке «Движение».'));
+    if (v === 'video') toast(t('Режим видео: карточка двигается, как в ролике. Длина и музыка в разделе «Видео» внизу.'));
   }
   /* загрузили видео: сразу режим «Видео», длина ролика по клипу */
   function autoVideo() {
@@ -304,7 +304,9 @@
     markSeg($('outSeg'), state.out);
     $('outBar').hidden = phase !== 'edit';
     $('playBtn').hidden = !video;
-    document.querySelector('#tools [data-tab="motion"]').hidden = !video;
+    document.querySelector('#tools [data-sec="video"]').hidden = !video;
+    $('motScan').hidden = !state.scan.on;
+    $('motFxHint').hidden = !Effects.animates(state);
     if (!video && tab === 'motion') setTab('');
     const m = state.motion;
     const box = $('musicChips');
@@ -1304,17 +1306,21 @@
       toast(fileError());
       return;
     }
+    /* пример и живая камера в серию не попадают: в ней только свои снимки */
     if (!series) series = { items: [slots[0]], i: 0 };
     else series.items[series.i] = slots[0];
-    const start = series.items.length;
-    series.items.push(...srcs.map((src) => newSlot(src)));
-    series.i = start;
-    slots = [series.items[start]];
+    const own = series.items.filter(hasPhoto);
+    const start = own.length;
+    own.push(...srcs.map((src) => newSlot(src)));
+    series = own.length > 1 ? { items: own, i: start } : null;
+    slots = [own[start]];
     activeSlot = 0;
+    autoVideo();
     syncSeries();
     syncSlotUI();
     update();
-    toast(`${t('Добавлено фото')}: ${srcs.length}. ${t('Обработка та же, листай стрелками под карточкой.')}`);
+    if (!series) toast(t('Пример заменён, оформление осталось.'));
+    else toast(`${t('Добавлено фото')}: ${srcs.length}. ${t('Обработка та же, листай стрелками под карточкой.')}`);
   }
   const canAddPhotos = () => phase === 'edit' && !collageTpl() && slots.length === 1;
   function syncSeries() {
@@ -1383,14 +1389,13 @@
 
   function bindPhotos() {
     const sheet = $('retakeSheet');
-    $('retake').onclick = () => sheet.showModal();
+    $('retake').onclick = () => { setMore(false); sheet.showModal(); };
     $('retakeClose').onclick = () => sheet.close();
     $('retakeKeep').onclick = () => { sheet.close(); reshootPhoto(); };
     $('retakeGallery').onclick = () => { sheet.close(); pickReplacement(); };
     $('retakeFresh').onclick = () => { sheet.close(); startFresh(); };
     $('photoReplace').onclick = pickReplacement;
     $('photoReshoot').onclick = reshootPhoto;
-    $('moreReplace').onclick = () => { setMore(false); pickReplacement(); };
     $('seriesPrev').onclick = () => goSeries(-1);
     $('seriesNext').onclick = () => goSeries(1);
     $('seriesEnd').onclick = () => {
@@ -2101,6 +2106,11 @@
     document.addEventListener('keydown', (e) => {
       if (typing()) return;
       const mod = e.ctrlKey || e.metaKey;
+      if ((mod && e.code === 'KeyK') || (!mod && e.key === '/')) {
+        e.preventDefault();
+        openSearch();
+        return;
+      }
       if (mod && e.code === 'KeyS') {
         e.preventDefault();
         const save = state.out === 'video' && Camera.videoMime() ? 'saveVideo' : 'saveCard';
@@ -3966,9 +3976,9 @@
     $('scanFont').onchange = (e) => setScan({ font: e.target.value });
     $('scanDossierHome').onclick = () => setScan({ dossier: { ...state.scan.dossier, x: null, y: null } });
     $('scanMineDelete').onclick = () => deleteUserPreset(state.scan.preset);
-    $('scanPlay').onclick = () => {
-      scanPlay = performance.now();
-      invalidate();
+    $('scanToVideo').onclick = () => {
+      setOut('video');
+      openTool('motion');
     };
     $('scanSub').addEventListener('click', (e) => {
       const b = e.target.closest('button');
@@ -5024,12 +5034,14 @@
     });
 
     $('tools').addEventListener('click', (e) => {
-      const b = e.target.closest('[data-tab]');
+      const b = e.target.closest('[data-sec]');
       if (!b) return;
-      /* вкладки видны и при открытой панели: нажатие на другую переключает сразу, правки прошлой остаются,
-         нажатие на открытую закрывает её */
-      if (b.dataset.tab === tab) closeTool(true);
-      else openTool(b.dataset.tab);
+      /* разделы видны и при открытой панели: нажатие на другой переключает сразу, правки прошлого остаются,
+         нажатие на открытый закрывает его. Открывается та вкладка раздела, где была в прошлый раз */
+      const sec = SECTIONS.find((x) => x.id === b.dataset.sec);
+      if (secOf(tab) === sec) return closeTool(true);
+      const list = visibleTabs(sec);
+      openTool(list.some(([id]) => id === lastTab[sec.id]) ? lastTab[sec.id] : list[0][0]);
     });
     $('toolDone').onclick = () => closeTool(true);
     $('toolCancel').onclick = () => closeTool(false);
@@ -5225,6 +5237,191 @@
     buildPalette();
   }
 
+  /* ---------- разделы: пять снизу, внутри вкладки ---------- */
+  /* Раздел — это задача («что я сейчас делаю»), вкладки внутри — её части. Сами панели прежние. */
+  const SECTIONS = [
+    { id: 'photo', name: 'Фото', tabs: [['photo', 'Кадр']] },
+    { id: 'color', name: 'Цвет', tabs: [['color', 'Цвет']] },
+    { id: 'fx', name: 'Эффекты', tabs: [['fx', 'Эффекты'], ['film', 'Блёстки и плёнка'], ['motif', 'Фигуры']] },
+    { id: 'layout', name: 'Макет', tabs: [['collage', 'Коллаж'], ['paper', 'Бумага'], ['format', 'Размер']] },
+    { id: 'text', name: 'Текст', tabs: [['note', 'Подпись'], ['layers', 'Стикеры и надписи']] },
+    { id: 'video', name: 'Видео', tabs: [['motion', 'Видео']] },
+  ];
+  const lastTab = {};
+  const secOf = (id) => SECTIONS.find((x) => x.tabs.some(([tb]) => tb === id));
+  /* в коллаже фигур нет */
+  const visibleTabs = (sec) => sec.tabs.filter(([id]) => !(id === 'motif' && collageTpl()));
+  function syncSecTabs() {
+    const sec = secOf(tab);
+    document.querySelectorAll('#tools [data-sec]').forEach((b) => b.classList.toggle('on', !!sec && b.dataset.sec === sec.id));
+    const box = $('secTabs');
+    const list = sec ? visibleTabs(sec) : [];
+    box.hidden = list.length < 2;
+    box.replaceChildren();
+    list.forEach(([id, name]) => chip(box, t(name), id === tab, () => {
+      if (id === tab) return;
+      document.querySelector('.panels').scrollTop = 0;
+      setTab(id);
+      showHint(id);
+    }));
+  }
+
+  /* ---------- поиск функций: пишешь, что нужно, и сразу попадаешь в нужное место ---------- */
+  /* [название, слова для поиска, куда, что подсветить, уточнение]. «Куда» — вкладка или особое место с «#». */
+  const FIND = [
+    ['Заменить фото', 'фото поменять другое галерея replace photo', 'photo', 'photoReplace'],
+    ['Ещё фото с этой обработкой', 'серия добавить несколько фотодамп series more photos', 'photo', 'photoAdd'],
+    ['Снять заново', 'камера переснять camera reshoot', 'photo', 'photoReshoot'],
+    ['Кадрирование и масштаб', 'обрезать приблизить сдвинуть кадр crop zoom', 'photo', 'slotZoom'],
+    ['Наклон горизонта', 'выпрямить повернуть tilt horizon rotate', 'photo', 'slotTilt'],
+    ['Шаблоны цвета', 'фильтр пресет лут look filter preset polarr', 'color', 'lookGrid'],
+    ['Яркость и контраст', 'свет тени света выцветание brightness contrast', 'color', 'adjB', 'light'],
+    ['Насыщенность и теплота', 'цвет тёплый холодный оттенок saturation warmth', 'color', 'adjS', 'color'],
+    ['Тонировка теней и светов', 'кино бирюза персик toning tint', 'color', 'adjTsA', 'tone'],
+    ['Резкость и чёткость', 'резче мягче размыть sharpen clarity blur', 'color', 'adjK', 'detail'],
+    ['Свечение', 'сияние glow', 'color', 'adjGl', 'detail'],
+    ['Виньетка', 'края темнее vignette', 'color', 'adjV', 'detail'],
+    ['Загрузить LUT', 'cube таблица lut photoshop lightroom', 'color', 'lookCube'],
+    ['Эффекты', 'глитч буквы точки ascii пиксели слова glitch effects', 'fx', 'fxCats'],
+    ['Сканер', 'рамки распознавание камера наблюдения досье scanner', 'fx', 'fxCats', 'scan'],
+    ['Блёстки', 'искры звёздочки сердечки боке пыль sparkles glitter', 'film', 'adjSp'],
+    ['Засветка', 'плёнка свет пятно light leak', 'film', 'adjLk'],
+    ['Вспышка мыльницы', 'вспышка мыльница y2k flash', 'film', 'adjFl'],
+    ['Дата в углу', 'дата штамп мыльница цифры date stamp', 'film', 'stampType'],
+    ['Зерно', 'плёнка шум grain noise', 'film', 'adjG'],
+    ['Фигуры', 'звёзды сердечки вырезы формы дырки shapes', 'motif', null],
+    ['Коллаж', 'сетка шаблон несколько фото фотобудка полароид collage', 'collage', null],
+    ['Бумага и фон', 'фон текстура цвет бумаги paper background', 'paper', null],
+    ['Размер карточки', 'формат 9:16 4:5 1:1 сторис размер ratio size', 'format', 'ratioList'],
+    ['Карусель', 'слайды панорама instagram carousel slides', 'format', 'carouselN'],
+    ['Где лежит бумага', 'раскладка снизу сверху сбоку layout', 'format', 'paperPosGroup'],
+    ['Подпись', 'текст заголовок место дата штамп настроение caption', 'note', 'noteTitle'],
+    ['Шрифт подписи', 'шрифт буквы font', 'note', 'fontList'],
+    ['Стикеры и эмодзи', 'наклейки эмодзи картинка значки stickers emoji', 'layers', null],
+    ['Добавить надпись', 'текст надпись стикер text', 'layers', 'textAdd'],
+    ['Своя картинка-стикер', 'картинка png вырезать фон sticker image', 'layers', 'stickerUpload'],
+    ['Мой ник', 'ник подпись водяной знак автор handle watermark', '#brand', 'brandHandle'],
+    ['Фирменные цвета', 'цвета бренд палитра brand colors', '#brand', 'brandColors'],
+    ['План ленты', 'профиль сетка лента инстаграм feed grid', '#feed', null],
+    ['Безопасные зоны', 'сторис reels tiktok кнопки обрезка safe zones', '#more', 'zoneSeg'],
+    ['Мои стили', 'стиль сохранить оформление шаблон styles', '#more', 'styleGrid'],
+    ['Новый снимок', 'новое фото камера new photo', '#more', 'retake'],
+    ['Начать заново', 'сбросить очистить reset', '#more', 'resetCard'],
+    ['Язык', 'english русский language', '#more', 'langSeg'],
+    ['Режим видео', 'ролик видео анимация движение video', '#video', 'outSeg'],
+    ['Музыка', 'трек песня звук music sound', 'motion', 'musicChips'],
+    ['Длина ролика', 'секунды время длительность duration', 'motion', 'motDur'],
+    ['Шторка «до / после» в ролике', 'до после сравнение before after', 'motion', 'motWipe'],
+    ['Текст появляется в ролике', 'анимация текста печатается typing animation', 'motion', 'txtKind'],
+    ['Сравнить с исходным', 'до после сравнить шторка compare', '#el', 'compareBtn'],
+    ['Сохранить', 'экспорт скачать сохранить поделиться save export share', '#save', null],
+    ['Клавиши', 'горячие клавиши shortcuts keys', '#keys', null],
+  ];
+  const WHERE = { '#brand': 'Меню ⋯ → Мой набор', '#feed': 'Меню ⋯', '#more': 'Меню ⋯', '#keys': 'Меню ⋯', '#video': 'Над карточкой', '#el': 'Сверху', '#save': 'Готово' };
+  const placeOf = (where) => {
+    if (WHERE[where]) return t(WHERE[where]);
+    const sec = secOf(where);
+    if (!sec) return '';
+    const sub = sec.tabs.find(([id]) => id === where);
+    return sec.tabs.length > 1 ? `${t(sec.name)} → ${t(sub[1])}` : t(sec.name);
+  };
+  const norm = (str) => String(str).toLowerCase().replace(/ё/g, 'е');
+  let found = [];
+  let foundSel = 0;
+  function renderFind() {
+    const words = norm($('searchInput').value).split(/\s+/).filter(Boolean);
+    found = FIND.filter((e) => !(e[2] === 'motif' && collageTpl()))
+      .filter((e) => {
+        const hay = norm(`${t(e[0])} ${e[0]} ${e[1]}`);
+        return words.every((w) => hay.includes(w));
+      });
+    foundSel = Math.min(foundSel, Math.max(0, found.length - 1));
+    const list = $('searchList');
+    list.replaceChildren();
+    found.forEach((e, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      b.classList.toggle('on', i === foundSel);
+      b.setAttribute('aria-selected', String(i === foundSel));
+      const name = document.createElement('b');
+      name.textContent = t(e[0]);
+      const where = document.createElement('span');
+      where.textContent = placeOf(e[2]);
+      b.append(name, where);
+      b.onclick = () => goFind(e);
+      list.append(b);
+    });
+    if (!found.length) {
+      const none = document.createElement('p');
+      none.className = 'hint';
+      none.textContent = t('Ничего не нашлось. Попробуй другое слово.');
+      list.append(none);
+    }
+  }
+  function openSearch() {
+    setMore(false);
+    $('searchInput').value = '';
+    foundSel = 0;
+    renderFind();
+    $('searchSheet').showModal();
+    $('searchInput').focus();
+  }
+  /* найденное место мягко подсвечивается */
+  function flashEl(id) {
+    setTimeout(() => {
+      const el = $(id);
+      if (!el) return;
+      const target = el.closest('label, .group, .row') || el;
+      target.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      target.classList.remove('found');
+      void target.offsetWidth;
+      target.classList.add('found');
+      setTimeout(() => target.classList.remove('found'), 1900);
+    }, 160);
+  }
+  function goFind([, , where, el, sub]) {
+    $('searchSheet').close();
+    const anywhere = ['#more', '#keys', '#brand'].includes(where);
+    if (!anywhere && phase !== 'edit') {
+      toast(t('Сначала открой фото: «Галерея» или «Пример».'));
+      return;
+    }
+    if (where === '#more') setMore(true);
+    else if (where === '#brand') openBrand();
+    else if (where === '#feed') openFeed();
+    else if (where === '#keys') $('keysBtn').click();
+    else if (where === '#video') setOut('video');
+    else if (where === '#save') $('finish').click();
+    else if (where[0] !== '#') {
+      if (where === 'motion') setOut('video');
+      if (where === 'color' && sub) adjSub = sub;
+      if (where === 'fx') fxCat = sub === 'scan' ? 'scan' : fxCat === 'scan' ? 'all' : fxCat;
+      if (tab === where) setTab(where);
+      else openTool(where);
+    }
+    if (el) flashEl(el);
+  }
+  function bindSearch() {
+    $('searchBtn').onclick = openSearch;
+    $('searchInput').addEventListener('input', () => { foundSel = 0; renderFind(); });
+    $('searchInput').addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        foundSel = (foundSel + (e.key === 'ArrowDown' ? 1 : -1) + found.length) % Math.max(1, found.length);
+        renderFind();
+        const on = $('searchList').querySelector('.on');
+        if (on) on.scrollIntoView({ block: 'nearest' });
+      }
+      if (e.key === 'Enter' && found[foundSel]) {
+        e.preventDefault();
+        goFind(found[foundSel]);
+      }
+    });
+    /* нажатие мимо окна закрывает его */
+    $('searchSheet').addEventListener('click', (e) => { if (e.target === $('searchSheet')) $('searchSheet').close(); });
+  }
+
   /* Открытый инструмент: панель с ✕ и ✓ вместо ряда инструментов. ✕ возвращает всё, как было до открытия. */
   let toolSnap = null;
   let comparing = false;
@@ -5233,9 +5430,11 @@
     const app = document.querySelector('.app');
     app.classList.toggle('tool-open', !!tab);
     if (!tab) app.classList.remove('dock-full');
-    document.querySelectorAll('#tools [data-tab]').forEach((b) => b.classList.toggle('on', b.dataset.tab === tab));
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
-    const btn = document.querySelector(`#tools [data-tab="${tab}"]`);
+    const sec = secOf(tab);
+    if (sec) lastTab[sec.id] = tab;
+    syncSecTabs();
+    const btn = sec && document.querySelector(`#tools [data-sec="${sec.id}"]`);
     $('toolTitle').textContent = btn ? btn.querySelector('span').textContent : '';
     /* открытая вкладка всегда видна в полосе, даже если до неё надо было листать */
     if (btn) requestAnimationFrame(() => btn.scrollIntoView({ block: 'nearest', inline: 'nearest' }));
@@ -5257,6 +5456,7 @@
       foldHints(openPanel);
     }
     if (tab === 'fx') syncFx();
+    if (tab === 'film') syncColor();
     if (tab === 'motion') syncMotion();
     syncCtx();
     invalidate();
@@ -5337,6 +5537,7 @@
     }).catch(() => {});
     bindBrand();
     bindFeed();
+    bindSearch();
     Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});

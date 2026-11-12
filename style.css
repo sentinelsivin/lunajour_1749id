@@ -172,7 +172,7 @@ button { cursor: pointer; }
 
 /* Карточка на весь экран: нажатие в любом месте возвращает обратно. */
 .app.view .stage { position: fixed; inset: 0; z-index: 25; background: var(--ink); }
-.app.view #card { max-width: 100%; max-height: 100%; border-radius: 0; box-shadow: none; pointer-events: none; }
+.app.view #card { top: 0; max-width: 100%; max-height: 100%; border-radius: 0; box-shadow: none; pointer-events: none; }
 .app.view .floaters { display: none; }
 
 .dock {
@@ -266,15 +266,12 @@ button { cursor: pointer; }
 }
 .tools button:hover { color: var(--bone); }
 .tools button.on { color: var(--bone); background: rgba(49, 113, 198, .2); }
-/* тонкая черта между группами: форма, фото, поверх, фон */
-#tools [data-tab="photo"], #tools [data-tab="layers"], #tools [data-tab="paper"] { margin-left: 9px; position: relative; }
-#tools [data-tab="photo"]::before, #tools [data-tab="layers"]::before, #tools [data-tab="paper"]::before {
-  content: ""; position: absolute; left: -6px; top: 14px; bottom: 14px; width: 1px; background: var(--hairline);
-}
+/* разделов пять (с видео шесть): все помещаются в ряд даже на телефоне */
+#tools button { flex: 1 1 0; min-width: 0; }
 .subtools { border-top: 1px solid var(--hairline); }
 /* наборы сканера всегда одной полосой, чтобы под ними сразу были настройки */
 #scanGrid { grid-auto-flow: column; grid-template-columns: none; grid-auto-columns: 76px; overflow-x: auto; scrollbar-width: none; align-items: start; }
-@media (min-width: 861px) { #tools { flex-wrap: wrap; } #tools button { flex: 0 0 calc(20% - 2px); } #tools [data-tab]::before { display: none; } #tools [data-tab="photo"], #tools [data-tab="layers"], #tools [data-tab="paper"] { margin-left: 0; } }
+@media (min-width: 861px) { #tools { flex-wrap: nowrap; } }
 .subtools button { flex-basis: 52px; }
 
 .panel-head { display: none; align-items: center; justify-content: space-between; gap: 8px; padding: 4px 6px; border-bottom: 1px solid var(--hairline); flex: none; }
@@ -289,7 +286,7 @@ button { cursor: pointer; }
 .app.tool-open #tools svg { width: 18px; height: 18px; }
 @media (min-width: 861px) {
   .app.tool-open #tools { order: 0; flex-wrap: wrap; border-top: 0; border-bottom: 1px solid var(--hairline); }
-  .app.tool-open #tools button { flex: 0 0 calc(20% - 2px); }
+  .app.tool-open #tools button { flex: 1 1 0; }
 }
 .app.tool-open .panel-head { display: flex; }
 .app.tool-open .panels { display: block; }
@@ -827,6 +824,24 @@ button { cursor: pointer; }
 }
 /* на телефоне клавиатуры нет: кнопку шпаргалки прячем */
 @media (hover: none) { #keysBtn { display: none; } }
+
+/* ---------- вкладки раздела, меню по частям, поиск ---------- */
+.sec-tabs { flex: none; flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; border-bottom: 1px solid var(--hairline); scrollbar-width: none; }
+.app:not(.tool-open) .sec-tabs { display: none; }
+.menu-head { margin-top: 4px; font: 600 11px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--accent-light); }
+.menu-head:first-child { margin-top: 0; }
+.found { animation: found 1.8s ease-out; border-radius: 6px; }
+@keyframes found { 0%, 45% { box-shadow: 0 0 0 3px var(--accent-light); background: rgba(108, 159, 224, .12); } 100% { box-shadow: 0 0 0 0 transparent; background: transparent; } }
+.search-sheet { margin-top: 10vh; padding: 12px; }
+.search-sheet input { width: 100%; padding: 12px 14px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface2); color: var(--bone); font: 16px var(--body); }
+.search-list { display: flex; flex-direction: column; gap: 2px; max-height: 50vh; margin: 8px 0 6px; overflow-y: auto; }
+.search-list button { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; padding: 10px 12px; border: 0; border-radius: 6px; background: none; color: var(--bone); text-align: left; font: 14px var(--body); }
+.search-list button b { font-weight: 500; }
+.search-list button span { flex: none; color: var(--muted); font-size: 12px; }
+.search-list button.on, .search-list button:hover { background: rgba(49, 113, 198, .2); }
+/* карточка в редакторе стоит под переключателем «Фото | Видео», а не под ним */
+.app.editing #card { top: 52px; max-height: calc(100% - 80px); }
+@media (max-width: 860px) { .app.editing #card { top: 48px; max-height: calc(100% - 58px); } }
 
 /* ---------- что делаем: фото или видео, над карточкой ---------- */
 .out-bar {
