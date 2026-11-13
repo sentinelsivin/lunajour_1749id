@@ -187,6 +187,34 @@
         update();
       }));
     });
+    if (tpl && tpl.fields) {
+      if (tpl.movableStops) {
+        const label = document.createElement('label'); label.className = 'group';
+        const caption = document.createElement('span'); caption.className = 'label'; caption.textContent = t('Высота плашки маршрута');
+        const slider = document.createElement('input'); slider.type = 'range'; slider.min = '0'; slider.max = '90'; slider.step = '1';
+        slider.setAttribute('aria-label', t('Высота плашки маршрута'));
+        slider.value = state.tints[id]?.headingY ?? (state.tints[id]?.style === 'hand' ? '7' : '21');
+        slider.addEventListener('input', () => {
+          state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), headingY: slider.value } }; update();
+        });
+        label.append(caption, slider); groups.append(label);
+      }
+      const hint = document.createElement('p');
+      hint.className = 'hint'; hint.textContent = t('Первое фото — фон. Перетаскивай остановки на карточке; кадрирование фото меняется в разделе «Фото».');
+      if (tpl.movableStops) groups.append(hint);
+      tpl.fields(state).forEach((item) => {
+        const label = document.createElement('label'); label.className = 'group';
+        const caption = document.createElement('span'); caption.className = 'label'; caption.textContent = t(item.name);
+        const input = document.createElement('input'); input.type = 'text'; input.maxLength = item.maxLength || 90;
+        input.setAttribute('aria-label', t(item.name)); input.placeholder = t(item.placeholder || '');
+        input.value = state.tints[id]?.[item.key] || '';
+        input.addEventListener('input', () => {
+          state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: input.value } };
+          update();
+        });
+        label.append(caption, input); groups.append(label);
+      });
+    }
     $('collageShuffle').hidden = !(tpl && tpl.shuffle);
     /* у вырезок кнопка тасует кусочки, у остальных шаблонов всю раскладку */
     if (tpl && tpl.shuffle) $('collageShuffle').textContent = t(tpl.id === 'cutouts' ? 'Перемешать вырезки' : 'Перемешать');
@@ -1879,6 +1907,7 @@
     if (!k) return '';
     const named = (what, name) => (name ? `${t(what)} «${t(name)}»` : t(what));
     if (k === 'pv') return t('фото');
+    if (k === 'marks' && B.collage === 'memoryRoute') return t('расположение остановок');
     if (k === 'layers') {
       const da = (A.layers || []).length, db = (B.layers || []).length;
       return t(db > da ? 'добавление стикера' : db < da ? 'удаление стикера' : 'правка стикера');
@@ -2933,6 +2962,28 @@
   function bindDrag() {
     const pointers = new Map();
     let pinch = 0;
+    let stopDrag = null;
+    card.addEventListener('pointermove', (e) => {
+      if (!stopDrag || stopDrag.id !== e.pointerId) return;
+      if (stopDrag.heading) {
+        const box = card.getBoundingClientRect();
+        const headingY = String(clamp(((e.clientY - box.top) / box.height + stopDrag.dy) * 100, 0, 90));
+        state.tints = { ...state.tints, [state.collage]: { ...(state.tints[state.collage] || {}), headingY } };
+        const slider = $('tintGroups').querySelector('input[type="range"]'); if (slider) slider.value = headingY;
+        update(); return;
+      }
+      const box = card.getBoundingClientRect(), geo = collageGeo();
+      const c = geo.stops[stopDrag.index], W = card.width, H = card.height;
+      const x = clamp((e.clientX - box.left) / box.width + stopDrag.dx, c.w / (2 * W) + 0.04, 0.96 - c.w / (2 * W));
+      const y = clamp((e.clientY - box.top) / box.height + stopDrag.dy, 0.25, 0.84);
+      const list = [...(state.marks[state.collage] || [])];
+      list[stopDrag.index] = { x, y };
+      state.marks = { ...state.marks, [state.collage]: list };
+      update();
+    });
+    const releaseStop = () => { if (stopDrag) { stopDrag = null; commitHistory(); } };
+    card.addEventListener('pointerup', releaseStop);
+    card.addEventListener('pointercancel', releaseStop);
     /* в коллаже фото можно утащить на другую ячейку: они поменяются местами */
     let swap = null;
     card.addEventListener('pointermove', (e) => {
@@ -2971,6 +3022,15 @@
       if (tab === 'collage' && collageTpl() && collageTpl().marks) return;
       const picking = tab === 'collage' && !!collageTpl();
       if ((tab !== 'photo' && !picking) || !slots.length) return;
+      if (picking && collageTpl().movableStops) {
+        const box = card.getBoundingClientRect(), h = collageGeo().header;
+        const px = (e.clientX - box.left) / box.width * card.width, py = (e.clientY - box.top) / box.height * card.height;
+        if (px >= h.x && px <= h.x + h.w && py >= h.y && py <= h.y + h.h) {
+          commitHistory(); stopDrag = { id: e.pointerId, heading: true, dy: h.y / card.height - (e.clientY - box.top) / box.height };
+          try { card.setPointerCapture(e.pointerId); } catch {}
+          return;
+        }
+      }
       if (slots.length > 1) {
         const box = card.getBoundingClientRect();
         const i = slotAt(((e.clientX - box.left) / box.width) * card.width, ((e.clientY - box.top) / box.height) * card.height);
@@ -2987,6 +3047,13 @@
         syncSlotUI();
       }
       if (picking) {
+        if (collageTpl().movableStops && activeSlot > 0) {
+          const box = card.getBoundingClientRect(), c = collageGeo().stops[activeSlot - 1];
+          stopDrag = { id: e.pointerId, index: activeSlot - 1, dx: c.cx / card.width - (e.clientX - box.left) / box.width, dy: c.cy / card.height - (e.clientY - box.top) / box.height };
+          commitHistory();
+          try { card.setPointerCapture(e.pointerId); } catch {}
+          return;
+        }
         if (phase === 'edit' && hasPhoto(slots[activeSlot])) swap = { from: activeSlot, x: e.clientX, y: e.clientY, moved: false, id: e.pointerId };
         return;
       }
@@ -5625,6 +5692,7 @@
   }
 
   async function boot() {
+    if (Collages.ready) await Collages.ready;
     prepHints();
     decorateSliders();
     I18n.capture();

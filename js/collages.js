@@ -153,7 +153,16 @@
       ctx.restore();
     };
     const color = cell.color || '#c0392b';
-    if (frame === 'border') {
+    if (frame === 'book') {
+      const p = w * 0.035;
+      shadow(() => { ctx.fillStyle = '#e4e2db'; ctx.fillRect(-w / 2 - p, -h / 2 - p, w + p * 2, h + p * 2); });
+      ctx.strokeStyle = '#b6b8b6'; ctx.lineWidth = Math.max(0.5, p * 0.14);
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath(); ctx.moveTo(-w / 2 - p * (0.25 + i * 0.25), -h / 2);
+        ctx.lineTo(-w / 2 - p * (0.25 + i * 0.25), h / 2); ctx.stroke();
+      }
+      ctx.fillStyle = '#faf9f2'; ctx.fillRect(-w / 2 - p * 1.2, -h / 2, p * 0.35, h);
+    } else if (frame === 'border') {
       const b = w * (cell.bw || 0.03);
       ctx.fillStyle = cell.color || '#7b8040';
       ctx.fillRect(-w / 2 - b, -h / 2 - b, w + b * 2, h + b * 2);
@@ -162,7 +171,7 @@
       shadow(() => {
         ctx.fillStyle = cell.color || '#fbfaf6';
         ctx.beginPath();
-        ctx.roundRect(-w / 2 - b, -h / 2 - b, w + b * 2, h + b * 2, frame === 'white' ? 0 : w * 0.14);
+        ctx.roundRect(-w / 2 - b, -h / 2 - b, w + b * 2, h + b * 2, frame === 'white' ? 0 : w * (cell.corner ?? 0.14));
         ctx.fill();
       });
     } else if (frame === 'window' || frame === 'mac') {
@@ -387,7 +396,7 @@
     const { w, h } = cell;
     ctx.beginPath();
     if (cell.shape === 'round') ctx.ellipse(0, 0, w / 2, h / 2, 0, 0, TAU);
-    else if (cell.shape === 'rounded') ctx.roundRect(-w / 2, -h / 2, w, h, w * 0.12);
+    else if (cell.shape === 'rounded') ctx.roundRect(-w / 2, -h / 2, w, h, w * (cell.corner ?? 0.12));
     else if (cell.shape === 'heart') ctx.rect(-w / 2, -h / 2, w, h);
     else if (shapePts[cell.shape]) tracePts(ctx, shapePts[cell.shape](w, h));
     else ctx.rect(-w / 2, -h / 2, w, h);
@@ -3044,5 +3053,702 @@
     },
   );
 
-  window.Collages = { COLLAGES, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
+  /* Большой отпечаток и плёнка на розовой бумаге. Все координаты — в листе 1080 × 1350. */
+  COLLAGES.push({
+    id: 'soulFilm', name: 'Плёнка и гербарий', noNote: true, sample: 'SOUL VIBES',
+    palette: [
+      { key: 'bg', name: 'Фон', def: '#100907' },
+      { key: 'paper', name: 'Подложка плёнки', def: '#edc4b8' },
+      { key: 'frame', name: 'Рамка фото', def: '#e9e6dc' },
+      { key: 'film', name: 'Фотоплёнка', def: '#080808' },
+      { key: 'decor', name: 'Декор', def: '#be9296' },
+      { key: 'text', name: 'Текст', def: '#f8eee8' },
+    ],
+    choices: [
+      { key: 'count', name: 'Кадров на плёнке', def: '3', options: [['2', '2'], ['3', '3'], ['4', '4']] },
+      { key: 'decorations', name: 'Гербарий и мотылёк', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+      { key: 'texture', name: 'Фактура бумаги', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    layout(W, H, env) {
+      const k = Math.min(W / 1080, H / 1350);
+      const ox = (W - 1080 * k) / 2, oy = (H - 1350 * k) / 2;
+      const n = Number(env.pick('count', '3'));
+      const cell = (x, y, w, h) => ({ x: ox + x * k, y: oy + y * k, w: w * k, h: h * k, rot: 0 });
+      const gap = 18, height = (698 - gap * (n - 1)) / n;
+      const cells = [cell(140, 207, 632, 770)];
+      for (let i = 0; i < n; i++) cells.push(cell(643, 465 + i * (height + gap), 220, height));
+      return {
+        cells, k, ox, oy, n,
+        underAt: 1,
+        under(ctx, u, opt) {
+          ctx.save(); ctx.translate(ox, oy); ctx.scale(k, k);
+          soulPaper(ctx, 543, 420, 412, 783, opt.c('paper', '#edc4b8'), opt.c('texture', 'on') === 'on');
+          ctx.fillStyle = opt.c('film', '#080808'); ctx.fillRect(614, 434, 278, 757);
+          ctx.fillStyle = opt.c('frame', '#e9e6dc');
+          for (let y = 442; y < 1184; y += 31.5) {
+            ctx.fillRect(621, y, 10, 10); ctx.fillRect(873, y, 10, 10);
+          }
+          ctx.restore();
+        },
+      };
+    },
+    deco(ctx, box, u, geo, opt) {
+      ctx.fillStyle = opt.c('bg', '#100907'); ctx.fillRect(0, 0, geo.W, geo.H);
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      soulPaper(ctx, 124, 190, 664, 804, opt.c('frame', '#e9e6dc'), opt.c('texture', 'on') === 'on');
+      ctx.restore();
+    },
+    overlay(ctx, geo, u, opt) {
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const color = opt.c('decor', '#be9296');
+      if (opt.c('decorations', 'on') === 'on') {
+        /* Полупрозрачная ботаническая карточка. */
+        ctx.fillStyle = 'rgba(247,240,214,.85)'; ctx.fillRect(225, 797, 265, 310);
+        ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.moveTo(429, 1087); ctx.bezierCurveTo(380, 1015, 442, 919, 388, 854); ctx.stroke();
+        for (let i = 0; i < 8; i++) {
+          const a = i * TAU / 8;
+          ctx.beginPath(); ctx.ellipse(387 + Math.cos(a) * 32, 853 + Math.sin(a) * 34, 30, 8, a, 0, TAU); ctx.stroke();
+        }
+        ctx.beginPath(); ctx.moveTo(420, 1065); ctx.bezierCurveTo(343, 1010, 369, 1084, 312, 1073); ctx.stroke();
+        /* Засушенный цветок: стебель, прожилки и тонкие лепестки. */
+        ctx.strokeStyle = '#858452'; ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.moveTo(327, 1184); ctx.quadraticCurveTo(290, 1074, 207, 1016); ctx.stroke();
+        for (let i = 0; i < 7; i++) {
+          const x = 310 - i * 12, y = 1140 - i * 18, side = i % 2 ? -1 : 1;
+          ctx.fillStyle = i % 2 ? '#686b45' : '#81805a';
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.quadraticCurveTo(x + side * 69, y - 2, x + side * 52, y - 74); ctx.quadraticCurveTo(x + side * 9, y - 55, x, y); ctx.fill();
+          ctx.strokeStyle = '#a7a279'; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + side * 48, y - 68); ctx.stroke();
+        }
+        for (let i = 0; i < 12; i++) {
+          const a = i * 2.4;
+          ctx.save(); ctx.translate(188 + Math.cos(a) * 26, 1023 + Math.sin(a) * 20); ctx.rotate(a);
+          ctx.fillStyle = i % 2 ? '#be9d8a' : '#d4b7a0'; ctx.strokeStyle = '#9f767b';
+          ctx.beginPath(); ctx.ellipse(0, 0, 48, 20, 0, 0, TAU); ctx.fill(); ctx.stroke();
+          ctx.beginPath(); ctx.moveTo(-40, 0); ctx.quadraticCurveTo(0, -8, 39, 0); ctx.stroke(); ctx.restore();
+        }
+        /* Мотылёк с жилками, за правым верхним углом плёнки. */
+        ctx.save(); ctx.translate(899, 357); ctx.rotate(-0.6);
+        ctx.strokeStyle = color; ctx.globalAlpha = 0.8; ctx.lineWidth = 1.6;
+        for (const side of [-1, 1]) {
+          ctx.beginPath(); ctx.moveTo(0, 0); ctx.bezierCurveTo(side * 30, -66, side * 80, -100, side * 88, -83); ctx.bezierCurveTo(side * 87, -20, side * 61, 61, 0, 0); ctx.stroke();
+          for (let i = 0; i < 6; i++) {
+            ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(side * (25 + i * 8), -25, side * (30 + i * 10), -76 + i * 12); ctx.stroke();
+          }
+          ctx.beginPath(); ctx.ellipse(side * 49, -29, 12, 7, side, 0, TAU); ctx.stroke();
+        }
+        ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 29); ctx.stroke();
+        ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(0, -25); ctx.lineTo(-16, -49); ctx.moveTo(0, -25); ctx.lineTo(16, -49); ctx.stroke(); ctx.restore();
+        [[83, 984, 13], [265, 951, 13], [338, 997, 12], [868, 291, 12], [952, 258, 11], [480, 1137, 11]].forEach(([x, y, r]) => doodle(ctx, 'sparkle', x, y, r, color, 2));
+      }
+      const words = (opt.title.trim() || this.sample).split(/\s+/);
+      ctx.fillStyle = opt.c('text', '#f8eee8'); ctx.font = `400 21px ${opt.font}`;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+      ctx.fillText(words[0], 125, 161, 640);
+      ctx.textAlign = 'center'; ctx.fillText(words.slice(1).join(' '), 402, 1196, 275);
+      ctx.restore();
+    },
+  });
+
+  /* Повторяемое зерно не мерцает при записи видео и не требует внешних картинок. */
+  function soulPaper(ctx, x, y, w, h, color, texture) {
+    ctx.fillStyle = color; ctx.fillRect(x, y, w, h);
+    if (!texture) return;
+    const rng = window.Motifs.makeRng(531);
+    for (let i = 0; i < 2600; i++) {
+      ctx.fillStyle = i % 2 ? 'rgba(255,255,255,.22)' : 'rgba(67,40,29,.10)';
+      ctx.fillRect(x + rng() * w, y + rng() * h, 0.7 + rng() * 2, 0.5 + rng() * 1.5);
+    }
+  }
+
+  /* Собственные бумажные рамки: рисунок строится из контуров и повторяемой фактуры. */
+  const keepsakeGrain = new Map();
+  function keepsakePaper(ctx, W, H, color, fabric) {
+    ctx.fillStyle = color; ctx.fillRect(0, 0, W, H);
+    const key = fabric ? 'fabric' : 'paper';
+    if (!keepsakeGrain.has(key)) {
+      const c = document.createElement('canvas'); c.width = 540; c.height = 675;
+      const x = c.getContext('2d'), pixels = x.createImageData(c.width, c.height);
+      const rng = window.Motifs.makeRng(913);
+      for (let i = 0; i < pixels.data.length; i += 4) {
+        const p = i / 4, px = p % c.width, py = Math.floor(p / c.width);
+        const light = rng() > 0.48;
+        pixels.data[i] = pixels.data[i + 1] = pixels.data[i + 2] = light ? 255 : 45;
+        pixels.data[i + 3] = Math.round(rng() * (fabric && (px % 3 === 0 || py % 3 === 0) ? 48 : 28));
+      }
+      x.putImageData(pixels, 0, 0);
+      if (!fabric) {
+        for (let i = 0; i < 18; i++) {
+          const px = rng() * 540, py = rng() * 675;
+          x.strokeStyle = 'rgba(65,55,40,.035)'; x.lineWidth = 1.5;
+          x.beginPath(); x.moveTo(px, py); x.quadraticCurveTo(px + 22, py - 17, px + 80, py - 42); x.stroke();
+          x.strokeStyle = 'rgba(255,255,255,.13)'; x.translate(0, 1); x.stroke(); x.translate(0, -1);
+        }
+      }
+      keepsakeGrain.set(key, c);
+    }
+    ctx.drawImage(keepsakeGrain.get(key), 0, 0, W, H);
+  }
+
+  function keepsakeStar(ctx, x, y, r, style, color, rot) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.beginPath(); starPath(ctx, 0, 0, r, 0);
+    ctx.save();
+    ctx.shadowColor = 'rgba(39,32,25,.24)'; ctx.shadowBlur = r * 0.12; ctx.shadowOffsetY = r * 0.09;
+    ctx.fillStyle = color; ctx.fill(); ctx.restore();
+    ctx.save(); ctx.clip();
+    if (style === 'foil') {
+      ctx.fillStyle = color; ctx.fillRect(-r, -r, r * 2, r * 2);
+      /* Мягкие грани тиснения: свет падает сверху слева, без белой каймы. */
+      const shades = ['rgba(255,255,255,.46)', 'rgba(30,25,24,.24)', 'rgba(255,255,255,.22)', 'rgba(30,25,24,.32)', 'rgba(255,255,255,.12)', 'rgba(30,25,24,.18)', 'rgba(255,255,255,.32)', 'rgba(30,25,24,.10)', 'rgba(255,255,255,.52)', 'rgba(30,25,24,.17)'];
+      for (let i = 0; i < 10; i++) {
+        const a = -Math.PI / 2 + i * Math.PI / 5, b = a + Math.PI / 5;
+        const ra = i % 2 ? r * 0.45 : r, rb = i % 2 ? r : r * 0.45;
+        ctx.beginPath(); ctx.moveTo(-r * 0.06, r * 0.04);
+        ctx.lineTo(Math.cos(a) * ra, Math.sin(a) * ra); ctx.lineTo(Math.cos(b) * rb, Math.sin(b) * rb); ctx.closePath();
+        ctx.fillStyle = shades[i]; ctx.fill();
+      }
+      const rng = window.Motifs.makeRng(Math.round(r * 313));
+      for (let i = 0; i < 420; i++) {
+        ctx.fillStyle = i % 3 ? 'rgba(28,26,23,.13)' : 'rgba(255,255,255,.4)';
+        ctx.fillRect((rng() * 2 - 1) * r, (rng() * 2 - 1) * r, 0.25 + rng() * 0.6, 0.25 + rng() * 0.4);
+      }
+    } else {
+      ctx.fillStyle = color; ctx.fillRect(-r, -r, r * 2, r * 2);
+      ctx.strokeStyle = 'rgba(255,255,255,.65)'; ctx.lineWidth = 1;
+      for (let k = -r; k <= r; k += r * 0.28) {
+        ctx.beginPath(); ctx.moveTo(k, -r); ctx.lineTo(k, r); ctx.moveTo(-r, k); ctx.lineTo(r, k); ctx.stroke();
+      }
+    }
+    ctx.restore();
+    ctx.beginPath(); starPath(ctx, 0, 0, r, 0);
+    ctx.strokeStyle = style === 'foil' ? 'rgba(53,45,36,.24)' : 'rgba(255,255,255,.8)'; ctx.lineWidth = r * 0.025; ctx.stroke();
+    ctx.restore();
+  }
+
+  for (const pair of [false, true]) COLLAGES.push({
+    id: pair ? 'heirloomPair' : 'heirloomOval', name: pair ? 'Овал и завитки' : 'Бумажный медальон', noNote: true,
+    palette: [
+      { key: 'paper', name: 'Бумага' },
+      ...(pair ? [{ key: 'ornament', name: 'Завитки', def: '#fae1ef' }] : []),
+      { key: 'stars', name: 'Звёзды' },
+    ],
+    choices: [
+      { key: 'tone', name: 'Палитра бумаги', def: pair ? 'rose' : 'sage', options: [['sage', 'Шалфей'], ['blue', 'Небесная'], ['rose', 'Розовая'], ['lilac', 'Сиреневая']] },
+      { key: 'decor', name: 'Украшения', def: pair ? 'check' : 'foil', options: [['none', 'Без украшений'], ['foil', 'Фольга'], ['silver', 'Серебряная фольга'], ['check', 'Звёзды в клетку'], ['spark', 'Блики и бант']] },
+      { key: 'surface', name: 'Фактура', def: 'paper', options: [['paper', 'Бумага'], ['fabric', 'Ткань']] },
+    ],
+    layout(W, H, env) {
+      const k = Math.min(W / 540, H / 675), ox = (W - 540 * k) / 2, oy = (H - 675 * k) / 2;
+      const cell = (x, y, w, h, shape) => ({ x: ox + x * k, y: oy + y * k, w: w * k, h: h * k, shape, rot: 0 });
+      return { cells: pair ? [cell(77, 28, 386, 270, 'round'), cell(36, 350, 468, 284, 'rect')] : [cell(67, 68, 406, 536, 'round')], k, ox, oy };
+    },
+    deco(ctx, box, u, geo, opt) {
+      const tones = { sage: '#d5dfc8', blue: '#cad9ec', rose: '#ead0d7', lilac: '#d5cef0' };
+      keepsakePaper(ctx, geo.W, geo.H, opt.c('paper', tones[opt.c('tone', pair ? 'rose' : 'sage')] || tones.sage), opt.c('surface', 'paper') === 'fabric');
+    },
+    overlay(ctx, geo, u, opt) {
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      if (pair) {
+        /* Четыре самостоятельных угловых росчерка вместо копии чужой рамки. */
+        for (const [x, y, sx, sy] of [[25, 337, 1, 1], [515, 337, -1, 1], [25, 647, 1, -1], [515, 647, -1, -1]]) {
+          ctx.save(); ctx.translate(x, y); ctx.scale(sx, sy);
+          const stroke = (color, lw, shift) => {
+            ctx.save(); ctx.translate(shift, shift); ctx.strokeStyle = color; ctx.lineWidth = lw; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(0, 106); ctx.bezierCurveTo(-16, 44, 10, -18, 65, 0);
+            ctx.bezierCurveTo(104, 14, 140, 52, 178, 17); ctx.bezierCurveTo(209, -9, 232, 18, 211, 34);
+            ctx.bezierCurveTo(196, 44, 186, 26, 201, 23); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(3, 62); ctx.bezierCurveTo(22, 35, 59, 70, 35, 87);
+            ctx.bezierCurveTo(16, 96, 13, 72, 27, 75); ctx.stroke();
+            ctx.beginPath(); ctx.moveTo(18, 6); ctx.bezierCurveTo(50, -27, 107, 0, 91, 24); ctx.stroke(); ctx.restore();
+          };
+          stroke('rgba(70,40,77,.2)', 5, 1); stroke(opt.c('ornament', '#fae1ef'), 3, 0);
+          ctx.fillStyle = opt.c('ornament', '#fae1ef');
+          for (const [dx, dy, r] of [[55, 53, 2.5], [69, 58, 1.5], [127, 9, 2], [8, 121, 2]]) { ctx.beginPath(); ctx.arc(dx, dy, r, 0, TAU); ctx.fill(); }
+          ctx.restore();
+        }
+      }
+      const style = opt.c('decor', pair ? 'check' : 'foil');
+      if (style === 'spark') {
+        bow(ctx, pair ? 114 : 125, pair ? 58 : 105, 44, -0.2, opt.c('stars', '#b08bb5'));
+        for (const [x, y, r] of (pair ? [[448, 84, 30], [470, 141, 16], [76, 250, 17]] : [[436, 145, 29], [460, 202, 15], [87, 536, 23]])) {
+          doodle(ctx, 'sparkle', x, y, r, '#fffbea', 4); doodle(ctx, 'sparkle', x, y, r + 3, opt.c('stars', '#d7bd78'), 1);
+        }
+      } else if (style !== 'none') {
+        const rng = window.Motifs.makeRng(263);
+        const spots = [[37, 31, 14], [98, 39, 10], [148, 29, 8], [62, 83, 9], [127, 89, 17], [27, 135, 12], [91, 156, 8], [463, 507, 11], [503, 552, 15], [436, 565, 8], [397, 604, 16], [466, 639, 10], [352, 643, 9]];
+        const n = pair ? 5 : spots.length;
+        for (let i = 0; i < n; i++) {
+          const bottom = i >= n / 2;
+          const x = pair ? (bottom ? 377 + rng() * 127 : 20 + rng() * 142) : spots[i][0];
+          const y = pair ? (bottom ? 238 : 22) + rng() * 62 : spots[i][1];
+          keepsakeStar(ctx, x, y, pair ? 10 + rng() * 11 : spots[i][2], style === 'silver' ? 'foil' : style, opt.c('stars', style === 'silver' ? '#969ba5' : style === 'check' ? '#edb6ce' : '#bfa15d'), rng() * 1.3 - 0.65);
+        }
+      }
+      ctx.restore();
+    },
+  });
+
+  /* Палетка: цвет пигмента отделён от рельефа прессованной пудры и отражений. */
+  const pigmentCache = new Map();
+  const pigmentDefaults = ['#71a8a4', '#253e56', '#80b9b3', '#9aa99b', '#ccd9d5', '#c2c5bc', '#b1d7d0', '#687d87'];
+  function pigmentTile(color, finish, seed, worn) {
+    const key = `${color}:${finish}:${seed}:${worn}`;
+    if (pigmentCache.has(key)) return pigmentCache.get(key);
+    const c = document.createElement('canvas'); c.width = c.height = 256;
+    const x = c.getContext('2d');
+    /* Браузер нормализует любой выбранный CSS-цвет в RGB. */
+    x.fillStyle = color; x.fillRect(0, 0, 1, 1);
+    const rgb = x.getImageData(0, 0, 1, 1).data;
+    const linear = (v) => (v / 255 <= 0.04045 ? v / 3294.6 : ((v / 255 + 0.055) / 1.055) ** 2.4);
+    const srgb = (v) => Math.round(255 * (v <= 0.0031308 ? 12.92 * v : 1.055 * v ** (1 / 2.4) - 0.055));
+    const base = [linear(rgb[0]), linear(rgb[1]), linear(rgb[2])];
+    const data = x.createImageData(256, 256), rng = window.Motifs.makeRng(seed);
+    const coarse = Array.from({ length: 17 * 17 }, () => rng());
+    const wearRng = window.Motifs.makeRng(seed * 19);
+    const hollows = Array.from({ length: 3 }, () => ({ x: 50 + wearRng() * 160, y: 60 + wearRng() * 150, rx: 25 + wearRng() * 55, ry: 20 + wearRng() * 50, depth: 0.12 + wearRng() * 0.23 }));
+    const noise = (px, py) => {
+      const ix = Math.floor(px), iy = Math.floor(py), tx = px - ix, ty = py - iy;
+      const a = coarse[iy * 17 + ix], b = coarse[iy * 17 + ix + 1];
+      const d = coarse[(iy + 1) * 17 + ix], e = coarse[(iy + 1) * 17 + ix + 1];
+      return (a * (1 - tx) + b * tx) * (1 - ty) + (d * (1 - tx) + e * tx) * ty;
+    };
+    for (let py = 0; py < 256; py++) for (let px = 0; px < 256; px++) {
+      const p = (py * 256 + px) * 4;
+      const broad = noise(px / 17, py / 17);
+      const grain = rng(), glint = rng();
+      const edge = Math.min(px, py, 255 - px, 255 - py);
+      let rubbed = 0, relief = 0;
+      if (worn) for (const h of hollows) {
+        const dx = (px - h.x) / h.rx, dy = (py - h.y) / h.ry;
+        const bowl = Math.exp(-(dx * dx + dy * dy) * 1.7);
+        rubbed += bowl * 0.45;
+        relief += bowl * h.depth * (dx * 0.55 + dy * 0.8 - 0.24);
+      }
+      rubbed = Math.min(0.85, rubbed);
+      const press = 0.94 + Math.sin(px * 2.1 + Math.sin(py * 0.027) * 0.4) * 0.055 * (1 - rubbed);
+      const roughEdge = worn ? (broad - 0.5) * 9 + Math.sin(py * 0.42 + seed) * 1.2 : 0;
+      const shade = (0.78 + broad * (worn ? 0.17 : 0.10) + grain * 0.26 * (1 - rubbed * 0.55) + relief) * press * (0.64 + 0.36 * Math.max(0, Math.min(1, (edge + roughEdge) / 9)));
+      const sparkle = (finish === 'glitter' ? (glint > 0.955 ? (glint - 0.955) * 12 : 0) : finish === 'satin' ? (glint > 0.94 ? 0.09 : 0.009) : 0.002) * (1 - rubbed * 0.7);
+      const sheen = finish === 'matte' ? 0.003 : Math.max(0, 1 - Math.hypot((px - 72) / 230, (py - 65) / 230)) * 0.035;
+      for (let ch = 0; ch < 3; ch++) {
+        const diffuse = base[ch] * Math.min(1, shade);
+        data.data[p + ch] = srgb(Math.min(1, diffuse + (1 - diffuse) * (sparkle + sheen)));
+      }
+      data.data[p + 3] = 255;
+    }
+    x.putImageData(data, 0, 0);
+    if (worn) {
+      /* Тонкие следы кисти идут разными дугами, а не одинаковым штампом. */
+      x.save();
+      for (let i = 0; i < 28; i++) {
+        const h = hollows[i % hollows.length], offset = (wearRng() - 0.5) * h.ry * 1.2;
+        x.strokeStyle = i % 3 ? 'rgba(20,18,15,.028)' : 'rgba(255,255,255,.055)'; x.lineWidth = 0.4 + wearRng() * 0.6;
+        x.beginPath(); x.moveTo(h.x - h.rx * 0.7, h.y + offset);
+        x.quadraticCurveTo(h.x, h.y + offset + h.ry * 0.22, h.x + h.rx * 0.6, h.y + offset - h.ry * 0.2); x.stroke();
+      }
+      x.restore();
+    }
+    if (pigmentCache.size >= 32) pigmentCache.delete(pigmentCache.keys().next().value);
+    pigmentCache.set(key, c);
+    return c;
+  }
+
+  COLLAGES.push({
+    id: 'eyeshadow', name: 'Палетка теней', noNote: true,
+    palette: [
+      ...pigmentDefaults.map((def, i) => ({ key: `shade${i}`, name: `Тени ${i + 1}`, def })),
+      { key: 'case', name: 'Корпус палетки', def: '#272b2c' },
+    ],
+    choices: [
+      { key: 'finish', name: 'Финиш теней', def: 'satin', options: [['matte', 'Матовый'], ['satin', 'Сатиновый'], ['glitter', 'Сияющий']] },
+      { key: 'wear', name: 'Следы использования', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    layout(W, H) {
+      const size = Math.min(W, H) * 0.96, x = (W - size) / 2, y = (H - size) / 2;
+      const unit = size / 3, gap = size * 0.026;
+      return { cells: [{ x: x + unit + gap / 2, y: y + unit + gap / 2, w: unit - gap, h: unit - gap, rot: 0, shape: 'rounded' }], compact: { x, y, size, unit, gap } };
+    },
+    deco(ctx, box, u, geo, opt) {
+      const { x, y, size, unit, gap } = geo.compact;
+      ctx.save();
+      ctx.fillStyle = opt.c('case', '#272b2c');
+      ctx.beginPath(); ctx.roundRect(x, y, size, size, size * 0.025); ctx.fill();
+      let index = 0;
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+        const px = x + col * unit + gap / 2, py = y + row * unit + gap / 2, w = unit - gap;
+        ctx.save();
+        ctx.shadowColor = 'rgba(0,0,0,.7)'; ctx.shadowBlur = gap * 0.45; ctx.shadowOffsetY = gap * 0.2;
+        ctx.fillStyle = '#101617'; ctx.beginPath(); ctx.roundRect(px - gap * 0.15, py - gap * 0.15, w + gap * 0.3, w + gap * 0.3, gap); ctx.fill();
+        ctx.restore();
+        if (row === 1 && col === 1) continue;
+        ctx.save(); ctx.beginPath(); ctx.roundRect(px, py, w, w, gap * 0.7); ctx.clip();
+        ctx.drawImage(pigmentTile(opt.c(`shade${index}`, pigmentDefaults[index]), opt.c('finish', 'satin'), 719 + index * 137, opt.c('wear', 'on') === 'on'), px, py, w, w);
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(240,246,237,.32)'; ctx.lineWidth = size * 0.0015;
+        ctx.beginPath(); ctx.roundRect(px, py, w, w, gap * 0.7); ctx.stroke();
+        index++;
+      }
+      ctx.restore();
+    },
+    overlay(ctx, geo, u, opt) {
+      if (opt.c('wear', 'on') !== 'on') return;
+      const { x, y, size, unit } = geo.compact, rng = window.Motifs.makeRng(1783);
+      ctx.save();
+      /* Пыль только на перегородках, не поверх снимка или выбранного оттенка. */
+      for (let i = 0; i < 850; i++) {
+        const vertical = i % 2;
+        const along = rng() * size, across = (1 + Math.floor(i / 2) % 2) * unit + (rng() - 0.5) * size * 0.023;
+        ctx.fillStyle = i % 4 ? 'rgba(211,222,217,.18)' : 'rgba(255,255,255,.36)';
+        ctx.fillRect(x + (vertical ? across : along), y + (vertical ? along : across), size * 0.0015, size * 0.001);
+      }
+      /* Разноцветная осыпь у своих рефилов и короткие царапины на корпусе. */
+      let shadeIndex = 0;
+      for (let row = 0; row < 3; row++) for (let col = 0; col < 3; col++) {
+        if (row === 1 && col === 1) continue;
+        const pigment = opt.c(`shade${shadeIndex}`, pigmentDefaults[shadeIndex]);
+        const cx = x + (col + 0.25 + rng() * 0.5) * unit, cy = y + (row + 1) * unit - size * 0.008;
+        ctx.fillStyle = pigment;
+        for (let j = 0; j < 100; j++) {
+          const dx = (rng() + rng() + rng() - 1.5) * unit * 0.16;
+          const dy = (rng() - 0.5) * size * 0.013;
+          ctx.globalAlpha = 0.1 + rng() * 0.36;
+          ctx.beginPath(); ctx.ellipse(cx + dx, cy + dy, size * (0.00035 + rng() * 0.0012), size * (0.0003 + rng() * 0.0006), rng() * TAU, 0, TAU); ctx.fill();
+        }
+        shadeIndex++;
+      }
+      ctx.globalAlpha = 1;
+      for (let i = 0; i < 45; i++) {
+        const horizontal = i % 2, along = rng() * size;
+        const across = (1 + Math.floor(i / 2) % 2) * unit;
+        const px = x + (horizontal ? along : across), py = y + (horizontal ? across : along);
+        ctx.strokeStyle = i % 3 ? 'rgba(210,215,210,.18)' : 'rgba(0,0,0,.3)'; ctx.lineWidth = size * 0.0006;
+        ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(px + (horizontal ? 1 : 0.1) * size * (0.003 + rng() * 0.018), py + (horizontal ? 0.1 : 1) * size * 0.012); ctx.stroke();
+      }
+      ctx.restore();
+    },
+  });
+
+  COLLAGES.push({
+    id: 'stitchedCorners', name: 'Лоскуты и стежки', noNote: true,
+    palette: [
+      { key: 'clothA', name: 'Ткань 1', def: '#87a9d5' },
+      { key: 'clothB', name: 'Ткань 2', def: '#b1ccf7' },
+      { key: 'thread', name: 'Цвет ниток', def: '#fcf8ee' },
+      { key: 'embroidery', name: 'Вышивка', def: '#1866c7' },
+    ],
+    choices: [
+      { key: 'motif', name: 'Узор вышивки', def: 'mixed', options: [['mixed', 'Цветы и снежинки'], ['flowers', 'Цветы'], ['snow', 'Снежинки'], ['none', 'Без украшений']] },
+      { key: 'seams', name: 'Пунктирные швы', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    layout(W, H) { return { cells: [{ x: 0, y: 0, w: W, h: H, rot: 0 }] }; },
+    overlay(ctx, geo, u, opt) {
+      ctx.save(); ctx.beginPath(); ctx.rect(0, 0, geo.W, geo.H); ctx.clip();
+      ctx.scale(geo.W / 636, geo.H / 900);
+      const a = opt.c('clothA', '#87a9d5'), b = opt.c('clothB', '#b1ccf7');
+      const thread = opt.c('thread', '#fcf8ee'), ink = opt.c('embroidery', '#1866c7');
+      const patch = (x, y, w, h, color) => {
+        ctx.save(); ctx.translate(x + w / 2, y + h / 2);
+        ctx.beginPath(); tracePts(ctx, rectEdge(w, h, 24, wave(4.5)));
+        ctx.save(); ctx.shadowColor = 'rgba(19,40,76,.17)'; ctx.shadowBlur = 3; ctx.shadowOffsetY = 1.5; ctx.fillStyle = color; ctx.fill(); ctx.restore();
+        ctx.clip();
+        /* Фактура рисуется от локального верхнего левого угла. */
+        ctx.translate(-w / 2 - 7, -h / 2 - 7); keepsakePaper(ctx, w + 14, h + 14, color, true);
+        ctx.restore();
+      };
+      patch(-19, -20, 91, 350, a); patch(291, -25, 331, 91, a);
+      patch(585, -20, 76, 234, b); patch(-22, 662, 96, 268, b);
+      patch(576, 592, 85, 326, a); patch(421, 852, 240, 75, b);
+      const stitch = (points, color) => {
+        ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.setLineDash([6, 12]);
+        ctx.beginPath(); points.forEach(([x, y], i) => ctx[i ? 'lineTo' : 'moveTo'](x, y)); ctx.stroke(); ctx.restore();
+      };
+      if (opt.c('seams', 'on') === 'on') {
+        stitch([[12, 29], [195, 27]], ink); stitch([[430, 25], [647, 28]], thread);
+        stitch([[28, 631], [31, 872]], thread); stitch([[605, 543], [603, 799]], ink);
+        stitch([[-4, 379], [164, 377]], ink);
+      }
+      const kind = opt.c('motif', 'mixed');
+      if (kind !== 'none') {
+        const cross = (x, y, r, color) => {
+          ctx.strokeStyle = color; ctx.lineWidth = 1.1;
+          ctx.beginPath(); ctx.moveTo(x - r, y - r); ctx.lineTo(x + r, y + r); ctx.moveTo(x + r, y - r); ctx.lineTo(x - r, y + r); ctx.stroke();
+        };
+        const snow = (cx, cy, radius) => {
+          const step = 6;
+          for (let iy = -7; iy <= 7; iy++) for (let ix = -7; ix <= 7; ix++) {
+            const x = ix * step, y = iy * step, d = Math.hypot(x, y);
+            if (d > radius || d < 3) continue;
+            const axis = Math.min(Math.abs(x), Math.abs(y), Math.abs(x - y) * 0.71, Math.abs(x + y) * 0.71);
+            const branches = Math.abs(Math.abs(x) + Math.abs(y) - radius * 0.7) < 4;
+            if (axis < 2 || (branches && axis < 11)) cross(cx + x, cy + y, 2, ink);
+          }
+        };
+        const flower = (x, y, r) => {
+          ctx.save(); ctx.translate(x, y); ctx.strokeStyle = ink; ctx.lineWidth = 2.3; ctx.lineJoin = 'round';
+          ctx.beginPath();
+          for (let i = 0; i <= 180; i++) {
+            const angle = i / 180 * TAU, rr = r * (0.68 + Math.cos(angle * 5) * 0.3);
+            ctx[i ? 'lineTo' : 'moveTo'](Math.cos(angle) * rr, Math.sin(angle) * rr);
+          }
+          ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, r * 0.12, 0, TAU); ctx.stroke(); ctx.restore();
+        };
+        if (kind === 'mixed' || kind === 'snow') [[69, 96, 39], [146, 153, 27], [81, 223, 35], [491, 739, 34], [550, 842, 40]].forEach(([x, y, r]) => snow(x, y, r));
+        if (kind === 'mixed' || kind === 'flowers') {
+          [[548, 101, 22], [43, 582, 24]].forEach(([x, y, r]) => flower(x, y, r));
+          doodle(ctx, 'star', 580, 158, 24, ink, 2); doodle(ctx, 'star', 83, 637, 25, ink, 2);
+          doodle(ctx, 'spiral', 102, 849, 38, ink, 2);
+          ctx.strokeStyle = ink; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.moveTo(337, 852);
+          ctx.bezierCurveTo(403, 782, 371, 911, 429, 878); ctx.quadraticCurveTo(458, 859, 464, 865); ctx.stroke();
+        }
+      }
+      ctx.restore();
+    },
+  });
+
+  COLLAGES.push({
+    id: 'memoryRoute', name: 'Маршрут воспоминаний', noNote: true, movableStops: true,
+    palette: [{ key: 'route', name: 'Маршрут' }, { key: 'pin', name: 'Метки', def: '#e94753' }, { key: 'frame', name: 'Рамки фото', def: '#ffffff' }, { key: 'label', name: 'Подложки подписей', def: '#e0f2fa' }, { key: 'ink', name: 'Цвет текста', def: '#203246' }],
+    choices: [
+      { key: 'style', name: 'Оформление маршрута', def: 'nav', options: [['nav', 'Навигатор'], ['hand', 'От руки']] },
+      { key: 'count', name: 'Остановок', def: '4', options: [['2', '2'], ['3', '3'], ['4', '4'], ['5', '5'], ['6', '6']] },
+      { key: 'dim', name: 'Затемнение фона', def: 'medium', options: [['none', 'Нет'], ['light', 'Лёгкое'], ['medium', 'Среднее'], ['dark', 'Сильное']] },
+      { key: 'numbers', name: 'Номера остановок', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    fields(s) {
+      const n = Number(s.tints?.memoryRoute?.count || 4);
+      return [{ key: 'heading', name: 'Название маршрута', placeholder: 'Места этого лета' }, ...Array.from({ length: n }, (_, i) => [
+        { key: `place${i}`, name: `Остановка ${i + 1}`, placeholder: `Место ${i + 1}` },
+        { key: `time${i}`, name: `Заметка ${i + 1}`, placeholder: 'Например: 15 минут' },
+      ]).flat()];
+    },
+    layout(W, H, env) {
+      const n = Number(env.pick('count', '4')), m = Math.min(W, H);
+      const nav = env.pick('style', 'nav') === 'nav';
+      const room = Math.max(H * 0.06, H * (nav ? 0.86 : 1.02) / (n - 1) - m * 0.12);
+      const w = Math.min(W * (nav ? 0.19 : 0.25), H * 0.20, room / 1.22), h = Math.min(w * 1.22, H * 0.18);
+      const navPositions = [[0.16, 0.395], [0.84, 0.45], [0.34, 0.675], [0.73, 0.755]];
+      const stops = Array.from({ length: n }, (_, i) => {
+        const saved = env.marks[i];
+        const def = nav ? (n === 4 ? navPositions[i] : [i % 2 ? 0.81 : 0.22, 0.36 + i / (n - 1) * 0.43]) : [i % 2 ? 0.76 : 0.24, 0.30 + i / (n - 1) * 0.51];
+        const cx = Math.max(w / 2 + W * 0.04, Math.min(W - w / 2 - W * 0.04, (saved?.x ?? def[0]) * W));
+        const cy = Math.max(H * 0.25, Math.min(H * 0.84, (saved?.y ?? def[1]) * H));
+        return { x: cx - w / 2, y: cy - h / 2, w, h, rot: 0, slot: i + 1, shape: 'rounded', frame: 'whiteRounded', corner: nav ? 0.025 : undefined, tint: 'frame', color: '#ffffff', cx, cy };
+      });
+      const anchors = stops.map((s, i) => ({ x: s.cx + (i ? (i % 2 ? -1 : 1) * w * 0.27 : 0), y: s.y - m * 0.064 }));
+      const road = [anchors[0]], badges = [];
+      anchors.slice(1).forEach((s, i) => {
+        const prev = anchors[i], dx = s.x - prev.x, dy = s.y - prev.y;
+        const shapes = [ [[0.25, 0.35], [0.60, 0.06]], [[0.35, 0.20], [0.44, 0.70], [0.90, 0.95]], [[0.48, 0.66], [0.72, 0.38]] ];
+        shapes[i % 3].forEach(([fx, fy]) => {
+          /* Первый участок проходит над первым фото даже при большом расстоянии
+             до следующей остановки (два или три снимка). */
+          const offsetY = i === 0 ? Math.min(dy * fy, m * (fx < 0.5 ? 0.025 : 0.008)) : dy * fy;
+          road.push({ x: prev.x + dx * fx, y: prev.y + offsetY });
+        });
+        road.push(s); badges.push({ x: prev.x + dx * 0.48, y: prev.y + dy * 0.55 + m * 0.035 });
+      });
+      const headingY = Number(env.pick('headingY', nav ? '21' : '7'));
+      const header = { x: W * 0.08, y: H * Math.max(0, Math.min(0.9, headingY / 100)), w: W * 0.84, h: m * 0.075 };
+      return { cells: [{ x: 0, y: 0, w: W, h: H, rot: 0, slot: 0 }, ...stops], stops, anchors, badges, road, header, underAt: 1,
+        under(ctx, u, opt) {
+          ctx.fillStyle = `rgba(0,0,0,${{ none: 0, light: 0.18, medium: 0.35, dark: 0.55 }[opt.c('dim', 'medium')] ?? 0.35})`; ctx.fillRect(0, 0, W, H);
+          const hand = opt.c('style', 'nav') === 'hand';
+          ctx.strokeStyle = opt.c('route', hand ? '#f5e97a' : '#3187ec');
+          ctx.lineCap = hand ? 'round' : 'butt'; ctx.lineJoin = hand ? 'round' : 'miter'; ctx.miterLimit = 4;
+          if (hand) {
+            /* Непрерывный маркер: рука отклоняется от направления, нажим меняется плавно.
+               Рисунок повторяемый, чтобы линия не дрожала в видео. */
+            const rng = window.Motifs.makeRng(844);
+            stops.slice(1).forEach((s, i) => {
+              const prev = stops[i], dx = s.cx - prev.cx, dy = s.cy - prev.cy;
+              const len = Math.max(1, Math.hypot(dx, dy)), nx = -dy / len, ny = dx / len;
+              const steps = Math.max(36, Math.round(len / m * 110));
+              let last = [prev.cx, prev.cy], wobble = 0;
+              const phase = rng() * TAU;
+              for (let j = 1; j <= steps; j++) {
+                const t = j / steps;
+                wobble = wobble * 0.65 + (rng() - 0.5) * m * 0.005;
+                const drift = Math.sin(Math.PI * t) * (Math.sin(t * 9 + phase) * m * 0.026 + Math.sin(t * 31 + phase) * m * 0.004 + wobble);
+                const next = [prev.cx + dx * t + nx * drift, prev.cy + dy * t + ny * drift];
+                ctx.lineWidth = m * 0.009 * (0.86 + 0.18 * Math.sin(t * 12 + phase) + rng() * 0.12);
+                ctx.beginPath(); ctx.moveTo(...last); ctx.lineTo(...next); ctx.stroke(); last = next;
+              }
+            });
+          } else {
+            /* Как дорога на карте: длинные прямые участки и явные углы, без сглаживания. */
+            ctx.lineWidth = m * 0.006; ctx.beginPath();
+            road.forEach((s, i) => ctx[i ? 'lineTo' : 'moveTo'](s.x, s.y)); ctx.stroke();
+          }
+        },
+      };
+    },
+    overlay(ctx, geo, u, opt) {
+      const { W, H } = geo, m = Math.min(W, H), hand = opt.c('style', 'nav') === 'hand';
+      const ink = opt.c('ink', '#203246'), label = opt.c('label', hand ? '#e0f2fa' : '#f5dfa2'), pin = opt.c('pin', '#e94753');
+      const text = (s, x, y, size, width) => { ctx.fillStyle = ink; ctx.font = `500 ${size}px ${hand ? opt.font : SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(s, x, y, width); };
+      const headerY = geo.header.y;
+      ctx.fillStyle = '#fffdf9'; ctx.beginPath(); ctx.roundRect(W * 0.08, headerY, W * 0.84, m * 0.075, m * 0.05); ctx.fill();
+      ctx.fillStyle = hand ? pin : '#e8d884'; ctx.beginPath(); ctx.arc(W * 0.12, headerY + m * 0.0375, m * 0.012, 0, TAU); ctx.fill();
+      text(opt.c('heading', '') || 'Места этого лета', W * 0.51, headerY + m * 0.0375, m * 0.031, W * 0.67);
+      geo.stops.forEach((s, i) => {
+        const labelH = m * 0.042, ly = s.y + s.h + labelH * 0.85;
+        const place = opt.c(`place${i}`, '') || `Место ${i + 1}`;
+        if (hand) {
+          ctx.fillStyle = label; ctx.beginPath(); ctx.roundRect(s.cx - s.w * 0.64, ly - labelH / 2, s.w * 1.28, labelH, labelH / 2); ctx.fill();
+          text(place, s.cx, ly, m * 0.024, s.w * 1.16);
+        } else {
+          ctx.font = `500 ${m * 0.023}px ${SANS}`;
+          const lines = [''];
+          place.split(/\s+/).forEach(word => {
+            const last = lines.length - 1, next = `${lines[last]} ${word}`.trim();
+            if (ctx.measureText(next).width > s.w * 1.35 && lines[last] && lines.length < 2) lines.push(word);
+            else lines[last] = next;
+          });
+          lines.forEach((line, j) => {
+            const bw = Math.min(s.w * 1.4, ctx.measureText(line).width + m * 0.01), y = ly - labelH * 0.16 + j * labelH * 0.67;
+            ctx.fillStyle = label; ctx.fillRect(s.cx - bw / 2, y - labelH * 0.34, bw, labelH * 0.68);
+            text(line, s.cx, y, m * 0.023, bw - m * 0.006);
+          });
+        }
+        const px = s.cx, py = s.y - m * (hand ? 0.025 : 0.055), r = m * (hand ? 0.018 : 0.021);
+        if (!hand && i === 0) {
+          ctx.fillStyle = opt.c('route', '#3187ec'); ctx.strokeStyle = '#fff'; ctx.lineWidth = m * 0.004;
+          ctx.beginPath(); ctx.arc(geo.anchors[0].x, geo.anchors[0].y, m * 0.022, 0, TAU); ctx.fill(); ctx.stroke();
+        } else {
+        ctx.fillStyle = pin; ctx.beginPath(); ctx.moveTo(px, py + r * 1.8);
+        ctx.bezierCurveTo(px - r * 0.3, py + r * 1.2, px - r, py + r * 0.55, px - r, py);
+        ctx.arc(px, py, r, Math.PI, TAU);
+        ctx.bezierCurveTo(px + r, py + r * 0.55, px + r * 0.3, py + r * 1.2, px, py + r * 1.8); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(px, py, r * 0.36, 0, TAU); ctx.fill();
+        }
+        if (opt.c('numbers', 'on') === 'on') {
+          const nx = s.x + s.w * (!hand && i % 2 ? 0.99 : 0.01), ny = s.y + s.h * 0.02, nr = m * (hand ? 0.024 : 0.032);
+          ctx.fillStyle = opt.c('route', hand ? '#f5e97a' : '#3187ec'); ctx.beginPath(); ctx.arc(nx, ny, nr, 0, TAU); ctx.fill();
+          ctx.fillStyle = hand ? '#28313c' : '#fff'; ctx.font = `600 ${nr}px ${SANS}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), nx, ny);
+        }
+        const note = opt.c(`time${i}`, '');
+        if (note) {
+          if (!hand) {
+            const point = geo.badges[i] || { x: geo.anchors[i].x - m * 0.13, y: geo.anchors[i].y - m * 0.025 };
+            ctx.font = `500 ${m * 0.023}px ${SANS}`;
+            const bw = Math.min(W * 0.29, ctx.measureText(note).width + m * 0.03), bh = m * 0.045;
+            ctx.fillStyle = opt.c('route', '#3187ec'); ctx.beginPath(); ctx.roundRect(point.x - bw / 2, point.y - bh / 2, bw, bh, m * 0.006); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(note, point.x, point.y, bw * 0.9);
+            return;
+          }
+          const bw = Math.min(s.w * 1.4, W * 0.34), by = ly + labelH * 0.95;
+          ctx.fillStyle = 'rgba(255,253,249,.9)'; ctx.beginPath(); ctx.roundRect(s.cx - bw / 2, by - labelH * 0.4, bw, labelH * 0.8, labelH * 0.15); ctx.fill();
+          text(note, s.cx, by, m * 0.019, bw * 0.92);
+        }
+      });
+    },
+  });
+
+  const collageApple = new Image();
+  const collageGreenApple = new Image();
+  const collageCherries = new Image(), collageBlueberries = new Image();
+  const fruitImages = { red: collageApple, green: collageGreenApple, cherry: collageCherries, blueberry: collageBlueberries };
+  const fruitInk = (id) => ({ red: '#922318', green: '#3f5a27', cherry: '#8e2037', blueberry: '#385475' }[id] || '#922318');
+  const collageAssetsReady = Promise.all([[collageApple, 'apple.png'], [collageGreenApple, 'apple-green.png'], [collageCherries, 'cherries.png'], [collageBlueberries, 'blueberries.png']].map(([img, file]) => new Promise(resolve => {
+    img.onload = resolve; img.onerror = resolve; img.src = `templates/decor/${file}`;
+  })));
+
+  COLLAGES.push({
+    id: 'wishBasket', name: 'Список желаний', noNote: true,
+    palette: [{ key: 'background', name: 'Фон', def: '#eeedeb' }, { key: 'ink', name: 'Цвет заголовка', def: '#4d657c' }, { key: 'accent', name: 'Цвет бирок', def: '#bfd6ed' }],
+    choices: [{ key: 'count', name: 'Книжек', def: '6', options: [['4', '4'], ['6', '6']] }],
+    fields() { return [{ key: 'heading', name: 'Заголовок списка', placeholder: 'Wish List' }, { key: 'subtitle', name: 'Подзаголовок списка', placeholder: 'version: books' }, { key: 'legend', name: 'Пояснение под корзинкой', placeholder: '1. Первая книга · 2. Вторая книга…', maxLength: 600 }]; },
+    layout(W, H, env) {
+      const k = Math.min(W / 736, H / 920), ox = (W - 736 * k) / 2, oy = (H - 920 * k) / 2;
+      const n = Number(env.pick('count', '6'));
+      const poses = n === 6 ? [[168, 460, -17], [362, 444, 11], [550, 435, 33], [550, 656, -18], [366, 660, -38], [189, 665, 14]] : [[214, 460, -16], [504, 448, 18], [498, 663, -17], [220, 663, 13]];
+      return { k, ox, oy, cells: poses.map(([cx, cy, rot]) => ({ x: ox + (cx - 72) * k, y: oy + (cy - 108) * k, w: 144 * k, h: 216 * k, rot: rot * Math.PI / 180, frame: 'book' })) };
+    },
+    deco(ctx, box, u, geo, opt) {
+      ctx.fillStyle = opt.c('background', '#eeedeb'); ctx.fillRect(0, 0, geo.W, geo.H);
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const basket = (color, lw, shift) => {
+        ctx.save(); ctx.translate(shift, shift); ctx.strokeStyle = color; ctx.lineWidth = lw;
+        ctx.beginPath(); ctx.roundRect(88, 376, 558, 390, 36); ctx.stroke();
+        ctx.beginPath(); ctx.roundRect(98, 387, 538, 368, 27); ctx.stroke();
+        for (let i = 1; i < 10; i++) {
+          const x = 96 + i * 54;
+          ctx.beginPath(); ctx.moveTo(x, 390); ctx.lineTo(x - 20, 753); ctx.stroke();
+        }
+        for (let i = 1; i < 7; i++) { const y = 390 + i * 53; ctx.beginPath(); ctx.moveTo(99, y); ctx.lineTo(635, y); ctx.stroke(); }
+        ctx.restore();
+      };
+      basket('#929b9f', 4.5, 1.5); basket('#f9fcfd', 2.2, -1); basket('#4e626b', 0.8, 0);
+      const grip = ctx.createLinearGradient(78, 0, 102, 0); grip.addColorStop(0, '#697f88'); grip.addColorStop(0.45, '#c4d8df'); grip.addColorStop(1, '#58717b');
+      ctx.fillStyle = grip; ctx.beginPath(); ctx.roundRect(78, 444, 20, 246, 9); ctx.fill();
+      ctx.save(); ctx.translate(558, 0); ctx.fillStyle = grip; ctx.beginPath(); ctx.roundRect(78, 444, 20, 246, 9); ctx.fill(); ctx.restore();
+      ctx.restore();
+    },
+    overlay(ctx, geo, u, opt) {
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const ink = opt.c('ink', '#4d657c'), accent = opt.c('accent', '#bfd6ed');
+      const title = opt.c('heading', '') || 'Wish List';
+      ctx.fillStyle = ink; ctx.font = 'italic 112px Georgia, serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic'; ctx.fillText(title, 368, 192, 570);
+      ctx.fillStyle = accent; ctx.fillRect(245, 235, 246, 36);
+      ctx.strokeStyle = ink; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(245, 229); ctx.lineTo(245, 271); ctx.moveTo(491, 235); ctx.lineTo(491, 277); ctx.stroke();
+      ctx.fillStyle = ink; for (const [x, y] of [[245, 229], [491, 277]]) { ctx.beginPath(); ctx.arc(x, y, 3, 0, TAU); ctx.fill(); }
+      ctx.fillStyle = '#182029'; ctx.font = `23px ${SANS}`; ctx.fillText(opt.c('subtitle', '') || 'version: books', 368, 259, 230);
+      geo.cells.forEach((c, i) => {
+        const rot = c.rot, rx = -c.w / 2, ry = -c.h / 2;
+        const cx = (c.x + c.w / 2 - geo.ox) / geo.k, cy = (c.y + c.h / 2 - geo.oy) / geo.k;
+        const x = cx + (rx * Math.cos(rot) - ry * Math.sin(rot)) / geo.k, y = cy + (rx * Math.sin(rot) + ry * Math.cos(rot)) / geo.k;
+        ctx.fillStyle = accent; ctx.beginPath(); ctx.arc(x, y - 3, 16, 0, TAU); ctx.fill();
+        ctx.fillStyle = '#17202a'; ctx.font = `22px ${SANS}`; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), x, y - 2);
+      });
+      const legend = opt.c('legend', '') || ['Мечты', 'Открытия', 'Истории', 'Вдохновение', 'Приключения', 'Любимое'].slice(0, geo.cells.length).map((name, i) => `${i + 1}. ${name}`).join('   ');
+      ctx.font = `12px ${SANS}`; ctx.textAlign = 'left'; ctx.textBaseline = 'top'; ctx.fillStyle = '#222a30';
+      let line = '', y = 817;
+      legend.split(/\s+/).forEach(word => { if (y > 870) return; const next = `${line} ${word}`.trim(); if (ctx.measureText(next).width > 570 && line) { ctx.fillText(line, 83, y, 570); y += 18; line = word; } else line = next; });
+      if (line && y < 895) ctx.fillText(line, 83, y, 570);
+      ctx.restore();
+    },
+  });
+
+  COLLAGES.push({
+    id: 'appleBooth', name: 'Фруктовая фотобудка', noNote: true,
+    palette: [{ key: 'background', name: 'Фон', def: '#ffffff' }, { key: 'ink', name: 'Рамки и рисунки', def: '#922318' }],
+    choices: [
+      { key: 'apple', name: 'Фрукты и ягоды', def: 'red', options: [['red', 'Красное яблоко'], ['green', 'Зелёное яблоко'], ['cherry', 'Черешня'], ['blueberry', 'Голубика']] },
+      { key: 'count', name: 'Кадров', def: '2', options: [['2', '2'], ['3', '3']] },
+      { key: 'mono', name: 'Чёрно-белые фото', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+      { key: 'decor', name: 'Рисунки мелком', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    layout(W, H, env) {
+      const k = Math.min(W / 736, H / 1308), ox = (W - 736 * k) / 2, oy = (H - 1308 * k) / 2;
+      const n = Number(env.pick('count', '2')), gap = 13, h = (552 - (n - 1) * gap) / n;
+      return { k, ox, oy, cells: Array.from({ length: n }, (_, i) => ({ x: ox + 145 * k, y: oy + (432 + i * (h + gap)) * k, w: 446 * k, h: h * k, rot: 0, mono: env.pick('mono', 'on') === 'on', frame: 'border', tint: 'ink', color: fruitInk(env.pick('apple', 'red')), bw: 0.006 })) };
+    },
+    deco(ctx, box, u, geo, opt) {
+      ctx.fillStyle = opt.c('background', '#ffffff'); ctx.fillRect(0, 0, geo.W, geo.H);
+      const apple = fruitImages[opt.c('apple', 'red')] || collageApple;
+      if (!apple.naturalWidth) return;
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const iw = apple.naturalWidth, ih = apple.naturalHeight;
+      ctx.drawImage(apple, 0, 0, iw, ih * 0.64, 108, 61, 520, 520 * 0.64);
+      ctx.drawImage(apple, 0, ih * 0.64, iw, ih * 0.36, 108, 1005, 520, 520 * 0.36);
+      ctx.restore();
+    },
+    overlay(ctx, geo, u, opt) {
+      if (opt.c('decor', 'on') !== 'on') return;
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const ink = opt.c('ink', fruitInk(opt.c('apple', 'red')));
+      const petal = (cx, cy, r, seed) => {
+        const rng = window.Motifs.makeRng(seed); ctx.strokeStyle = ink; ctx.lineWidth = 4; ctx.lineCap = 'round'; ctx.beginPath();
+        for (let i = 0; i <= 140; i++) { const a = i / 140 * TAU, rr = r * (0.66 + Math.cos(a * 5) * 0.3) + rng() * 1.1; ctx[i ? 'lineTo' : 'moveTo'](cx + Math.cos(a) * rr, cy + Math.sin(a) * rr); } ctx.stroke();
+      };
+      petal(548, 76, 49, 1); petal(83, 947, 50, 2); petal(58, 1080, 36, 3);
+      doodle(ctx, 'star', 650, 183, 47, ink, 3); doodle(ctx, 'spiral', 668, 44, 12, ink, 3);
+      burst(ctx, 114, 210, 62, ink, 1.8); burst(ctx, 653, 1166, 43, ink, 1.4); burst(ctx, 563, 1248, 28, ink, 1.2);
+      ctx.restore();
+    },
+  });
+
+  window.Collages = { COLLAGES, ready: collageAssetsReady, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
 })();
