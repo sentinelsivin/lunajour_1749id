@@ -1738,6 +1738,29 @@
   function layerBox(ctx, l, assets, W, H) {
     const m = Math.min(W, H);
     const size = l.size * m;
+    if (l.card) {
+      if (l.card === 'player') return { w: size * 14, h: size * 7.28, size };
+      const f = layerFont(l); ctx.font = `${f.weight} ${size}px ${f.css}`;
+      const lines = [];
+      String(l.text || ' ').split('\n').forEach(paragraph => {
+        let line = '';
+        for (const word of paragraph.split(/\s+/)) {
+          const next = line ? `${line} ${word}` : word;
+          if (line && ctx.measureText(next).width > size * 10.2) { lines.push(line); line = ''; }
+          if (ctx.measureText(word).width > size * 10.2) {
+            for (const char of word) {
+              if (line && ctx.measureText(line + char).width > size * 10.2) { lines.push(line); line = ''; }
+              line += char;
+            }
+          } else line = line ? `${line} ${word}` : word;
+        }
+        lines.push(line);
+      });
+      const header = l.card === 'window' ? size * 1.5 : l.card === 'voice' ? size * 1.8 : 0;
+      const bodyH = Math.max(size * 3.2, lines.length * size * 1.25 + size * 1.7) + header;
+      const tail = ['bubble', 'pixel'].includes(l.card) ? size * 0.9 : 0;
+      return { w: size * 12, h: bodyH + tail, bodyH, tail, size, lines, header };
+    }
     if (l.type === 'text') {
       const f = layerFont(l);
       ctx.font = `${f.weight} ${size}px ${f.css}`;
@@ -1796,6 +1819,12 @@
 
   /* ---------- готовые значки-стикеры: рисуются кодом, цвет меняется ---------- */
   const VECTORS = [
+    { id: 'starEarbuds', name: 'Звёздные наушники', color: '#ffffff', size: 0.6 },
+    { id: 'starEarbudsLoop', name: 'Звёздные наушники с петлёй', color: '#ffffff', size: 0.7 },
+    { id: 'pixelLove', name: 'Пиксельное сердечко', color: '#e7a9be' },
+    { id: 'loveMail', name: 'Конверт с сердцем', color: '#d699b1' },
+    { id: 'loveFolder', name: 'Папка с сердцем', color: '#d699b1' },
+    { id: 'pixelKitten', name: 'Котик с бантом', color: '#252226' },
     { id: 'scope', name: 'Прицел', color: '#ff1a1a' },
     { id: 'target', name: 'Мишень', color: '#ff1a1a' },
     { id: 'focus', name: 'Фокус', color: '#ffffff' },
@@ -1824,6 +1853,65 @@
     const line = (w, pts) => { ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); ctx.lineTo(pts[2], pts[3]); ctx.stroke(); };
     const ring = (r, w) => { ctx.lineWidth = w; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke(); };
     switch (id) {
+      case 'pixelLove': {
+        const rows = ['01100110', '11111111', '11111111', '01111110', '00111100', '00011000'];
+        rows.forEach((row, iy) => [...row].forEach((bit, ix) => { if (bit === '1') ctx.fillRect((ix - 4) * s * 0.2, (iy - 3) * s * 0.2, s * 0.2 + 0.1, s * 0.2 + 0.1); }));
+        break;
+      }
+      case 'loveMail':
+      case 'loveFolder': {
+        ctx.lineWidth = s * 0.04; ctx.lineJoin = 'round';
+        ctx.globalAlpha = 0.18; ctx.fillRect(-s * 0.85, -s * 0.48, s * 1.7, s * 1.1); ctx.globalAlpha = 1;
+        ctx.strokeRect(-s * 0.85, -s * 0.48, s * 1.7, s * 1.1);
+        ctx.beginPath();
+        if (id === 'loveMail') { ctx.moveTo(-s * 0.85, -s * 0.48); ctx.lineTo(0, s * 0.12); ctx.lineTo(s * 0.85, -s * 0.48); }
+        else { ctx.moveTo(-s * 0.85, -s * 0.48); ctx.lineTo(-s * 0.85, -s * 0.7); ctx.lineTo(-s * 0.22, -s * 0.7); ctx.lineTo(-s * 0.07, -s * 0.48); }
+        ctx.stroke(); ctx.beginPath(); ctx.moveTo(0, s * 0.36);
+        ctx.bezierCurveTo(-s * 0.49, s * 0.05, -s * 0.21, -s * 0.17, 0, s * 0.02); ctx.bezierCurveTo(s * 0.21, -s * 0.17, s * 0.49, s * 0.05, 0, s * 0.36); ctx.fill();
+        break;
+      }
+      case 'pixelKitten': {
+        const rows = ['100000001', '110000011', '111111111', '111111111', '110111011', '111111111', '011111110', '001111100', '001111100', '011101110'];
+        rows.forEach((row, iy) => [...row].forEach((bit, ix) => { if (bit === '1') ctx.fillRect((ix - 4.5) * s * 0.15, (iy - 5) * s * 0.15, s * 0.15 + 0.1, s * 0.15 + 0.1); }));
+        ctx.fillStyle = '#e9b4c8'; ctx.beginPath(); ctx.moveTo(0, s * 0.32); ctx.lineTo(-s * 0.25, s * 0.17); ctx.lineTo(-s * 0.22, s * 0.43); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(0, s * 0.32); ctx.lineTo(s * 0.25, s * 0.17); ctx.lineTo(s * 0.22, s * 0.43); ctx.closePath(); ctx.fill();
+        break;
+      }
+      case 'starEarbuds':
+      case 'starEarbudsLoop': {
+        ctx.scale(s, s); ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.lineWidth = 0.014;
+        const loop = id === 'starEarbudsLoop';
+        const stars = loop ? [[-0.38, -0.81, 0.115, -0.16], [0.48, -0.85, 0.115, 0.18]] : [[-0.35, -0.81, 0.12, 0.18], [0.64, -0.48, 0.12, -0.12]];
+        ctx.beginPath();
+        if (loop) {
+          ctx.moveTo(-0.38, -0.75); ctx.bezierCurveTo(-0.40, -0.59, -0.22, -0.26, -0.02, -0.05);
+          ctx.moveTo(0.47, -0.78); ctx.bezierCurveTo(0.37, -0.53, 0.17, -0.29, -0.02, -0.05);
+          ctx.moveTo(-0.02, 0.02); ctx.bezierCurveTo(-0.01, 0.16, 0.04, 0.33, -0.11, 0.43);
+          ctx.bezierCurveTo(-0.37, 0.63, -0.73, 0.61, -0.64, 0.43);
+          ctx.bezierCurveTo(-0.56, 0.28, -0.32, 0.42, -0.30, 0.57);
+          ctx.bezierCurveTo(-0.25, 1.14, 0.20, 0.65, 0.54, 0.62);
+          ctx.bezierCurveTo(0.75, 0.58, 0.65, 0.83, 0.67, 0.95);
+        } else {
+          ctx.moveTo(-0.35, -0.74); ctx.bezierCurveTo(-0.49, -0.35, -0.18, -0.12, -0.10, 0.17);
+          ctx.moveTo(0.59, -0.43); ctx.bezierCurveTo(0.47, -0.14, 0.06, -0.05, -0.10, 0.17);
+          ctx.moveTo(-0.12, 0.27); ctx.bezierCurveTo(-0.20, 0.53, -0.31, 0.98, -0.70, 0.88);
+        }
+        ctx.stroke();
+        stars.forEach(([x, y, r, rot]) => {
+          ctx.beginPath();
+          for (let i = 0; i < 10; i++) {
+            const a = -Math.PI / 2 + rot + i * Math.PI / 5;
+            const rr = r * (i % 2 ? 0.35 : 1) * (i % 3 === 0 ? 1.08 : 1);
+            ctx[i ? 'lineTo' : 'moveTo'](x + Math.cos(a) * rr, y + Math.sin(a) * rr);
+          }
+          ctx.closePath(); ctx.fill();
+        });
+        ctx.save(); ctx.translate(loop ? -0.02 : -0.10, loop ? -0.025 : 0.215); ctx.rotate(0.2);
+        ctx.beginPath(); ctx.roundRect(-0.026, -0.057, 0.052, 0.114, 0.014);
+        if (loop) ctx.fill(); else ctx.stroke();
+        ctx.restore();
+        break;
+      }
       case 'scope': {
         ring(s * 0.8, s * 0.05);
         ring(s * 0.59, s * 0.012);
@@ -1994,6 +2082,84 @@
     return c;
   }
 
+  const CARDS = [
+    { id: 'message', name: 'Сообщение', kind: 'bubble', text: 'Ты — моё любимое уведомление', bg: '#fffdfb', color: '#242126' },
+    { id: 'pixelMessage', name: 'Пиксельный пузырь', kind: 'pixel', text: '♡ ♡ ♡', bg: '#ffe7ef', color: '#b86686' },
+    { id: 'quoteCard', name: 'Карточка с цитатой', kind: 'quote', text: 'В комнате, полной искусства,\nя всё равно смотрю на тебя.', bg: '#fae7e9', color: '#482a34' },
+    { id: 'messageWindow', name: 'Окошко с сообщением', kind: 'window', text: 'У тебя новое сообщение!', bg: '#fff2f5', color: '#b6758e' },
+    { id: 'voiceMessage', name: 'Голосовое сообщение', kind: 'voice', text: 'для тебя · 0:24', bg: '#fff8fa', color: '#292428' },
+    { id: 'musicPlayer', name: 'Плеер', kind: 'player', text: 'Название песни\nИсполнитель', bg: '#333335', color: '#ffffff' },
+  ];
+
+  /* Общий плеер для стикера и коллажа. Обложка в коллаже рисуется отдельной ячейкой. */
+  function drawMusicPlayer(ctx, x, y, w, h, opt = {}) {
+    ctx.save(); ctx.translate(x, y);
+    const ink = opt.color || '#ffffff';
+    const face = opt.font || '"Golos Text", sans-serif';
+    ctx.fillStyle = opt.bg || '#333335'; ctx.beginPath(); ctx.roundRect(0, 0, w, h, h * 0.1); ctx.fill();
+    ctx.save(); ctx.beginPath(); ctx.roundRect(w * 0.04, h * 0.09, w * 0.43, h * 0.82, w * 0.025); ctx.clip();
+    if (opt.cover) {
+      ctx.translate(w * 0.04, h * 0.09);
+      drawCover(ctx, opt.cover, opt.cover.naturalWidth || opt.cover.width, opt.cover.naturalHeight || opt.cover.height, w * 0.43, h * 0.82);
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,.22)'; ctx.fillRect(0, 0, w, h);
+      ctx.fillStyle = ink; ctx.globalAlpha = 0.45; ctx.font = `500 ${h * 0.22}px "Golos Text", sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText('♫', w * 0.255, h * 0.5);
+    }
+    ctx.restore();
+    const parts = String(opt.text || 'Название песни\nИсполнитель').split('\n');
+    ctx.fillStyle = ink; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.font = `600 ${w * 0.031}px ${face}`; ctx.fillText(parts[0] || '♫', w * 0.53, h * 0.21, w * 0.41);
+    ctx.font = `400 ${w * 0.023}px ${face}`; ctx.globalAlpha = 0.78; ctx.fillText(parts.slice(1).join(' · '), w * 0.53, h * 0.31, w * 0.41); ctx.globalAlpha = 1;
+    const line = (x1, y1, x2, y2, a = 1) => { ctx.globalAlpha = a; ctx.strokeStyle = ink; ctx.lineWidth = w * 0.0035; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.globalAlpha = 1; };
+    const progress = Math.max(0, Math.min(1, Number(opt.progress ?? 0.45)));
+    line(w * 0.53, h * 0.46, w * 0.94, h * 0.46, 0.3); line(w * 0.53, h * 0.46, w * (0.53 + progress * 0.41), h * 0.46);
+    ctx.fillStyle = ink; ctx.beginPath(); ctx.arc(w * (0.53 + progress * 0.41), h * 0.46, w * 0.005, 0, Math.PI * 2); ctx.fill();
+    ctx.font = `400 ${w * 0.018}px ${face}`; ctx.fillText(opt.elapsed || '1:03', w * 0.53, h * 0.51);
+    ctx.textAlign = 'right'; ctx.fillText(opt.duration || '2:22', w * 0.94, h * 0.51);
+    const triangle = (cx, cy, side) => { ctx.beginPath(); ctx.moveTo(cx - side * w * 0.012, cy - h * 0.025); ctx.lineTo(cx + side * w * 0.012, cy); ctx.lineTo(cx - side * w * 0.012, cy + h * 0.025); ctx.closePath(); ctx.fill(); };
+    triangle(w * 0.60, h * 0.65, -1); triangle(w * 0.62, h * 0.65, -1);
+    triangle(w * 0.85, h * 0.65, 1); triangle(w * 0.87, h * 0.65, 1);
+    ctx.fillRect(w * 0.72, h * 0.612, w * 0.011, h * 0.076); ctx.fillRect(w * 0.742, h * 0.612, w * 0.011, h * 0.076);
+    line(w * 0.57, h * 0.82, w * 0.91, h * 0.82, 0.5); ctx.beginPath(); ctx.arc(w * 0.86, h * 0.82, w * 0.005, 0, Math.PI * 2); ctx.fill();
+    line(w * 0.65, h * 0.94, w * 0.83, h * 0.94, 0.65);
+    ctx.restore();
+  }
+
+  function drawTextCard(ctx, l, b, assets) {
+    if (l.card === 'player') {
+      drawMusicPlayer(ctx, -b.w / 2, -b.h / 2, b.w, b.h, { bg: l.bg, color: l.color, text: l.text, cover: assets.stickers?.[l.cover], progress: l.progress, elapsed: l.elapsed, duration: l.duration, font: layerFont(l).css }); return;
+    }
+    const { w, size } = b, h = b.bodyH, x = -w / 2, y = -b.h / 2, f = layerFont(l);
+    ctx.fillStyle = l.bg || '#fff1f5'; ctx.strokeStyle = l.color || '#33252c'; ctx.lineWidth = size * 0.045;
+    ctx.beginPath();
+    if (l.card === 'pixel') {
+      const q = size * 0.35;
+      [[x + q, y], [x + w - q, y], [x + w - q, y + q], [x + w, y + q], [x + w, y + h - q], [x + w - q, y + h - q], [x + w - q, y + h], [x + q, y + h], [x + q, y + h - q], [x, y + h - q], [x, y + q], [x + q, y + q]].forEach(([px, py], i) => ctx[i ? 'lineTo' : 'moveTo'](px, py)); ctx.closePath();
+    } else ctx.roundRect(x, y, w, h, l.card === 'quote' ? size * 0.1 : l.card === 'window' ? size * 0.25 : size * 1.0);
+    ctx.fill();
+    if (l.card === 'bubble' || l.card === 'pixel') {
+      const bottom = y + h;
+      ctx.beginPath(); ctx.moveTo(w * 0.25, bottom - size * 0.15);
+      if (l.card === 'pixel') { ctx.lineTo(w * 0.25, bottom + size * 0.85); ctx.lineTo(w * 0.30, bottom + size * 0.85); ctx.lineTo(w * 0.30, bottom + size * 0.45); ctx.lineTo(w * 0.35, bottom + size * 0.45); ctx.lineTo(w * 0.35, bottom); }
+      else { ctx.quadraticCurveTo(w * 0.27, bottom + size * 0.65, w * 0.40, bottom + size * 0.90); ctx.lineTo(w * 0.38, bottom - size * 0.12); }
+      ctx.closePath(); ctx.fill();
+    }
+    if (l.card === 'quote') { ctx.fillStyle = l.color; ctx.globalAlpha = 0.22; ctx.fillRect(x, y, size * 0.32, h); ctx.globalAlpha = 1; }
+    if (l.card === 'window' || l.card === 'pixel') { ctx.strokeRect(x + size * 0.10, y + size * 0.10, w - size * 0.20, h - size * 0.20); }
+    if (l.card === 'window') {
+      ctx.beginPath(); ctx.moveTo(x, y + size * 1.2); ctx.lineTo(x + w, y + size * 1.2); ctx.stroke();
+      ctx.fillStyle = l.color; ctx.font = `500 ${size * 0.5}px ${f.css}`; ctx.textAlign = 'left'; ctx.fillText('MESSAGE FOR YOU', x + size * 0.5, y + size * 0.8);
+      for (let i = 0; i < 3; i++) ctx.strokeRect(w / 2 - size * (0.75 + i * 0.75), y + size * 0.35, size * 0.45, size * 0.45);
+    }
+    if (l.card === 'voice') {
+      ctx.fillStyle = l.color; ctx.beginPath(); ctx.moveTo(x + size, y + size * 0.8); ctx.lineTo(x + size * 2, y + size * 1.4); ctx.lineTo(x + size, y + size * 2); ctx.closePath(); ctx.fill();
+      const rng = makeRng(830); ctx.lineCap = 'round'; ctx.lineWidth = size * 0.13;
+      for (let i = 0; i < 35; i++) { const xx = x + size * 2.6 + i * size * 0.24, hh = size * (0.2 + rng() * 1.15); ctx.beginPath(); ctx.moveTo(xx, y + size * 1.4 - hh / 2); ctx.lineTo(xx, y + size * 1.4 + hh / 2); ctx.stroke(); }
+    }
+    ctx.font = `${f.weight} ${size}px ${f.css}`; ctx.fillStyle = l.color || '#33252c'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    b.lines.forEach((line, i) => ctx.fillText(line, 0, (i - (b.lines.length - 1) / 2) * size * 1.25 + b.header / 2 - b.tail / 2, w - size * 1.4));
+  }
+
   function drawLayers(ctx, s, assets, W, H) {
     const u = Math.min(W, H) / 1080;
     (s.layers || []).forEach((l) => {
@@ -2007,7 +2173,9 @@
       if (l.flip) ctx.scale(-1, 1);
       ctx.globalAlpha = l.opacity ?? 1;
       a.apply(ctx);
-      if (l.type === 'text') {
+      if (l.card) {
+        layerShadow(ctx, l, 'none', b.size * 12); drawTextCard(ctx, l, b, assets);
+      } else if (l.type === 'text') {
         const f = layerFont(l);
         layerShadow(ctx, l, 'none', b.size * 1.6);
         if (l.style === 'plaque') {
@@ -2177,8 +2345,8 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, VECTORS, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
-    onLut: (fn) => { lutListener = fn; }, layerThumb, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
+    RATIOS, PAPERS, FONTS, VECTORS, CARDS, drawMusicPlayer, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
+    onLut: (fn) => { lutListener = fn; }, layerThumb, drawLayers, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
     /* время для мерцания блёсток в видео; null — неподвижная картинка */
     setClock: (t) => { sparkClock = t; },

@@ -3750,5 +3750,33 @@
     },
   });
 
+  COLLAGES.push({
+    id: 'musicWidget', name: 'Музыкальный плеер', noNote: true,
+    palette: [{ key: 'panel', name: 'Корпус плеера' }, { key: 'ink', name: 'Текст и кнопки плеера' }],
+    choices: [
+      { key: 'theme', name: 'Оформление плеера', def: 'dark', options: [['dark', 'Тёмное'], ['light', 'Светлое'], ['gray', 'Серое']] },
+      { key: 'progress', name: 'Прогресс', def: '45', options: [['0', '0%'], ['25', '25%'], ['45', '45%'], ['75', '75%'], ['100', '100%']] },
+    ],
+    fields() { return [
+      { key: 'song', name: 'Название песни', placeholder: 'Твоя любимая песня' },
+      { key: 'artist', name: 'Исполнитель', placeholder: 'Исполнитель · Альбом' },
+      { key: 'elapsed', name: 'Прошло', placeholder: '1:03' },
+      { key: 'duration', name: 'Длительность', placeholder: '2:22' },
+    ]; },
+    layout(W, H) {
+      const w = Math.min(W * 0.9, H * 1.65), h = w * 0.52, x = (W - w) / 2, y = (H - h) / 2;
+      return { widget: { x, y, w, h }, cells: [{ x: x + w * 0.04, y: y + h * 0.09, w: w * 0.43, h: h * 0.82, rot: 0, shape: 'rounded', corner: 0.058 }] };
+    },
+    deco(ctx, box, u, geo, opt) {
+      const b = geo.widget, theme = opt.c('theme', 'dark');
+      window.Render.drawMusicPlayer(ctx, b.x, b.y, b.w, b.h, {
+        bg: opt.c('panel', theme === 'light' ? '#f5e9ee' : theme === 'gray' ? '#898889' : '#333335'),
+        color: opt.c('ink', theme === 'light' ? '#28252a' : '#ffffff'),
+        text: `${opt.c('song', '') || 'Твоя любимая песня'}\n${opt.c('artist', '') || 'Исполнитель · Альбом'}`,
+        progress: Number(opt.c('progress', '45')) / 100, elapsed: opt.c('elapsed', '') || '1:03', duration: opt.c('duration', '') || '2:22',
+      });
+    },
+  });
+
   window.Collages = { COLLAGES, ready: collageAssetsReady, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
 })();

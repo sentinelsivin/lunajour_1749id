@@ -237,6 +237,9 @@
   const ctx = card.getContext('2d');
 
   const invalidate = () => { dirty = true; };
+  /* Рамка и маркеры сохраняют экранный размер при повороте телефона и смене высоты панели. */
+  if ('ResizeObserver' in window) new ResizeObserver(invalidate).observe(card);
+  window.addEventListener('resize', invalidate);
 
   /* ---------- отрисовка ---------- */
   function sizeCanvas() {
@@ -472,6 +475,16 @@
     placeCtx();
   }
 
+  /* Маркеры остаются одного экранного размера при любом разрешении превью. */
+  function stickerHandles(l) {
+    const b = Render.layerBox(ctx, l, assets, card.width, card.height);
+    const unit = card.width / Math.max(1, card.getBoundingClientRect().width);
+    const point = (x, y) => ({ x: l.x * card.width + x * Math.cos(l.rot || 0) - y * Math.sin(l.rot || 0), y: l.y * card.height + x * Math.sin(l.rot || 0) + y * Math.cos(l.rot || 0) });
+    const visible = p => ({ x: Math.max(12 * unit, Math.min(card.width - 12 * unit, p.x)), y: Math.max(12 * unit, Math.min(card.height - 12 * unit, p.y)) });
+    return { unit, anchor: point(0, -b.h / 2 - 8 * unit), rotate: visible(point(0, -b.h / 2 - 40 * unit)), resize: visible(point(b.w / 2 + 8 * unit, b.h / 2 + 8 * unit)) };
+  }
+  const stickerAngle = a => Math.atan2(Math.sin(a), Math.cos(a));
+
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
     if (scanMode() && selectedIcon >= 0) {
@@ -529,6 +542,17 @@
         ctx.setLineDash([8, 6]);
         ctx.strokeRect(-b.w / 2 - 6, -b.h / 2 - 6, b.w + 12, b.h + 12);
         ctx.restore();
+        if (!multiMode) {
+          const handles = stickerHandles(l), u = handles.unit;
+          ctx.save(); ctx.setLineDash([]); ctx.lineWidth = 1.5 * u; ctx.strokeStyle = '#6c9fe0';
+          ctx.beginPath(); ctx.moveTo(handles.anchor.x, handles.anchor.y); ctx.lineTo(handles.rotate.x, handles.rotate.y); ctx.stroke();
+          [['resize', '↘'], ['rotate', '↻']].forEach(([kind, icon]) => {
+            const p = handles[kind]; ctx.fillStyle = '#ffffff';
+            ctx.beginPath(); ctx.arc(p.x, p.y, 10 * u, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = '#245888'; ctx.font = `600 ${14 * u}px sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(icon, p.x, p.y);
+          });
+          ctx.restore();
+        }
       });
       return;
     }
@@ -654,6 +678,13 @@
     mode = next;
     markSeg($('modeSeg'), next);
     resetSlots();
+  }
+
+  /* Влог живёт на своём экране поверх приложения; камера на это время выключается */
+  function openVlog() {
+    if (!window.Vlog) return;
+    Camera.stop();
+    window.Vlog.open({ onClose: () => { markSeg($('modeSeg'), mode); if (phase === 'shoot') resetSlots(); else invalidate(); } });
   }
 
   function clearSampleNote() {
@@ -4124,7 +4155,7 @@
     const grid = $('stickerGrid');
     grid.replaceChildren();
     /* в наборе только исходные картинки; копии без фона (id на «c») живут только на карточке */
-    Object.entries(assets.stickers).filter(([id]) => !id.startsWith('c')).forEach(([id, el]) => {
+    Object.entries(assets.stickers).filter(([id]) => stickerSet === 'mine' && !id.startsWith('c')).forEach(([id, el]) => {
       const b = document.createElement('button');
       b.type = 'button';
       const img = document.createElement('img');
@@ -4139,7 +4170,17 @@
     tabs.replaceChildren();
     const stRec = recentOf('sticker').filter((k) => k.startsWith('e:') || Render.VECTORS.some((v) => `v:${v.id}` === k));
     if (stickerSet === 'recent' && !stRec.length) stickerSet = 'emoji';
-    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['ready', 'Готовые']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['ready', 'Готовые'], ['cards', 'Карточки'], ['mine', 'Мои картинки']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    if (stickerSet === 'mine') return;
+    if (stickerSet === 'cards') {
+      Render.CARDS.forEach(def => {
+        const layer = { type: 'text', card: def.kind, text: def.text, color: def.color, bg: def.bg, font: 'golos', size: 0.045 };
+        const b = document.createElement('button'); b.type = 'button'; b.setAttribute('aria-label', t(def.name)); b.title = t(def.name);
+        b.append(Render.layerThumb(layer, assets, 100));
+        b.onclick = () => addLayer({ ...layer }); grid.append(b);
+      });
+      return;
+    }
     const vecButton = (v) => {
       const b = document.createElement('button');
       b.type = 'button';
@@ -4148,7 +4189,7 @@
       const c = canvas(80, 80);
       Render.drawVector(c.getContext('2d'), v.id, 40, 40, 64, v.color);
       b.append(c);
-      b.onclick = () => { const first = !recentOf('sticker').length; remember('sticker', `v:${v.id}`); if (first) syncStickers(); addLayer({ type: 'sticker', vec: v.id, color: v.color, size: 0.4 }); };
+      b.onclick = () => { const first = !recentOf('sticker').length; remember('sticker', `v:${v.id}`); if (first) syncStickers(); addLayer({ type: 'sticker', vec: v.id, color: v.color, size: v.size || 0.4 }); };
       grid.append(b);
     };
     const emojiButton = (e) => {
@@ -4405,6 +4446,12 @@
     $('layerDown').disabled = selectedLayer <= 0;
     if (!isText) return;
     if (document.activeElement !== $('layerText')) $('layerText').value = l.text;
+    $('layerStyle').parentElement.hidden = !!l.card;
+    $('playerCardTools').hidden = l.card !== 'player';
+    if (l.card === 'player') {
+      $('playerElapsed').value = l.elapsed || '1:03'; $('playerDuration').value = l.duration || '2:22';
+      $('playerProgress').value = (l.progress ?? 0.45) * 100;
+    }
     markSeg($('layerStyle'), l.style || 'none');
     const fonts = $('layerFonts');
     fonts.replaceChildren();
@@ -4451,16 +4498,29 @@
     };
     card.addEventListener('pointerdown', (e) => {
       if (!layersMode()) return;
+      e.preventDefault();
       pointers.set(e.pointerId, e);
       try { card.setPointerCapture(e.pointerId); } catch {}
       if (pointers.size === 2 && layerAt(selectedLayer)) {
         const [a, b] = [...pointers.values()];
         const l = layerAt(selectedLayer);
-        pinch = { dist: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), ang: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX), size: l.size, rot: l.rot || 0 };
+        commitHistory();
+        pinch = { dist: Math.max(5, Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY)), ang: Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX), size: l.size, rot: l.rot || 0 };
         drag = null;
         return;
       }
       const [px, py] = toCard(e);
+      const selected = !multiMode && layerAt(selectedLayer);
+      if (selected) {
+        const handles = stickerHandles(selected);
+        const kind = ['rotate', 'resize'].find(k => Math.hypot(px - handles[k].x, py - handles[k].y) <= 22 * handles.unit);
+        if (kind) {
+          commitHistory();
+          const dx = px - selected.x * card.width, dy = py - selected.y * card.height;
+          drag = { handle: kind, dist: Math.max(1, Math.hypot(dx, dy)), angle: Math.atan2(dy, dx), size: selected.size, rot: selected.rot || 0 };
+          return;
+        }
+      }
       const hit = hitLayer(px, py);
       /* Shift на компьютере тоже включает выбор нескольких */
       if (e.shiftKey && !multiMode && hit >= 0) {
@@ -4492,12 +4552,20 @@
         const [a, b] = [...pointers.values()];
         const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
         const ang = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
-        editLayer({ size: clamp(pinch.size * (dist / pinch.dist), 0.03, 1.5), rot: pinch.rot + ang - pinch.ang }, true);
+        editLayer({ size: clamp(pinch.size * (dist / pinch.dist), 0.005, 1.5), rot: stickerAngle(pinch.rot + stickerAngle(ang - pinch.ang)) }, true);
         syncLayerTools();
         return;
       }
       if (!drag) return;
       const [px, py] = toCard(e);
+      if (drag.handle) {
+        const l = layerAt(selectedLayer); if (!l) return;
+        const dx = px - l.x * card.width, dy = py - l.y * card.height;
+        editLayer(drag.handle === 'resize'
+          ? { size: clamp(drag.size * Math.hypot(dx, dy) / drag.dist, 0.005, 1.5) }
+          : { rot: stickerAngle(drag.rot + stickerAngle(Math.atan2(dy, dx) - drag.angle)) }, true);
+        syncLayerTools(); return;
+      }
       if (drag.group) {
         const dx = (px - drag.px) / card.width;
         const dy = (py - drag.py) / card.height;
@@ -4528,19 +4596,26 @@
         invalidate();
       }
       pointers.delete(e.pointerId);
+      const wasPinch = !!pinch;
       if (pointers.size < 2) pinch = null;
+      if (wasPinch && pointers.size === 1 && layerAt(selectedLayer)) {
+        const remaining = [...pointers.values()][0], l = layerAt(selectedLayer), [px, py] = toCard(remaining);
+        drag = { dx: l.x - px / card.width, dy: l.y - py / card.height };
+      }
       if (!pointers.size) {
         drag = null;
+        commitHistory();
         if (snapGuides.x || snapGuides.y) { snapGuides = { x: false, y: false }; invalidate(); }
       }
     };
     card.addEventListener('pointerup', end);
     card.addEventListener('pointercancel', end);
+    card.addEventListener('lostpointercapture', e => { if (pointers.has(e.pointerId)) end(e); });
     card.addEventListener('wheel', (e) => {
       const l = layersMode() && layerAt(selectedLayer);
       if (!l) return;
       e.preventDefault();
-      editLayer({ size: clamp(l.size * (e.deltaY < 0 ? 1.06 : 0.94), 0.03, 1.5) });
+      editLayer(e.shiftKey ? { rot: stickerAngle((l.rot || 0) + (e.deltaY < 0 ? 1 : -1) * Math.PI / 60) } : { size: clamp(l.size * (e.deltaY < 0 ? 1.06 : 0.94), 0.005, 1.5) });
     }, { passive: false });
 
     $('stickerUpload').onclick = () => $('fileSticker').click();
@@ -4549,6 +4624,20 @@
       type: 'text', text: t('мой день'), font: 'caveat', color: luminance(state.paperColor) > 0.45 ? '#111111' : '#ffffff', bg: '#ffffff', style: 'none', size: 0.09,
     });
     $('layerText').oninput = (e) => editLayer({ text: e.target.value }, true);
+    $('playerElapsed').oninput = e => editLayer({ elapsed: e.target.value }, true);
+    $('playerDuration').oninput = e => editLayer({ duration: e.target.value }, true);
+    $('playerProgress').oninput = e => editLayer({ progress: Number(e.target.value) / 100 }, true);
+    $('playerCoverPick').onclick = () => $('playerCoverFile').click();
+    $('playerCoverFile').onchange = async e => {
+      const file = e.target.files[0], index = selectedLayer; e.target.value = '';
+      if (!file || layerAt(index)?.card !== 'player') return;
+      try {
+        const { el } = await imageSrc(file), id = `player-cover-${Date.now()}`;
+        if (layerAt(index)?.card !== 'player') return;
+        assets.stickers[id] = el; assets.stickerBlobs[id] = file;
+        state.layers = state.layers.map((l, i) => i === index ? { ...l, cover: id } : l); update();
+      } catch { toast(t('Не получилось открыть картинку.')); }
+    };
     $('layerStyle').addEventListener('click', (e) => {
       const b = e.target.closest('button');
       if (b) editLayer({ style: b.dataset.v });
@@ -5174,7 +5263,9 @@
     });
     $('modeSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button');
-      if (b && !busy && !recording) setMode(b.dataset.v);
+      if (!b || busy || recording) return;
+      if (b.dataset.v === 'vlog') openVlog();
+      else setMode(b.dataset.v);
     });
     $('slotSeg').addEventListener('click', (e) => {
       const b = e.target.closest('button');
@@ -5579,7 +5670,7 @@
   const HINTS = {
     scan: 'Выбери набор. Нажми на фото, чтобы добавить рамку, а нажатие на рамку откроет её меню.',
     fx: 'Можно наложить два эффекта: переключатель «Эффект 1 / Эффект 2» сверху.',
-    layers: 'Стикеры двигаются пальцем. Двумя пальцами можно повернуть и увеличить.',
+    layers: 'Стикер двигается пальцем или мышью. Маркеры меняют размер и поворот; на телефоне можно двумя пальцами.',
     collage: 'Нажми на ячейку коллажа, чтобы выбрать, куда встанет следующее фото.',
   };
   function showHint(name) {
@@ -5716,6 +5807,7 @@
     $('starterPick').onclick = () => $('uploadBtn').click();
     $('starterCam').onclick = () => $('shutter').click();
     $('starterSample').onclick = () => $('startSample').click();
+    $('vlogBtn').onclick = openVlog;
     Store.get('music').then((m) => { if (m && m.blob) { Music.setFile(m.blob, m.name); syncMotion(); } }).catch(() => {});
     Store.get('styles').then((list) => { if (Array.isArray(list)) myStyles = list; syncStyles(); }).catch(() => syncStyles());
     Store.get('scanPresets').then((list) => { if (Array.isArray(list)) { userPresets = list; buildScanGrid(); syncScan(); } }).catch(() => {});

@@ -926,3 +926,242 @@ details.fine > .slider { margin-top: 12px; }
 .series-bar button:hover { background: rgba(255, 255, 255, .08); }
 #seriesEnd { font-size: 18px; color: var(--muted); }
 #seriesCount { min-width: 56px; text-align: center; font: 13px var(--mono); color: var(--bone); }
+
+/* ---------- Влог: экран монтажа ---------- */
+.vlog {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+  grid-template-areas: "top" "stage" "transport" "tl" "tools";
+  background: var(--ink);
+  color: var(--bone);
+}
+.vlog-top {
+  grid-area: top;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: max(8px, env(safe-area-inset-top)) 16px 8px;
+  border-bottom: 1px solid var(--hairline);
+}
+.vlog-title { flex: 1; font: 400 22px/1 var(--display); }
+.vlog-history { display: flex; gap: 4px; }
+.vlog-stage { grid-area: stage; position: relative; display: grid; place-items: center; min-height: 0; overflow: hidden; }
+#vlogCanvas { display: block; border-radius: 6px; background: #000; cursor: pointer; }
+.vlog-empty { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 320px; padding: 16px; text-align: center; }
+.vlog-empty b { font: 400 24px/1.2 var(--display); text-wrap: balance; }
+.vlog-empty span { color: var(--muted); font-size: 14px; }
+
+.vlog-transport { grid-area: transport; display: flex; align-items: center; gap: 12px; padding: 6px 16px; }
+.vlog-play {
+  width: 44px; height: 44px; flex: none;
+  border: 1px solid var(--hairline); border-radius: 50%;
+  background: var(--surface2); font-size: 15px; line-height: 1;
+}
+.vlog-play:disabled { opacity: .4; }
+.vlog-time { flex: 1; font: 13px var(--mono); color: var(--silver); font-variant-numeric: tabular-nums; }
+.vlog-zoom { display: flex; gap: 4px; }
+.vlog-zoom .btn { min-width: 36px; }
+
+/* лента: указатель стоит по центру, под ним едет время; отступы по половине ширины дают дойти до начала и конца */
+.vlog-tl {
+  grid-area: tl;
+  position: relative;
+  overflow-x: auto;
+  overflow-y: hidden;
+  touch-action: pan-x;
+  scrollbar-width: none;
+  border-top: 1px solid var(--hairline);
+  border-bottom: 1px solid var(--hairline);
+  background: var(--surface1);
+}
+.vlog-tl::-webkit-scrollbar { display: none; }
+.vlog-track { display: flex; flex-direction: column; gap: 6px; width: max-content; padding: 10px 50%; }
+.vlog-clips { display: flex; height: 58px; }
+.vlog-clip {
+  position: relative;
+  flex: none;
+  height: 100%;
+  border-radius: 6px;
+  background: var(--surface2) repeat-x left center / auto 100%;
+  box-shadow: inset -2px 0 0 var(--surface1), inset 2px 0 0 var(--surface1);
+  overflow: hidden;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.vlog-clip-tag {
+  position: absolute; left: 6px; bottom: 4px;
+  padding: 1px 5px; border-radius: 3px;
+  background: rgba(0, 0, 0, .6); color: #fff;
+  font: 10.5px var(--mono); white-space: nowrap; pointer-events: none;
+}
+.vlog-clip.sel { z-index: 1; overflow: visible; outline: 2px solid var(--bone); outline-offset: -2px; touch-action: none; }
+.vlog-clip.drag { z-index: 3; opacity: .85; box-shadow: 0 8px 22px rgba(0, 0, 0, .6); transition: none; }
+.vlog-clip.drop { box-shadow: inset 4px 0 0 var(--accent-light); }
+.vlog-handle {
+  position: absolute; top: 0; bottom: 0; width: 18px;
+  background: var(--bone); touch-action: none; cursor: ew-resize;
+}
+.vlog-handle.in { left: 0; border-radius: 6px 0 0 6px; }
+.vlog-handle.out { right: 0; border-radius: 0 6px 6px 0; }
+.vlog-handle::after { content: ""; position: absolute; left: 8px; top: 35%; bottom: 35%; width: 2px; border-radius: 1px; background: var(--ink); }
+.vlog-music {
+  height: 26px; padding: 0 10px;
+  border: 0; border-radius: 6px;
+  background: rgba(167, 139, 250, .28); color: var(--bone);
+  font: 500 12px var(--body); text-align: left; white-space: nowrap; overflow: hidden;
+}
+.vlog-music.empty { background: none; border: 1px dashed var(--hairline); color: var(--muted); }
+.vlog-head { position: sticky; left: 50%; top: 0; width: 0; height: 0; }
+.vlog-head::before {
+  content: ""; position: absolute; left: -1px; bottom: 0; width: 2px; height: 104px;
+  background: var(--bone); border-radius: 1px; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .4);
+}
+
+.vlog-tools {
+  grid-area: tools;
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px calc(4px + env(safe-area-inset-bottom));
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.vlog-tools::-webkit-scrollbar { display: none; }
+.vlog-tools button {
+  flex: 1 0 64px;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  min-height: 52px; padding: 6px 4px;
+  border: 0; border-radius: 8px;
+  background: none; color: var(--silver);
+  font: 500 11.5px var(--body); white-space: nowrap;
+}
+.vlog-tools button:hover { background: rgba(255, 255, 255, .06); }
+.vlog-tools button.on { color: var(--accent-light); background: rgba(49, 113, 198, .14); }
+.vlog-tools button[data-tool="del"] { color: #ff8a8a; }
+
+/* настройки: на телефоне шторка над инструментами */
+.vlog-side {
+  position: absolute;
+  left: 0; right: 0;
+  bottom: var(--vlog-tools-h, 64px);
+  z-index: 4;
+  display: flex; flex-direction: column;
+  max-height: 48dvh;
+  border-top: 1px solid var(--hairline);
+  border-radius: 12px 12px 0 0;
+  background: var(--surface1);
+  box-shadow: 0 -10px 30px rgba(0, 0, 0, .5);
+}
+.vlog-sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 16px; border-bottom: 1px solid var(--hairline); }
+.vlog-sheet-head b { font: 600 14px var(--body); }
+.vlog-sheet-body { display: flex; flex-direction: column; gap: 14px; padding: 14px 16px 18px; overflow-y: auto; }
+.vlog-sheet-body .group .label { color: var(--muted); font-size: 13px; }
+.vlog-slider { display: flex; flex-direction: column; gap: 6px; }
+.vlog-slider .label { display: flex; justify-content: space-between; color: var(--muted); font-size: 13px; }
+.vlog-slider b { color: var(--bone); font: 500 12px var(--mono); }
+.vlog-slider input { width: 100%; accent-color: var(--accent); min-height: 32px; }
+.vlog-looks { grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); }
+.vlog-looks .thumb { display: flex; flex-direction: column; gap: 4px; color: var(--silver); font-size: 11.5px; }
+.vlog-looks .thumb canvas { aspect-ratio: 3 / 4; height: auto; border-radius: 4px; border: 2px solid transparent; }
+.vlog-looks .thumb.on canvas { border-color: var(--accent-light); }
+.vlog-looks .thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#vlogProgress { width: 100%; accent-color: var(--accent); margin-bottom: 8px; }
+
+@media (min-width: 900px) {
+  .vlog {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    grid-template-rows: auto minmax(0, 1fr) auto auto auto;
+    grid-template-areas: "top top" "stage side" "transport side" "tools side" "tl tl";
+  }
+  .vlog-side {
+    grid-area: side;
+    position: static;
+    max-height: none;
+    min-height: 0;
+    border-top: 0;
+    border-left: 1px solid var(--hairline);
+    border-radius: 0;
+    box-shadow: none;
+  }
+  .vlog-tools { justify-content: center; border-top: 1px solid var(--hairline); padding-bottom: 4px; }
+  .vlog-tools button { flex: 0 0 76px; }
+  .vlog-clips { height: 72px; }
+  .vlog-head::before { height: 118px; }
+  .vlog-track { padding-top: 12px; padding-bottom: 14px; }
+}
+
+/* вход во влог: всегда в верхней панели, с подписью, чтобы его было видно сразу */
+.vlog-entry { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; border-color: rgba(167, 139, 250, .55); color: var(--bone); }
+.vlog-entry svg { color: var(--violet); flex: none; }
+@media (max-width: 860px) {
+  /* в редактировании наверху тесно: остаётся только значок */
+  .app.editing .vlog-entry span { display: none; }
+  .app.editing .vlog-entry { padding: 5px 7px; }
+}
+
+/* влог, этап 2: стыки, дорожка надписей, рамка на кадре */
+.vlog-clips { position: relative; }
+.vlog-join {
+  position: absolute; top: 50%; z-index: 2;
+  width: 22px; height: 22px; margin: -11px 0 0 -11px; padding: 0;
+  border: 1px solid var(--hairline); border-radius: 5px;
+  background: var(--surface1); color: var(--silver);
+  font: 600 13px/1 var(--body);
+}
+.vlog-join.has { background: var(--bone); color: var(--ink); }
+.vlog-join.on { outline: 2px solid var(--accent-light); outline-offset: 1px; }
+.vlog-ovs { position: relative; min-height: 0; }
+.vlog-ov {
+  position: absolute; height: 22px;
+  display: flex; align-items: center; padding: 0 8px;
+  border-radius: 5px; background: rgba(245, 197, 24, .3); color: var(--bone);
+  font: 500 11.5px var(--body); white-space: nowrap; overflow: hidden;
+  cursor: pointer; user-select: none; -webkit-user-select: none;
+}
+.vlog-ov.text { background: rgba(108, 159, 224, .35); }
+.vlog-ov span { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.vlog-ov.sel { z-index: 1; overflow: visible; outline: 2px solid var(--bone); outline-offset: -2px; touch-action: none; padding: 0 20px; }
+.vlog-ov .vlog-handle { width: 14px; }
+.vlog-ov .vlog-handle::after { left: 6px; }
+.vlog-head::before { height: var(--head-h, 104px); }
+.vlog-stage { touch-action: none; }
+.vlog-box {
+  position: absolute; z-index: 2;
+  border: 1.5px dashed rgba(255, 255, 255, .9);
+  border-radius: 4px;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+  pointer-events: none;
+}
+.vlog-box-h {
+  position: absolute; right: -13px; bottom: -13px;
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--bone); box-shadow: 0 2px 8px rgba(0, 0, 0, .5);
+  pointer-events: auto; cursor: nwse-resize; touch-action: none;
+}
+.vlog-box-h::after { content: "⤡"; position: absolute; inset: 0; display: grid; place-items: center; color: var(--ink); font-size: 14px; }
+.vlog-swatches { display: flex; flex-wrap: wrap; gap: 8px; }
+.vlog-swatches button { width: 30px; height: 30px; padding: 0; border: 2px solid var(--hairline); border-radius: 50%; }
+.vlog-swatches button.on { border-color: var(--accent-light); box-shadow: 0 0 0 2px var(--surface1), 0 0 0 4px var(--accent-light); }
+.vlog-textarea {
+  width: 100%; padding: 10px 12px; resize: vertical;
+  border: 1px solid var(--hairline); border-radius: 6px;
+  background: var(--surface2); color: var(--bone); font: 16px var(--body);
+}
+.vlog-presets { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.vlog-presets .thumb { display: flex; flex-direction: column; gap: 4px; color: var(--silver); font-size: 11px; }
+.vlog-presets canvas { width: 100%; height: auto; aspect-ratio: 1; border-radius: 6px; background: #3a3a3a; }
+.vlog-stickers { display: grid; grid-template-columns: repeat(auto-fill, minmax(48px, 1fr)); gap: 6px; }
+.vlog-stickers.wide { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+.vlog-stickers button {
+  aspect-ratio: 1; display: grid; place-items: center; padding: 4px;
+  border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface2);
+  font-size: 26px; line-height: 1;
+}
+.vlog-stickers button:hover { border-color: var(--accent-light); }
+.vlog-stickers canvas, .vlog-stickers img { max-width: 100%; max-height: 100%; }
+.vlog-sheet-body .row { display: flex; flex-wrap: wrap; gap: 8px; }

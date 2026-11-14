@@ -1959,6 +1959,47 @@
     }
   }
 
+  /* Бумажные облачка: округлые фестоны снизу и сверху, без плоского основания. */
+  function paperClouds(ctx, w, h, rng, o) {
+    const m = Math.min(w, h), n = Math.max(1, Math.round(12 * o.density));
+    const cols = Math.max(2, Math.round(Math.sqrt(n * w / h))), rows = Math.ceil(n / cols);
+    ctx.fillStyle = '#fff';
+    for (let i = 0; i < n; i++) {
+      const radius = Math.min(m * 0.049 * o.size * rng.range(0.85, 1.13), w * 0.2, h * 0.18);
+      const x = ((i % cols + rng.range(0.24, 0.76)) / cols) * (w - radius * 2) + radius;
+      const y = ((Math.floor(i / cols) + rng.range(0.25, 0.75)) / rows) * (h - radius * 1.5) + radius * 0.75;
+      ctx.save(); ctx.translate(x, y); ctx.scale(radius, radius); ctx.beginPath();
+      [[-0.65, 0, 0.38, 0.34], [-0.34, -0.22, 0.4, 0.34], [0.12, -0.29, 0.43, 0.34], [0.59, -0.10, 0.38, 0.34], [0.57, 0.23, 0.38, 0.31], [0.1, 0.27, 0.43, 0.30], [-0.38, 0.24, 0.4, 0.3]].forEach(([cx, cy, rx, ry]) => {
+        ctx.moveTo(cx + rx, cy); ctx.ellipse(cx, cy, rx, ry, 0, 0, TAU);
+      });
+      ctx.fill(); ctx.restore();
+    }
+  }
+
+  /* Пиксельные шары и подвесы — единый вырез, через который виден снимок. */
+  function hangingBaubles(ctx, w, h, rng, o) {
+    const m = Math.min(w, h), n = Math.max(1, Math.min(9, Math.round(3 * o.density)));
+    const spots = [[0.24, 0.32, 0.18], [0.56, 0.17, 0.125], [0.75, 0.76, 0.215], [0.84, 0.24, 0.09], [0.20, 0.73, 0.11], [0.48, 0.52, 0.09], [0.10, 0.51, 0.065], [0.87, 0.49, 0.07], [0.49, 0.87, 0.07]];
+    const balls = spots.slice(0, n).map(([fx, fy, fr], i) => {
+      const cx = w * fx, cy = h * fy;
+      const r = Math.min(m * fr * o.size, cx - m * 0.025, w - cx - m * 0.025, cy - m * 0.035, h - cy - m * 0.025);
+      return { cx, cy, r, g: r / 9, ribbon: m * (i === 1 ? 0.013 : 0.021) * Math.sqrt(o.size) };
+    });
+    ctx.fillStyle = '#fff';
+    balls.forEach(({ cx, cy, r, g, ribbon }) => {
+      ctx.fillRect(cx - ribbon / 2, 0, ribbon, cy - r + g);
+      ctx.fillRect(cx - g * 1.4, cy - r - g * 0.7, g * 2.8, g * 1.7);
+    });
+    balls.forEach(({ cx, cy, r, g }) => {
+      /* Одна заливка по строкам сохраняет ступеньки и не оставляет швов между клетками. */
+      for (let row = -9; row < 9; row++) {
+        const yy = (row + 0.5) * g;
+        const half = Math.round(Math.sqrt(Math.max(0, r * r - yy * yy)) / g);
+        ctx.fillRect(cx - half * g, cy + row * g, half * g * 2, g + m * 0.00015);
+      }
+    });
+  }
+
   const CATEGORIES = [
     { id: 'all', name: 'Все' },
     { id: 'hand', name: 'Расставить' },
@@ -2139,6 +2180,7 @@
     { id: 'flake-scatter', name: 'Снегопад', cat: 'nature', draw: scatterMotif('flake', 'scatter') },
     { id: 'flake-ring', name: 'Снежный венок', cat: 'nature', draw: scatterMotif('flake', 'ring') },
     { id: 'cloud-scatter', name: 'Облака', cat: 'nature', draw: scatterMotif('cloud', 'scatter') },
+    { id: 'paper-clouds', name: 'Облачка-вырезы', cat: 'nature', draw: paperClouds },
     { id: 'cloud-fall', name: 'Облачный день', cat: 'nature', draw: scatterMotif('cloud', 'fall') },
 
     { id: 'heart-flock', name: 'Сердечки', cat: 'love', draw: scatterMotif('heart', 'flock') },
@@ -2171,6 +2213,7 @@
     { id: 'px-tulip', name: 'Тюльпан', cat: 'pixels', draw: pixelMotif('tulip') },
     { id: 'px-lego', name: 'Кубики лего', cat: 'pixels', draw: legoBricks },
     { id: 'px-cloud', name: 'Пиксельное облако', cat: 'pixels', draw: pixelCloud },
+    { id: 'px-baubles', name: 'Ёлочные шары', cat: 'pixels', draw: hangingBaubles },
     { id: 'px-cat-stretch', name: 'Кот потягивается', cat: 'pixels', draw: pixelCatStretch },
     { id: 'px-glitch', name: 'Сбой', cat: 'pixels', draw: glitchSparks },
     { id: 'px-ornament', name: 'Узор', cat: 'pixels', draw: pixelOrnament },
