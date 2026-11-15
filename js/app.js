@@ -4299,11 +4299,110 @@
     return d ? { id: d[0], name: d[1], color: '#ffffff', size: 0.16 } : null;
   }
 
+  const PACK_TABS = [
+    ['figures', 'Фигурки'], ['cats', 'Котики'], ['retro', 'Ретро-техника'], ['chrome', 'Хром'], ['objects', 'Мелочи'],
+  ];
+
+  function packCutout(image, rect, tolerance, maxSize, screen) {
+    const [left, top, right, bottom] = rect;
+    const sw = (right - left) * image.naturalWidth;
+    const sh = (bottom - top) * image.naturalHeight;
+    const scale = Math.min(1, maxSize / Math.max(sw, sh));
+    // cutBackground определяет цвет фона по непрозрачным пикселям на краю.
+    const crop = canvas(sw * scale, sh * scale);
+    crop.getContext('2d').drawImage(image, left * image.naturalWidth, top * image.naturalHeight, sw, sh, 0, 0, crop.width, crop.height);
+    const hole = screen && [(screen[0] - left) / (right - left), (screen[1] - top) / (bottom - top)];
+    const sticker = tolerance ? cutBackground(crop, tolerance, 'edge', 0, hole) : crop;
+    if (!sticker) throw new Error('Could not read sticker background');
+    return sticker;
+  }
+
+  let stickerPackLoad = 0;
+  function stickerSheetUrl(file) {
+    const url = new URL(`templates/stickers/${file}`, document.baseURI);
+    if (url.protocol !== 'file:') return url.href;
+    // У file:// отдельный origin для каждого файла. Data URL позволяет читать Canvas.
+    return new Promise((resolve, reject) => {
+      const script = document.createElement('script');
+      script.src = `${url.href}.js`;
+      script.onload = () => {
+        const data = script.dataset.image;
+        script.remove();
+        if (data) resolve(data);
+        else reject(new Error(`Empty sticker source: ${file}`));
+      };
+      script.onerror = (error) => { script.remove(); reject(error); };
+      document.head.append(script);
+    });
+  }
+
+  function showStickerPack(grid, set, name) {
+    const load = stickerPackLoad;
+    let number = 0;
+    const previews = [];
+    for (const [category, file, tolerance, boxes, screen] of window.StickerPacks) {
+      if (category !== set) continue;
+      const image = new Image();
+      const loaded = Promise.resolve(stickerSheetUrl(file)).then((url) => new Promise((resolve, reject) => {
+        image.onload = resolve;
+        image.onerror = reject;
+        image.src = url;
+      }));
+      const regions = boxes.length ? boxes : [[0, 0, 1, 1]];
+      regions.forEach((rect, index) => {
+        const id = `pack:${file}:${index}${screen ? ':open' : ''}`;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.hidden = true;
+        button.title = `${t(name)} · ${++number}`;
+        button.setAttribute('aria-label', button.title);
+        grid.append(button);
+        const preview = loaded.then(() => {
+          if (!button.isConnected) return;
+          button.append(packCutout(image, rect, tolerance, 104, screen));
+          button.hidden = false;
+        });
+        previews.push(preview);
+        preview.catch((error) => { button.remove(); console.warn('sticker pack preview', file, error); });
+        button.onclick = async () => {
+          button.disabled = true;
+          const target = state;
+          try {
+            if (!assets.stickers[id]) {
+              await loaded;
+              const crop = packCutout(image, rect, tolerance, 640, screen);
+              const blob = await new Promise((resolve) => crop.toBlob(resolve));
+              const { el } = await imageSrc(blob);
+              assets.stickers[id] = el;
+              assets.stickerBlobs[id] = blob;
+            }
+            if (state === target) addLayer({ type: 'sticker', img: id, size: 0.4 });
+          } catch {
+            toast(t('Эта картинка не открывается.'));
+          } finally {
+            button.disabled = false;
+          }
+        };
+      });
+    }
+    const status = $('stickerPackStatus');
+    status.hidden = false;
+    status.textContent = t('Загружаю стикеры…');
+    Promise.allSettled(previews).then((results) => {
+      if (stickerPackLoad !== load) return;
+      const failed = results.some((result) => result.status === 'rejected') || !grid.querySelector('button:not([hidden])');
+      status.hidden = !failed;
+      if (failed) status.textContent = t('Часть стикеров не загрузилась. Открой вкладку ещё раз.');
+    });
+  }
+
   function syncStickers() {
+    stickerPackLoad++;
     const grid = $('stickerGrid');
     grid.replaceChildren();
+    $('stickerPackStatus').hidden = true;
     /* в наборе только исходные картинки; копии без фона (id на «c») живут только на карточке */
-    Object.entries(assets.stickers).filter(([id]) => stickerSet === 'mine' && !id.startsWith('c')).forEach(([id, el]) => {
+    Object.entries(assets.stickers).filter(([id]) => stickerSet === 'mine' && !id.startsWith('c') && !id.startsWith('pack:')).forEach(([id, el]) => {
       const b = document.createElement('button');
       b.type = 'button';
       const img = document.createElement('img');
@@ -4318,8 +4417,10 @@
     tabs.replaceChildren();
     const stRec = recentOf('sticker').filter((k) => k.startsWith('e:') || !!vecDef(k.slice(2)));
     if (stickerSet === 'recent' && !stRec.length) stickerSet = 'emoji';
-    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['doodles', 'Дудлы'], ['ready', 'Готовые'], ['cards', 'Карточки'], ['mine', 'Мои картинки']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['doodles', 'Дудлы'], ['ready', 'Готовые'], ['cards', 'Карточки'], ...PACK_TABS, ['mine', 'Мои картинки']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
     if (stickerSet === 'mine') return;
+    const pack = PACK_TABS.find(([id]) => id === stickerSet);
+    if (pack) return showStickerPack(grid, ...pack);
     if (stickerSet === 'cards') {
       Render.CARDS.forEach(def => {
         const layer = { type: 'text', card: def.kind, text: def.text, color: def.color, bg: def.bg, font: 'golos', size: 0.045 };
@@ -4664,7 +4765,7 @@
   /* Цвет фона берём самый частый по краю картинки. «Фон вокруг» заливает от краёв всё похожее на него,
      «Этот цвет везде» убирает похожие пиксели по всей картинке. Край выреза мягкий: почти похожие
      пиксели становятся полупрозрачными, чтобы не было белой каймы. */
-  function cutBackground(img, tol, mode, edgePx = 1) {
+  function cutBackground(img, tol, mode, edgePx = 1, hole) {
     const k = Math.min(1, 2000 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
     const c = canvas((img.naturalWidth || img.width) * k, (img.naturalHeight || img.height) * k);
     const x = c.getContext('2d', { willReadFrequently: true });
@@ -4713,6 +4814,7 @@
       const push = (p) => { if (!seen[p]) { seen[p] = 1; stack.push(p); } };
       for (let px = 0; px < w; px++) { push(px); push((h - 1) * w + px); }
       for (let py = 0; py < h; py++) { push(py * w); push(py * w + w - 1); }
+      if (hole) push(Math.floor(hole[1] * h) * w + Math.floor(hole[0] * w));
       while (stack.length) {
         const p = stack.pop();
         const a = keep(p * 4);
