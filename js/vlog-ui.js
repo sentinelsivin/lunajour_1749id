@@ -1546,5 +1546,23 @@ window.Vlog = (function () {
     if (onClose) onClose();
   }
 
-  return { open: show, close, get isOpen() { return open; } };
+  /* «Память → Очистить влог»: файлы уже удалены из базы, здесь забываем проект и всё, что держали в памяти */
+  async function reset() {
+    Engine.pause();
+    for (const id of Object.keys(p.media)) await Engine.forget(id);
+    Engine.release();
+    Engine.resetMusic();
+    clearTimeout(saveTimer);
+    p = Timeline.newProject();
+    hist.clear();
+    sel = -1;
+    ov = '';
+    join = -1;
+    at = 0;
+    loaded = true;
+    await Store.del('vlog');
+    if (open) syncAll();
+  }
+
+  return { open: show, close, reset, get isOpen() { return open; } };
 })();

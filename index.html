@@ -69,6 +69,7 @@
           </div>
         </div>
         <button class="btn" id="keysBtn" type="button">Клавиши</button>
+        <button class="btn" id="memoryBtn" type="button">Память на устройстве</button>
   </div>
 
   <div class="more-menu keys-sheet" id="keysSheet" role="dialog" aria-label="Клавиши" hidden>
@@ -752,6 +753,17 @@
     <p class="hint">Сначала эта карточка, дальше сохранённые раньше. Профиль показывает середину 3:4. Старые посты можно добавить скриншотами.</p>
   </div>
 </dialog>
+<dialog class="sheet" id="memorySheet" aria-labelledby="memoryTitle">
+  <div class="sheet-head">
+    <h2 id="memoryTitle">Память на устройстве</h2>
+    <button class="btn small primary" id="memoryClose" type="button">Готово</button>
+  </div>
+  <div class="sheet-body">
+    <div class="memory-total" id="memoryTotal"></div>
+    <div class="memory-list" id="memoryList"></div>
+    <p class="hint">Всё хранится только в этом браузере на этом устройстве. Удалённое не вернуть: сначала сохрани нужные ролики и карточки файлами.</p>
+  </div>
+</dialog>
 <dialog class="sheet" id="brandSheet" aria-labelledby="brandTitle">
   <div class="sheet-head">
     <h2 id="brandTitle">Мой набор</h2>
@@ -814,6 +826,7 @@
 <script src="js/timeline.js"></script>
 <script src="js/vlog-engine.js"></script>
 <script src="js/vlog-ui.js"></script>
+<script src="js/memory.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

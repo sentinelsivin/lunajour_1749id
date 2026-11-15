@@ -37,6 +37,8 @@
     /* true, если сохранилось; false, если нет (тогда уже отправлено событие store-error) */
     set: (key, value) => run('readwrite', (s) => s.put(value, key)).then(() => true, (err) => failed(key, err)),
     del: (key) => run('readwrite', (s) => s.delete(key)).catch(() => null),
+    /* все ключи: для экрана «Память», чтобы посчитать, что сколько занимает */
+    keys: () => run('readonly', (s) => s.getAllKeys()).catch(() => []),
     isFull,
   };
 })();
