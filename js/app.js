@@ -710,7 +710,11 @@
   function openVlog() {
     if (!window.Vlog) return;
     Camera.stop();
-    window.Vlog.open({ onClose: () => { markSeg($('modeSeg'), mode); if (phase === 'shoot') resetSlots(); else invalidate(); } });
+    window.Vlog.open({
+      onClose: () => { markSeg($('modeSeg'), mode); if (phase === 'shoot') resetSlots(); else invalidate(); },
+      /* оформление карточки из редактора, чтобы надеть его на клип влога */
+      card: () => (phase === 'edit' ? { state: styleState(), thumb: styleThumb() } : null),
+    });
   }
 
   function clearSampleNote() {

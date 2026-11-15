@@ -309,6 +309,44 @@ window.VlogEngine = (function () {
     return { el: v.el, w: v.el.videoWidth, h: v.el.videoHeight };
   }
 
+  /* ---------- клип в карточке ---------- */
+  /* clip.card: оформление карточки из редактора (бумага, фигуры, коллаж, эффекты, подпись).
+     Клип становится фото этой карточки и играет внутри неё; в коллаже он стоит во всех ячейках.
+     Своё фото-фон и свою фигуру-вырез стиль с собой не несёт, вместо них обычная бумага и без выреза. */
+  const cardAssets = { stickers: {} };
+  const cardCache = new WeakMap();
+  function cardOf(clip) {
+    let s = cardCache.get(clip.card);
+    if (s) return s;
+    s = { ...clip.card };
+    if (s.motif === 'own-mask') s.motif = 'none';
+    if (s.paper === 'own') s.paper = 'crumple';
+    s.note = { ...(s.note || {}), date: (s.note && s.note.date) || new Date().toLocaleDateString('sv-SE') };
+    /* шторка «до / после» и надписи по времени живут в длине ролика карточки, во влоге их нет */
+    s.motion = { ...(s.motion || {}), wipe: false, txt: '' };
+    s.layers = (s.layers || []).filter((l) => !l.img);
+    cardCache.set(clip.card, s);
+    return s;
+  }
+  function paintCard(x, src, clip, t) {
+    const s = cardOf(clip);
+    const slot = { src: { kind: clip.kind === 'video' ? 'video' : 'image', el: src.el, sw: src.w, sh: src.h }, x: 0, y: 0, zoom: Math.max(1, clip.zoom || 1), flip: false, turn: 0, tilt: 0 };
+    const n = s.collage && window.Collages && window.Collages.byId(s.collage) ? window.Collages.count(s.collage, s) : 1;
+    const T = t / 1000;
+    const { Effects, Scanner } = window;
+    /* живые эффекты, сканер и блёстки идут по времени ролика, как в сохранённом видео карточки */
+    if (Effects) Effects.clock = T;
+    if (Scanner) { Scanner.clock = T; if (Scanner.animates(s)) Scanner.time = T; }
+    Render.setClock(T);
+    try {
+      Render.renderCard(x, s, Array.from({ length: n }, () => slot), cardAssets);
+    } finally {
+      Render.setClock(null);
+      if (Effects) Effects.clock = null;
+      if (Scanner) { Scanner.clock = null; Scanner.time = null; }
+    }
+  }
+
   /* один клип со своим цветом и эффектом в буфер k; null, если кадр ещё не готов */
   function paintClip(k, W, H, clip, local, into, t, seek) {
     const src = source(clip, local, seek);
@@ -318,7 +356,8 @@ window.VlogEngine = (function () {
     x.fillRect(0, 0, W, H);
     /* фото движется за время показа (по умолчанию чуть наезжает), чтобы кадр не стоял */
     const into01 = Math.max(0, Math.min(1, into / Math.max(1, Timeline.len(clip))));
-    place(x, src.el, src.w, src.h, W, H, clip, into01);
+    if (clip.card) paintCard(x, src, clip, t);
+    else place(x, src.el, src.w, src.h, W, H, clip, into01);
     const look = lookOf(clip.look);
     if (look) Render.applyAdjust(x, W, H, look.adjust);
     if (clip.fx && window.Effects) {
@@ -459,6 +498,9 @@ window.VlogEngine = (function () {
     p.clips.forEach((c) => {
       const l = lookOf(c.look);
       if (l && l.adjust.lut) Render.loadLut(l.adjust.lut).then(changed);
+      /* у карточки свой цвет, тоже может быть по таблице; и украшения коллажей грузятся картинками */
+      if (c.card && c.card.adjust && c.card.adjust.lut) Render.loadLut(c.card.adjust.lut).then(changed);
+      if (c.card && c.card.collage && window.Collages) window.Collages.ready.then(changed);
     });
   }
 
@@ -657,6 +699,8 @@ window.VlogEngine = (function () {
     await Promise.all(p.clips.map((cl) => blobOf(cl.media)));
     await Promise.all(p.clips.filter((cl) => cl.kind === 'image').map((cl) => image(cl.media)));
     await Promise.all(p.clips.map((cl) => lookOf(cl.look)).filter((l) => l && l.adjust.lut).map((l) => Render.loadLut(l.adjust.lut)));
+    await Promise.all(p.clips.filter((cl) => cl.card && cl.card.adjust && cl.card.adjust.lut).map((cl) => Render.loadLut(cl.card.adjust.lut)));
+    if (p.clips.some((cl) => cl.card && cl.card.collage) && window.Collages) await window.Collages.ready;
     await musicBuffer(p).catch(() => null);
     await Promise.all((p.overlays || []).filter((o) => o.layer.img).map((o) => image(o.layer.img).then((img) => { if (img) stickers[o.layer.img] = img; })));
     if (document.fonts && document.fonts.ready) await document.fonts.ready;

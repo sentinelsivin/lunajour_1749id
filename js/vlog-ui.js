@@ -26,6 +26,9 @@ window.Vlog = (function () {
   let onClose = null;
   let loaded = false;
   let raf = 0;
+  /* оформление карточек: как сейчас в редакторе и свои сохранённые стили */
+  let editorCard = null;
+  let myStyles = [];
 
   const canvasEl = () => $('vlogCanvas');
   const total = () => Timeline.duration(p);
@@ -191,7 +194,8 @@ window.Vlog = (function () {
       if (c.speed !== 1) bits.push(`${c.speed}×`);
       if (c.look) bits.push('◐');
       if (c.fx) bits.push('✦');
-      if (c.fit || (c.zoom || 1) > 1 || c.x || c.y) bits.push('⛶');
+      if (c.card) bits.push('▤');
+      else if (c.fit || (c.zoom || 1) > 1 || c.x || c.y) bits.push('⛶');
       if (c.kind === 'video' && c.vol === 0) bits.push('🔇');
       tag.textContent = bits.join(' · ');
       el.append(tag);
@@ -480,7 +484,7 @@ window.Vlog = (function () {
     box.addEventListener('pointercancel', end);
   }
 
-  const CLIP_SHEETS = ['frame', 'look', 'fx', 'speed', 'vol', 'dur'];
+  const CLIP_SHEETS = ['frame', 'card', 'look', 'fx', 'speed', 'vol', 'dur'];
   const OV_SHEETS = ['text', 'style', 'anim'];
   function selectOv(id, jump = true) {
     ov = id;
@@ -550,7 +554,8 @@ window.Vlog = (function () {
   function clipRoom(c) {
     const m = p.media[c.media];
     const cv = canvasEl();
-    if (!m || !m.w || !m.h) return { mx: 0, my: 0 };
+    /* в карточке место кадра задаёт сама карточка: сдвигать нечего, работает только масштаб */
+    if (!m || !m.w || !m.h || c.card) return { mx: 0, my: 0 };
     return Engine.framing({ ...c, move: 'none' }, m.w, m.h, cv.width, cv.height);
   }
   /* выбранный клип должен быть на просмотре, иначе двигали бы невидимое */
@@ -725,6 +730,7 @@ window.Vlog = (function () {
     format: '<rect x="6" y="2.5" width="8" height="15" rx="1"/>',
     split: '<path d="M10 2v16"/><path d="M4 6l3 4-3 4M16 6l-3 4 3 4"/>',
     frame: '<path d="M5.5 2v12.5H18"/><path d="M2 5.5h12.5V18"/>',
+    card: '<rect x="3.5" y="2.5" width="13" height="15" rx="1"/><rect x="6" y="5" width="8" height="7"/><path d="M6 14.5h5"/>',
     look: '<circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/>',
     fx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     speed: '<path d="M3 14a7 7 0 1 1 14 0"/><path d="M10 14l4-5"/>',
@@ -771,7 +777,7 @@ window.Vlog = (function () {
       );
       return;
     }
-    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'));
+    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('card', 'Карточка', sheet === 'card'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'));
     if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
@@ -832,7 +838,7 @@ window.Vlog = (function () {
 
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
-    music: 'Музыка', format: 'Формат', frame: 'Кадр', look: 'Цвет', fx: 'Эффект', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
+    music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', look: 'Цвет', fx: 'Эффект', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
     text: 'Текст', stickers: 'Стикеры', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
@@ -920,6 +926,7 @@ window.Vlog = (function () {
     if (o && id === 'anim') sheetAnim(body, o);
     if (!c) return;
     if (id === 'frame') sheetFrame(body, c);
+    if (id === 'card') sheetCard(body, c);
     if (id === 'look') sheetLook(body, c);
     if (id === 'fx') sheetFx(body, c);
     if (id === 'speed') {
@@ -1169,8 +1176,37 @@ window.Vlog = (function () {
     body.append(group('Формат ролика', seg), el('p', 'hint', t('9:16 для Reels, Shorts и TikTok. Как клип ляжет в кадр, настраивается у клипа в «Кадр».')));
   }
 
+  /* карточка на клипе: «как в редакторе» или свой стиль. Оформление копируется в клип,
+     поэтому ролик не меняется, если потом поправить редактор или удалить стиль */
+  function sheetCard(body, c) {
+    const grid = el('div', 'thumbs vlog-looks');
+    const item = (id, name, thumb, pick) => {
+      const b = el('button', `thumb${(c.cardId || '') === id ? ' on' : ''}`);
+      b.type = 'button';
+      if (thumb) {
+        const img = el('img');
+        img.src = thumb;
+        img.alt = '';
+        b.append(img);
+      } else b.append(el('i', 'vlog-card-none', '∅'));
+      b.append(el('span', '', name));
+      b.onclick = pick;
+      grid.append(b);
+    };
+    item('', t('Без карточки'), '', () => commit(() => { delete c.card; delete c.cardId; }));
+    const now = editorCard && editorCard();
+    if (now) item('editor', t('Как в редакторе'), now.thumb, () => commit(() => { c.card = now.state; c.cardId = 'editor'; }));
+    myStyles.forEach((st, k) => item(st.id, `${t('Стиль')} ${st.n || k + 1}`, st.thumb, () => commit(() => { c.card = JSON.parse(JSON.stringify(st.state)); c.cardId = st.id; })));
+    body.append(grid);
+    if (c.card) body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.card = JSON.parse(JSON.stringify(c.card)); x.cardId = c.cardId; })));
+    body.append(el('p', 'hint', t(myStyles.length || now
+      ? 'Клип играет внутри карточки: бумага, фигуры, коллаж, эффекты и подпись из редактора. Свой стиль сохраняется в редакторе: меню ⋯ → Мои стили.'
+      : 'Оформи карточку в редакторе и сохрани её как стиль (меню ⋯ → Мои стили): здесь клип заиграет внутри неё.')));
+  }
+
   /* кадр клипа: как вписать, масштаб, движение фото; сдвиг — пальцем по просмотру */
   function sheetFrame(body, c) {
+    if (c.card) body.append(el('p', 'hint', t('Клип в карточке: место кадра задаёт карточка, здесь работает только масштаб.')));
     body.append(group('Как вписать', chips(Engine.FITS.map((f) => [f.id, t(f.name)]), c.fit || '', (v) => commit(() => { c.fit = v; }))));
     body.append(slider('Масштаб', 100, Engine.ZOOM_MAX * 100, 5, Math.round((c.zoom || 1) * 100), (v) => `${v}%`, (v) => { c.zoom = v / 100; }));
     if (c.kind === 'image') {
@@ -1479,6 +1515,8 @@ window.Vlog = (function () {
 
   async function show(opts = {}) {
     onClose = opts.onClose || null;
+    editorCard = opts.card || null;
+    myStyles = (await Store.get('styles')) || [];
     bind();
     if (!loaded) await load();
     open = true;
