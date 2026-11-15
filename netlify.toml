@@ -8,3 +8,9 @@
 
 [build.environment]
   NODE_VERSION = "22"
+
+# Библиотека быстрой записи грузится как модуль: браузер примет её только с типом JavaScript.
+[[headers]]
+  for = "/js/vendor/*.mjs"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"

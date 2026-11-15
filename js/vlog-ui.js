@@ -1407,12 +1407,26 @@ window.Vlog = (function () {
     $('vlogQuality').hidden = false;
     $('vlogProgress').hidden = true;
     markQuality();
-    $('vlogExportNote').textContent = Engine.canRecord()
-      ? t('Ролик записывается в реальном времени: минута влога займёт минуту. Не сворачивай вкладку, пока идёт запись.')
-      : t('Этот браузер не умеет записывать видео. Открой Lunajour в Chrome или Safari.');
-    $('vlogRecord').disabled = !Engine.canRecord();
+    const slow = () => {
+      $('vlogExportNote').textContent = Engine.canRecord()
+        ? t('Ролик записывается в реальном времени: минута влога займёт минуту. Не сворачивай вкладку, пока идёт запись.')
+        : t('Этот браузер не умеет записывать видео. Открой Lunajour в Chrome или Safari.');
+      $('vlogRecord').disabled = !Engine.canRecord();
+    };
+    slow();
+    /* быстрая запись: кадр за кадром, без ожидания реального времени */
+    fastOk = false;
+    if (window.VlogFast) {
+      window.VlogFast.can(p, quality).then((ok) => {
+        fastOk = ok;
+        if (!ok || !d.open || result) return;
+        $('vlogExportNote').textContent = t('Ролик собирается кадр за кадром, обычно быстрее, чем идёт, и без пропущенных кадров.');
+        $('vlogRecord').disabled = false;
+      }).catch(() => {});
+    }
     d.showModal();
   }
+  let fastOk = false;
   function markQuality() {
     [...$('vlogQuality').children].forEach((b) => b.classList.toggle('on', Number(b.dataset.v) === quality));
   }
@@ -1426,7 +1440,22 @@ window.Vlog = (function () {
     let lock = null;
     try { lock = navigator.wakeLock ? await navigator.wakeLock.request('screen') : null; } catch { lock = null; }
     try {
-      const blob = await Engine.record(p, quality, (k) => { prog.value = k; }, abort.signal);
+      const onProgress = (k) => { prog.value = k; };
+      let blob = null;
+      let done = false;
+      if (fastOk && window.VlogFast) {
+        try {
+          blob = await window.VlogFast.record(p, quality, onProgress, abort.signal);
+          done = true;
+        } catch (err) {
+          /* быстрая запись не вышла (например, кодировщик отказал): пишем по-старому, в реальном времени */
+          console.warn('fast export failed, falling back', err);
+          if (abort.signal.aborted) return;
+          prog.value = 0;
+          $('vlogExportNote').textContent = t('Ролик записывается в реальном времени: минута влога займёт минуту. Не сворачивай вкладку, пока идёт запись.');
+        }
+      }
+      if (!done) blob = await Engine.record(p, quality, onProgress, abort.signal);
       if (!blob) return;
       result = blob;
       prog.value = 1;

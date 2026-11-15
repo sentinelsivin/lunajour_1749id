@@ -1299,6 +1299,7 @@ window.I18n = (function () {
     'Громкость музыки': 'Music volume',
     'Начало трека': 'Track start',
     'Музыка играет под всем роликом. Пока в клипе говорят, она сама становится тише. Звук самих клипов настраивается у каждого клипа.': 'Music plays under the whole video and gets quieter on its own while someone talks in a clip. Each clip’s own sound is set on that clip.',
+    'Ролик собирается кадр за кадром, обычно быстрее, чем идёт, и без пропущенных кадров.': 'The video is built frame by frame, usually faster than it plays, with no dropped frames.',
     'Без карточки': 'No card',
     'Как в редакторе': 'As in the editor',
     'Клип играет внутри карточки: бумага, фигуры, коллаж, эффекты и подпись из редактора. Свой стиль сохраняется в редакторе: меню ⋯ → Мои стили.': 'The clip plays inside the card: paper, shapes, collage, effects and caption from the editor. Save your own style in the editor: menu ⋯ → My styles.',

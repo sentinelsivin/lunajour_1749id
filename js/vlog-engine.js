@@ -193,7 +193,7 @@ window.VlogEngine = (function () {
 
   /* перерисовать, когда видео докрутилось или файл подгрузился */
   let onChange = () => {};
-  function changed() { onChange(); }
+  function changed() { if (!exporting) onChange(); }
 
   /* ---------- кадр ---------- */
   const FX_BASE = { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true };
@@ -300,9 +300,11 @@ window.VlogEngine = (function () {
       if (!img) { image(clip.media).then((r) => r && changed()).catch(() => {}); return null; }
       return { el: img, w: img.width, h: img.height };
     }
+    if (exporting && overrides.has(clip.media)) return overrides.get(clip.media);
     const v = video(clip.media);
     if (!v || !v.ready) return null;
-    if (seek) {
+    /* пока идёт быстрая запись, видео ставит на место только она: просмотр не должен его перематывать */
+    if (seek && !exporting) {
       const want = local / 1000;
       if (Math.abs(v.el.currentTime - want) > 0.04 && !v.el.seeking) v.el.currentTime = want;
     }
@@ -586,9 +588,14 @@ window.VlogEngine = (function () {
   /* Клип не обрывается на склейке, а за пару кадров затихает и так же проявляется: без щелчков.
      На стыке с переходом звук уходит и приходит за половину перехода, вместе с картинкой. */
   const EDGE_MS = 60;
-  function edgeLevel(p, i, into, l) {
+  /* сколько мс звук клипа нарастает в начале и затихает в конце */
+  function edgeMs(p, i) {
     const fin = i > 0 ? Math.max(EDGE_MS, Timeline.trDur(p, i - 1) / 2) : EDGE_MS;
     const fout = i < p.clips.length - 1 ? Math.max(EDGE_MS, Timeline.trDur(p, i) / 2) : EDGE_MS;
+    return [fin, fout];
+  }
+  function edgeLevel(p, i, into, l) {
+    const [fin, fout] = edgeMs(p, i);
     return Math.max(0, Math.min(1, into / fin, (l - into) / fout));
   }
   function setClipGain(v, value) {
@@ -688,14 +695,8 @@ window.VlogEngine = (function () {
   }
   const canRecord = () => !!(window.MediaRecorder && HTMLCanvasElement.prototype.captureStream && recordMime(false));
 
-  async function record(p, size, onProgress, signal) {
-    const [RW, RH] = Render.RATIOS[p.ratio];
-    const W = size;
-    const H = Math.round((W * RH) / RW / 2) * 2;
-    const c = Render.canvas(W, H);
-    const x = c.getContext('2d');
-    const total = Timeline.duration(p);
-    /* все нужные файлы и таблицы цвета заранее, чтобы запись не ждала сети */
+  /* все нужные файлы, таблицы цвета, музыка, стикеры и шрифты заранее, чтобы запись не ждала */
+  async function preload(p) {
     await Promise.all(p.clips.map((cl) => blobOf(cl.media)));
     await Promise.all(p.clips.filter((cl) => cl.kind === 'image').map((cl) => image(cl.media)));
     await Promise.all(p.clips.map((cl) => lookOf(cl.look)).filter((l) => l && l.adjust.lut).map((l) => Render.loadLut(l.adjust.lut)));
@@ -704,6 +705,59 @@ window.VlogEngine = (function () {
     await musicBuffer(p).catch(() => null);
     await Promise.all((p.overlays || []).filter((o) => o.layer.img).map((o) => image(o.layer.img).then((img) => { if (img) stickers[o.layer.img] = img; })));
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
+  }
+
+  /* ---------- точный кадр для быстрой записи ---------- */
+  /* Видео ставится ровно на нужное место, и мы ждём, пока кадр готов: так ни один кадр не пропадает.
+     Ждём только события видео, без таймеров: они не засыпают, если вкладку свернули. */
+  let exporting = false;
+  async function videoReady(id) {
+    let v = video(id);
+    if (!v) { await blobOf(id); v = video(id); }
+    if (!v) return null;
+    if (!v.ready) await once(v.el, 'loadeddata', 20000).catch(() => {});
+    return v;
+  }
+  /* какие клипы нужны кадру в момент t и с какого места файла (на стыке с переходом их два) */
+  function frameNeeds(p, t) {
+    const hit = Timeline.at(p, t);
+    if (!hit) return [];
+    const tr = Timeline.transitionAt(p, hit);
+    return tr && (tr.a.media !== tr.b.media || tr.a.kind === 'image') ? [[tr.a, tr.aLocal], [tr.b, tr.bLocal]] : [[hit.clip, hit.local]];
+  }
+  /* видео ставится точно на место, ждём готовый кадр */
+  async function seekClip(clip, local) {
+    if (clip.kind === 'image') { await image(clip.media); return; }
+    const v = await videoReady(clip.media);
+    if (!v) return;
+    const want = Math.max(0, local / 1000);
+    if (Math.abs(v.el.currentTime - want) > 0.0005 || v.el.seeking) {
+      v.el.currentTime = want;
+      await once(v.el, 'seeked', 8000).catch(() => {});
+    }
+  }
+  async function prepareFrame(p, t) {
+    for (const [clip, local] of frameNeeds(p, t)) await seekClip(clip, local);
+  }
+  /* быстрая запись может сама декодировать видео и подставлять готовый кадр вместо элемента video */
+  const overrides = new Map();
+  function setFrame(id, frame) {
+    if (frame) overrides.set(id, frame);
+    else overrides.delete(id);
+  }
+  function setExporting(on) {
+    exporting = on;
+    if (!on) overrides.clear();
+  }
+
+  async function record(p, size, onProgress, signal) {
+    const [RW, RH] = Render.RATIOS[p.ratio];
+    const W = size;
+    const H = Math.round((W * RH) / RW / 2) * 2;
+    const c = Render.canvas(W, H);
+    const x = c.getContext('2d');
+    const total = Timeline.duration(p);
+    await preload(p);
     /* первый клип ставим на начало и ждём картинку */
     const first = p.clips[0];
     if (first.kind === 'video') {
@@ -758,6 +812,8 @@ window.VlogEngine = (function () {
 
   return {
     importFile, forget, blobOf, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
+    /* для быстрой записи (js/vlog-fast.js) */
+    preload, prepareFrame, frameNeeds, seekClip, setFrame, setExporting, musicBuffer, edgeMs, DUCK_TO, DUCK_RMS, DUCK_HOLD,
     audio, looks, lookOf, TRANSITIONS, ANIMS, FITS, MOVES, ZOOM_MAX, framing, visible, overlayBox, assets,
     get time() { return now(); },
     get playing() { return playing; },
