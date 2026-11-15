@@ -198,11 +198,86 @@ window.VlogEngine = (function () {
     return b;
   }
 
-  function cover(x, src, sw, sh, W, H, zoom = 1) {
-    const k = Math.max(W / sw, H / sh) * zoom;
+  /* ---------- кадр клипа: как вписан, сдвиг, масштаб и движение фото ---------- */
+  /* c.fit: '' заполнить кадр (края обрезаются), 'blur' целиком на размытом фоне, 'black' целиком на чёрном.
+     c.zoom от 1 до 4. c.x, c.y от -1 до 1: доля возможного сдвига, поэтому в «заполнить» пустых краёв не бывает.
+     c.move у фото: 'in' (по умолчанию, лёгкий наезд), 'out', 'left', 'right', 'up', 'down', 'none'. */
+  const FITS = [
+    { id: '', name: 'Заполнить' },
+    { id: 'blur', name: 'Целиком, размытый фон' },
+    { id: 'black', name: 'Целиком, чёрный фон' },
+  ];
+  const MOVES = [
+    { id: 'none', name: 'Без движения' },
+    { id: 'in', name: 'Приближение' },
+    { id: 'out', name: 'Отдаление' },
+    { id: 'left', name: 'Влево' },
+    { id: 'right', name: 'Вправо' },
+    { id: 'up', name: 'Вверх' },
+    { id: 'down', name: 'Вниз' },
+  ];
+  const ZOOM_MAX = 4;
+  const clamp1 = (v) => Math.max(-1, Math.min(1, v));
+  const moveOf = (clip) => (clip.kind === 'image' ? clip.move || 'in' : 'none');
+
+  /* где рисовать источник sw×sh в кадре W×H; into01 — доля показа клипа, для движения фото */
+  function framing(clip, sw, sh, W, H, into01 = 0) {
+    const fit = clip.fit === 'blur' || clip.fit === 'black';
+    let zoom = Math.max(1, Math.min(ZOOM_MAX, clip.zoom || 1));
+    let fx = clip.x || 0;
+    let fy = clip.y || 0;
+    const mv = moveOf(clip);
+    const e = Math.max(0, Math.min(1, into01));
+    if (mv === 'in') zoom *= 1 + 0.08 * e;
+    else if (mv === 'out') zoom *= 1.08 - 0.08 * e;
+    else if (mv !== 'none') {
+      /* проезд: кадр чуть крупнее, чтобы было куда ехать, и едет от края до края */
+      zoom *= 1.12;
+      const d = (e - 0.5) * 1.8;
+      if (mv === 'left') fx -= d;
+      if (mv === 'right') fx += d;
+      if (mv === 'up') fy -= d;
+      if (mv === 'down') fy += d;
+    }
+    const k = (fit ? Math.min(W / sw, H / sh) : Math.max(W / sw, H / sh)) * zoom;
     const dw = sw * k;
     const dh = sh * k;
-    x.drawImage(src, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    const mx = Math.max(0, (dw - W) / 2);
+    const my = Math.max(0, (dh - H) / 2);
+    return { dx: (W - dw) / 2 + clamp1(fx) * mx, dy: (H - dh) / 2 + clamp1(fy) * my, dw, dh, mx, my, fit };
+  }
+
+  /* размытый фон: кадр сжимается до крошечного и растягивается обратно, так размытие дешёвое и на телефоне */
+  const tiny = { c: null, mid: null };
+  function blurBg(x, src, sw, sh, W, H) {
+    const k = 36 / Math.max(sw, sh);
+    const tw = Math.max(1, Math.round(sw * k));
+    const th = Math.max(1, Math.round(sh * k));
+    if (!tiny.c || tiny.c.width !== tw || tiny.c.height !== th) tiny.c = Render.canvas(tw, th);
+    tiny.c.getContext('2d').drawImage(src, 0, 0, tw, th);
+    const mw = Math.max(1, Math.round(W / 4));
+    const mh = Math.max(1, Math.round(H / 4));
+    if (!tiny.mid || tiny.mid.width !== mw || tiny.mid.height !== mh) tiny.mid = Render.canvas(mw, mh);
+    const m = tiny.mid.getContext('2d');
+    m.save();
+    if ('filter' in m) m.filter = `blur(${Math.max(2, Math.round(mw / 60))}px)`;
+    /* чуть крупнее кадра: у размытия по краям светлая кайма */
+    const s = Math.max(mw / tw, mh / th) * 1.15;
+    m.drawImage(tiny.c, (mw - tw * s) / 2, (mh - th * s) / 2, tw * s, th * s);
+    m.restore();
+    x.save();
+    x.imageSmoothingEnabled = true;
+    x.imageSmoothingQuality = 'high';
+    x.drawImage(tiny.mid, 0, 0, W, H);
+    x.fillStyle = 'rgba(0,0,0,.2)';
+    x.fillRect(0, 0, W, H);
+    x.restore();
+  }
+
+  function place(x, src, sw, sh, W, H, clip, into01) {
+    const f = framing(clip, sw, sh, W, H, into01);
+    if (clip.fit === 'blur') blurBg(x, src, sw, sh, W, H);
+    x.drawImage(src, f.dx, f.dy, f.dw, f.dh);
   }
 
   /* source: что показать для клипа; false, если файл ещё не готов */
@@ -228,9 +303,9 @@ window.VlogEngine = (function () {
     const { c, x } = buf(k, W, H);
     x.fillStyle = '#0a0a0a';
     x.fillRect(0, 0, W, H);
-    /* фото чуть наезжает за время показа, чтобы кадр не стоял */
+    /* фото движется за время показа (по умолчанию чуть наезжает), чтобы кадр не стоял */
     const into01 = Math.max(0, Math.min(1, into / Math.max(1, Timeline.len(clip))));
-    cover(x, src.el, src.w, src.h, W, H, clip.kind === 'image' ? 1 + 0.08 * into01 : 1);
+    place(x, src.el, src.w, src.h, W, H, clip, into01);
     const look = lookOf(clip.look);
     if (look) Render.applyAdjust(x, W, H, look.adjust);
     if (clip.fx && window.Effects) {
@@ -566,7 +641,7 @@ window.VlogEngine = (function () {
 
   return {
     importFile, forget, blobOf, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
-    audio, looks, lookOf, TRANSITIONS, ANIMS, visible, overlayBox, assets,
+    audio, looks, lookOf, TRANSITIONS, ANIMS, FITS, MOVES, ZOOM_MAX, framing, visible, overlayBox, assets,
     get time() { return now(); },
     get playing() { return playing; },
     set onChange(fn) { onChange = fn; },

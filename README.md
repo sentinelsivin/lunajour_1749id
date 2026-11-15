@@ -29,6 +29,7 @@ node serve.mjs
 | Перевод на английский | Словарь `EN` в `js/i18n.js`, ключ это русская строка |
 | Цвета бумаги и штампы настроения | `PAPER_COLORS` и `MOODS` в `js/app.js` |
 | Инструмент влога | Кнопка в `syncTools` и ветка в `syncSheet` в `js/vlog-ui.js`; если меняет кадр, поле клипа в `newClip` (`js/timeline.js`) и его отрисовка в `drawFrame` (`js/vlog-engine.js`) |
+| Как клип вписан в кадр во влоге | `FITS` и `MOVES` и функция `framing` в `js/vlog-engine.js`: размер и место клипа в кадре, движение фото за время показа |
 | Переход во влоге | Строка в `TRANSITIONS` и ветка в `compose` в `js/vlog-engine.js`: на входе два готовых кадра и доля перехода от 0 до 1 |
 | Анимация надписи во влоге | Строка в `ANIMS` и ветка в `overlayLayer` в `js/vlog-engine.js`: меняет прозрачность, размер или место слоя |
 | Шрифт подписи | `FONTS` в `js/render.js` и ссылка на шрифт в `index.html` |

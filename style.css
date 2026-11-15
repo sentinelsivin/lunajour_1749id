@@ -1130,6 +1130,8 @@ details.fine > .slider { margin-top: 12px; }
 .vlog-ov .vlog-handle::after { left: 6px; }
 .vlog-head::before { height: var(--head-h, 104px); }
 .vlog-stage { touch-action: none; }
+.vlog-stage.pan canvas { cursor: grab; }
+.vlog-stage.pan canvas:active { cursor: grabbing; }
 .vlog-box {
   position: absolute; z-index: 2;
   border: 1.5px dashed rgba(255, 255, 255, .9);

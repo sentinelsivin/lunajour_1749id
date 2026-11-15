@@ -188,6 +188,7 @@ window.Vlog = (function () {
       if (c.speed !== 1) bits.push(`${c.speed}×`);
       if (c.look) bits.push('◐');
       if (c.fx) bits.push('✦');
+      if (c.fit || (c.zoom || 1) > 1 || c.x || c.y) bits.push('⛶');
       if (c.kind === 'video' && c.vol === 0) bits.push('🔇');
       tag.textContent = bits.join(' · ');
       el.append(tag);
@@ -476,7 +477,7 @@ window.Vlog = (function () {
     box.addEventListener('pointercancel', end);
   }
 
-  const CLIP_SHEETS = ['look', 'fx', 'speed', 'vol', 'dur'];
+  const CLIP_SHEETS = ['frame', 'look', 'fx', 'speed', 'vol', 'dur'];
   const OV_SHEETS = ['text', 'style', 'anim'];
   function selectOv(id, jump = true) {
     ov = id;
@@ -540,6 +541,25 @@ window.Vlog = (function () {
     return Engine.visible(p, now).reverse().find((o) => inside(o, pt)) || null;
   }
 
+  /* ---------- кадр клипа на просмотре: тянуть — сдвиг, щипок или колесо — масштаб ---------- */
+  const ZOOM_OF = (v) => Math.max(1, Math.min(Engine.ZOOM_MAX, v));
+  /* сколько пикселей холста можно сдвигать клип (без движения фото, его сдвиг считается от этого места) */
+  function clipRoom(c) {
+    const m = p.media[c.media];
+    const cv = canvasEl();
+    if (!m || !m.w || !m.h) return { mx: 0, my: 0 };
+    return Engine.framing({ ...c, move: 'none' }, m.w, m.h, cv.width, cv.height);
+  }
+  /* выбранный клип должен быть на просмотре, иначе двигали бы невидимое */
+  function showSel() {
+    const hit = Timeline.at(p, peek ?? at);
+    if (hit && hit.i === sel) return;
+    at = Timeline.starts(p)[sel];
+    dirty = true;
+    follow();
+    syncTime();
+  }
+
   function positionBox() {
     const boxEl = $('vlogBox');
     const o = overlay();
@@ -566,9 +586,29 @@ window.Vlog = (function () {
     const angle = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
     const startPinch = () => {
       const o = overlay();
-      if (!o || pts.size < 2) return;
+      const c = clip();
+      if ((!o && !c) || pts.size < 2 || Engine.playing) return;
       const [a, b] = [...pts.values()];
-      g = { kind: 'pinch', d0: dist(a, b), a0: angle(a, b), size: o.layer.size, rot: o.layer.rot || 0, pushed: g && g.pushed };
+      if (o) g = { kind: 'pinch', d0: dist(a, b), a0: angle(a, b), size: o.layer.size, rot: o.layer.rot || 0, pushed: g && g.pushed };
+      else g = { kind: 'zoom', d0: dist(a, b), zoom: c.zoom || 1, pushed: g && g.pushed };
+    };
+    /* сдвиг и масштаб выбранного клипа */
+    const frameMove = (pt) => {
+      const c = clip();
+      if (!c) return;
+      if (g.kind === 'pan' && !g.pushed && dist(pt, g.pt) < 4) return;
+      if (!g.pushed) { hist.push(p); g.pushed = true; }
+      if (g.kind === 'pan') {
+        /* у середины кадр прилипает к центру */
+        const snap = (v) => (Math.abs(v) < 0.04 ? 0 : Math.max(-1, Math.min(1, v)));
+        if (g.room.mx) c.x = snap(g.x + (pt.x - g.pt.x) / g.room.mx);
+        if (g.room.my) c.y = snap(g.y + (pt.y - g.pt.y) / g.room.my);
+      } else if (pts.size >= 2) {
+        const [a, b] = [...pts.values()];
+        const z = ZOOM_OF(g.zoom * (dist(a, b) / Math.max(4, g.d0)));
+        c.zoom = Math.abs(z - 1) < 0.03 ? 1 : z;
+      }
+      dirty = true;
     };
     stage.addEventListener('pointerdown', (e) => {
       if (e.button > 0 || e.target.closest('.vlog-empty')) return;
@@ -590,6 +630,11 @@ window.Vlog = (function () {
         if (!again) selectOv(hit.id, false);
         g = { kind: 'move', pt, x: hit.layer.x, y: hit.layer.y, again };
         e.preventDefault();
+      } else if (!Engine.playing && clip()) {
+        const c = clip();
+        showSel();
+        g = { kind: 'pan', pt, x: c.x || 0, y: c.y || 0, room: clipRoom(c) };
+        e.preventDefault();
       } else g = { kind: 'tap', pt };
     });
     stage.addEventListener('pointermove', (e) => {
@@ -599,6 +644,7 @@ window.Vlog = (function () {
       const o = overlay();
       const c = canvasEl();
       if (g.kind === 'tap') return;
+      if (g.kind === 'pan' || g.kind === 'zoom') { frameMove(pt); return; }
       if (!o) return;
       if (g.kind === 'move' && !g.pushed && dist(pt, g.pt) < 4) return;
       if (!g.pushed) { hist.push(p); g.pushed = true; }
@@ -629,7 +675,7 @@ window.Vlog = (function () {
       const was = g;
       g = null;
       if (!was) return;
-      if (was.kind === 'tap') {
+      if (was.kind === 'tap' || (was.kind === 'pan' && !was.pushed)) {
         if (ov) selectOv('');
         else togglePlay();
       } else if (was.pushed) changed();
@@ -640,6 +686,17 @@ window.Vlog = (function () {
     /* колесо мыши над выбранной надписью: размер, с Shift поворот */
     stage.addEventListener('wheel', (e) => {
       const o = overlay();
+      const c = clip();
+      /* колесо над выбранным клипом: масштаб кадра */
+      if (!o && c && !Engine.playing) {
+        e.preventDefault();
+        showSel();
+        commitQuiet(() => {
+          const z = ZOOM_OF((c.zoom || 1) * (e.deltaY < 0 ? 1.06 : 1 / 1.06));
+          c.zoom = Math.abs(z - 1) < 0.03 ? 1 : z;
+        });
+        return;
+      }
       if (!o || $('vlogBox').hidden) return;
       e.preventDefault();
       commitQuiet(() => {
@@ -664,6 +721,7 @@ window.Vlog = (function () {
     music: '<path d="M8 15V4l9-2v11"/><circle cx="6" cy="15" r="2"/><circle cx="15" cy="13" r="2"/>',
     format: '<rect x="6" y="2.5" width="8" height="15" rx="1"/>',
     split: '<path d="M10 2v16"/><path d="M4 6l3 4-3 4M16 6l-3 4 3 4"/>',
+    frame: '<path d="M5.5 2v12.5H18"/><path d="M2 5.5h12.5V18"/>',
     look: '<circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/>',
     fx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     speed: '<path d="M3 14a7 7 0 1 1 14 0"/><path d="M10 14l4-5"/>',
@@ -695,6 +753,7 @@ window.Vlog = (function () {
     const c = clip();
     const o = overlay();
     nav.classList.toggle('clip-mode', !!(c || o));
+    $('vlogStage').classList.toggle('pan', !!c && !o);
     if (o) {
       nav.append(toolBtn('back', 'Все клипы'));
       if (o.layer.type === 'text') nav.append(toolBtn('text', 'Текст', sheet === 'text'));
@@ -709,7 +768,7 @@ window.Vlog = (function () {
       );
       return;
     }
-    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'));
+    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'));
     if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
@@ -770,7 +829,7 @@ window.Vlog = (function () {
 
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
-    music: 'Музыка', format: 'Формат', look: 'Цвет', fx: 'Эффект', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
+    music: 'Музыка', format: 'Формат', frame: 'Кадр', look: 'Цвет', fx: 'Эффект', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
     text: 'Текст', stickers: 'Стикеры', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
@@ -857,6 +916,7 @@ window.Vlog = (function () {
     if (o && id === 'style') sheetStyle(body, o);
     if (o && id === 'anim') sheetAnim(body, o);
     if (!c) return;
+    if (id === 'frame') sheetFrame(body, c);
     if (id === 'look') sheetLook(body, c);
     if (id === 'fx') sheetFx(body, c);
     if (id === 'speed') {
@@ -1103,7 +1163,29 @@ window.Vlog = (function () {
       b.onclick = () => { commit(() => { p.ratio = r; }); sizeCanvas(); };
       seg.append(b);
     });
-    body.append(group('Формат ролика', seg), el('p', 'hint', t('9:16 для Reels, Shorts и TikTok. Клипы заполняют кадр целиком, края обрезаются.')));
+    body.append(group('Формат ролика', seg), el('p', 'hint', t('9:16 для Reels, Shorts и TikTok. Как клип ляжет в кадр, настраивается у клипа в «Кадр».')));
+  }
+
+  /* кадр клипа: как вписать, масштаб, движение фото; сдвиг — пальцем по просмотру */
+  function sheetFrame(body, c) {
+    body.append(group('Как вписать', chips(Engine.FITS.map((f) => [f.id, t(f.name)]), c.fit || '', (v) => commit(() => { c.fit = v; }))));
+    body.append(slider('Масштаб', 100, Engine.ZOOM_MAX * 100, 5, Math.round((c.zoom || 1) * 100), (v) => `${v}%`, (v) => { c.zoom = v / 100; }));
+    if (c.kind === 'image') {
+      body.append(group('Движение фото', chips(Engine.MOVES.map((m) => [m.id, t(m.name)]), c.move || 'in', (v) => {
+        commit(() => { c.move = v; });
+        /* показываем движение сразу */
+        const s = Timeline.starts(p)[sel];
+        previewFrom(s, s + Timeline.len(c));
+      })));
+    }
+    const row = el('div', 'row');
+    const reset = el('button', 'btn small', t('Сбросить кадр'));
+    reset.type = 'button';
+    reset.onclick = () => commit(() => { delete c.fit; delete c.zoom; delete c.x; delete c.y; });
+    row.append(reset, toAll('Вписать так все клипы', () => p.clips.forEach((x) => { x.fit = c.fit || ''; })));
+    if (c.kind === 'image') row.append(toAll('Движение ко всем фото', () => p.clips.forEach((x) => { if (x.kind === 'image') x.move = c.move || 'in'; })));
+    body.append(row);
+    body.append(el('p', 'hint', t('Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
   }
 
   function sheetMusic(body) {
