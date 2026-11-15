@@ -2039,6 +2039,18 @@
   function bindMore() {
     const btn = $('moreBtn');
     const menu = $('moreMenu');
+    const themes = $('themeSeg');
+    const root = document.documentElement;
+    markSeg(themes, root.dataset.theme || 'dark');
+    themes.addEventListener('click', (e) => {
+      const button = e.target.closest('button');
+      if (!button) return;
+      const theme = button.dataset.v;
+      root.dataset.theme = theme;
+      markSeg(themes, theme);
+      document.querySelector('meta[name="theme-color"]').content = getComputedStyle(root).getPropertyValue('--ink').trim();
+      try { localStorage.setItem('lunajour-theme', theme); } catch { /* выбор действует до перезагрузки */ }
+    });
     setMore = (on) => {
       menu.hidden = !on;
       btn.setAttribute('aria-expanded', String(on));
@@ -5876,6 +5888,7 @@
     ['Новый снимок', 'новое фото камера new photo', '#more', 'retake'],
     ['Начать заново', 'сбросить очистить reset', '#more', 'resetCard'],
     ['Язык', 'english русский language', '#more', 'langSeg'],
+    ['Тема', 'светлая тёмная темная оформление light dark theme', '#more', 'themeSeg'],
     ['Режим видео', 'ролик видео анимация движение video', '#video', 'outSeg'],
     ['Музыка', 'трек песня звук music sound', 'motion', 'musicChips'],
     ['Длина ролика', 'секунды время длительность duration', 'motion', 'motDur'],

@@ -399,6 +399,9 @@ window.I18n = (function () {
     'Черновик не открылся.': 'The draft didn’t open.',
     'Добавить': 'Add',
     'Язык': 'Language',
+    'Тема': 'Theme',
+    'Тёмная': 'Dark',
+    'Светлая': 'Light',
 
     /* категории */
     'Все': 'All',

@@ -6,6 +6,14 @@
 <title>Lunajour</title>
 <meta name="description" content="Фото сквозь звёзды, точки и слова: карточки для сторис прямо на телефоне.">
 <meta name="theme-color" content="#0a0a0a">
+<script>
+  try {
+    if (localStorage.getItem('lunajour-theme') === 'light') {
+      document.documentElement.dataset.theme = 'light';
+      document.querySelector('meta[name="theme-color"]').content = '#f4f5fa';
+    }
+  } catch { /* тёмная тема по умолчанию */ }
+</script>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icons/icon-192.png" type="image/png">
 <link rel="apple-touch-icon" href="icons/icon-180.png">
@@ -62,6 +70,12 @@
           <p class="hint">Карточка вернётся к чистому виду, загруженные фото останутся. Передумаешь: «Отменить».</p>
         </div>
         <span class="menu-head">Приложение</span>
+        <div class="group"><span class="label" id="themeLabel">Тема</span>
+          <div class="seg" id="themeSeg" role="group" aria-labelledby="themeLabel">
+            <button type="button" data-v="dark" class="on" aria-pressed="true">Тёмная</button>
+            <button type="button" data-v="light" aria-pressed="false">Светлая</button>
+          </div>
+        </div>
         <div class="group"><span class="label">Язык</span>
           <div class="seg lang" id="langSeg" role="radiogroup" aria-label="Язык">
             <button type="button" data-v="ru">RU</button>
