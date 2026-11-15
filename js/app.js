@@ -237,7 +237,11 @@
   const card = $('card');
   const ctx = card.getContext('2d');
 
-  const invalidate = () => { dirty = true; };
+  let stickerMovePreview = null;
+  const invalidate = () => {
+    stickerMovePreview = null;
+    dirty = true;
+  };
   /* Рамка и маркеры сохраняют экранный размер при повороте телефона и смене высоты панели. */
   if ('ResizeObserver' in window) new ResizeObserver(invalidate).observe(card);
   window.addEventListener('resize', invalidate);
@@ -465,7 +469,9 @@
     lastFrame = now;
     Scanner.clock = videoClock();
     Effects.clock = Scanner.clock;
-    renderCard(ctx, comparing ? plainState() : state, slots, assets);
+    const movePreview = !comparing && splitX == null && !due && !isMoving() &&
+      !Effects.animates(state) && !Scanner.animates(state) ? stickerMovePreview : null;
+    renderCard(ctx, comparing ? plainState() : state, slots, assets, movePreview);
     if (!comparing) drawSplit();
     Scanner.clock = null;
     Effects.clock = null;
@@ -4949,7 +4955,14 @@
       if (sy) ny = 0.5;
       if ((sx && !snapGuides.x) || (sy && !snapGuides.y)) { try { if (navigator.vibrate) navigator.vibrate(8); } catch { /* без вибрации */ } }
       snapGuides = { x: sx, y: sy };
-      editLayer({ x: nx, y: ny }, true);
+      const l = layerAt(selectedLayer);
+      if (!l) return;
+      state.layers = state.layers.map((layer, i) => i === selectedLayer ? { ...l, x: nx, y: ny } : layer);
+      /* Нижние слои и фото одинаковы на всех кадрах перемещения. */
+      if (stickerMovePreview?.index !== selectedLayer) stickerMovePreview = { index: selectedLayer };
+      dirty = true;
+      scheduleDraft();
+      recordHistory();
     });
     const end = (e) => {
       /* короткий тап по уже выбранному стикеру снимает с него выбор */
@@ -4967,6 +4980,7 @@
       }
       if (!pointers.size) {
         drag = null;
+        stickerMovePreview = null;
         commitHistory();
         if (snapGuides.x || snapGuides.y) { snapGuides = { x: false, y: false }; invalidate(); }
       }

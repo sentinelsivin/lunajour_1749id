@@ -1531,11 +1531,23 @@
     return { x: a.x, y: a.y, w: a.w, h: a.h };
   }
 
-  function renderCard(ctx, s, slots, assets = {}) {
+  function renderCard(ctx, s, slots, assets = {}, movePreview = null) {
     textIdx = 0;
-    renderCardBody(ctx, s, slots, assets);
+    const W = ctx.canvas.width;
+    const H = ctx.canvas.height;
+    if (movePreview && sparkClock == null) {
+      const { index, base } = movePreview;
+      if (!base || base.width !== W || base.height !== H) {
+        movePreview.base = canvas(W, H);
+        renderCardBody(movePreview.base.getContext('2d'), { ...s, layers: s.layers.slice(0, index) }, slots, assets);
+      }
+      ctx.drawImage(movePreview.base, 0, 0);
+      drawLayers(ctx, { ...s, layers: s.layers.slice(index) }, assets, W, H);
+    } else {
+      renderCardBody(ctx, s, slots, assets);
+    }
     if (sparkClock != null && s.motion && s.motion.wipe) drawWipe(ctx, s, slots, assets);
-    drawSign(ctx, s, assets, ctx.canvas.width, ctx.canvas.height);
+    drawSign(ctx, s, assets, W, H);
   }
 
   /* ---------- ролик «до / после»: шторка ездит по кадру, слева исходное фото, справа обработка ---------- */

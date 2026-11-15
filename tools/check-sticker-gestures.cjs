@@ -20,7 +20,9 @@ const c = {
   state: { layers: [] }, selectedLayer: 0, multiMode: false, multi: new Set(), addingSticker: false,
   snapGuides: { x: false, y: false }, layersMode: () => true,
   clamp: (v, lo, hi) => Math.max(lo, Math.min(hi, v)),
-  syncLayerTools() {}, invalidate() {}, update() {}, commitHistory() {},
+  stickerMovePreview: null, dirty: false,
+  syncLayerTools() {}, invalidate() { c.stickerMovePreview = null; }, update() {}, commitHistory() {},
+  scheduleDraft() {}, recordHistory() {},
   $: id => { if (!elements.has(id)) elements.set(id, element()); return elements.get(id); },
 };
 c.layerAt = i => c.state.layers[i];
@@ -48,7 +50,13 @@ fire('pointerdown', 1, cx - 30, cy); fire('pointerdown', 2, cx + 30, cy);
 fire('pointermove', 2, cx + 90, cy); close(c.state.layers[0].size, 0.8);
 fire('pointermove', 2, cx - 30, cy + 120); close(c.state.layers[0].rot, Math.PI / 2);
 fire('pointerup', 2, cx - 30, cy + 120); fire('pointermove', 1, cx - 20, cy + 10);
-close(c.state.layers[0].x, 0.52); close(c.state.layers[0].y, 0.45 + 10 / 700); fire('pointerup', 1, 0, 0);
+close(c.state.layers[0].x, 0.52); close(c.state.layers[0].y, 0.45 + 10 / 700);
+const preview = c.stickerMovePreview;
+assert.equal(preview.index, 0);
+fire('pointermove', 1, cx - 15, cy + 15);
+assert.equal(c.stickerMovePreview, preview);
+fire('pointerup', 1, 0, 0);
+assert.equal(c.stickerMovePreview, null);
 reset();
 fire('pointerdown', 1, cx + 30, cy); fire('pointerdown', 2, cx - 30, cy + 0.3);
 fire('pointermove', 2, cx - 30, cy - 0.3); assert(Math.abs(c.state.layers[0].rot) < 0.02);
