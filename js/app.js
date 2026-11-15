@@ -4303,18 +4303,68 @@
     ['figures', 'Фигурки'], ['cats', 'Котики'], ['retro', 'Ретро-техника'], ['chrome', 'Хром'], ['objects', 'Мелочи'],
   ];
 
-  function packCutout(image, rect, tolerance, maxSize, screen) {
+  function isolateSticker(sticker) {
+    const { width, height } = sticker;
+    const ctx = sticker.getContext('2d');
+    const pixels = ctx.getImageData(0, 0, width, height);
+    const { data } = pixels;
+    const labels = new Int32Array(width * height);
+    const queue = new Int32Array(labels.length);
+    let best = 0;
+    let bestArea = 0;
+    let label = 0;
+    let tail = 0;
+    const visit = (p) => {
+      if (labels[p] || data[p * 4 + 3] < 24) return;
+      labels[p] = label;
+      queue[tail++] = p;
+    };
+    for (let start = 0; start < labels.length; start++) {
+      if (labels[start] || data[start * 4 + 3] < 24) continue;
+      label++;
+      tail = 0;
+      visit(start);
+      for (let head = 0; head < tail; head++) {
+        const p = queue[head];
+        const x = p % width;
+        if (x > 0) visit(p - 1);
+        if (x + 1 < width) visit(p + 1);
+        if (p >= width) visit(p - width);
+        if (p + width < labels.length) visit(p + width);
+      }
+      if (tail > bestArea) { bestArea = tail; best = label; }
+    }
+    if (best) {
+      for (let p = 0; p < labels.length; p++) {
+        if (labels[p] !== best) data[p * 4 + 3] = 0;
+      }
+      ctx.putImageData(pixels, 0, 0);
+    }
+    return sticker;
+  }
+
+  function packCutout(image, rect, tolerance, maxSize, openings, disc) {
     const [left, top, right, bottom] = rect;
     const sw = (right - left) * image.naturalWidth;
     const sh = (bottom - top) * image.naturalHeight;
     const scale = Math.min(1, maxSize / Math.max(sw, sh));
     // cutBackground определяет цвет фона по непрозрачным пикселям на краю.
     const crop = canvas(sw * scale, sh * scale);
-    crop.getContext('2d').drawImage(image, left * image.naturalWidth, top * image.naturalHeight, sw, sh, 0, 0, crop.width, crop.height);
-    const hole = screen && [(screen[0] - left) / (right - left), (screen[1] - top) / (bottom - top)];
-    const sticker = tolerance ? cutBackground(crop, tolerance, 'edge', 0, hole) : crop;
+    const context = crop.getContext('2d');
+    const localX = (x) => (x - left) / (right - left);
+    const localY = (y) => (y - top) / (bottom - top);
+    if (disc) {
+      const [x, y, radius] = disc;
+      context.beginPath();
+      context.arc(localX(x) * crop.width, localY(y) * crop.height, radius * crop.width / (right - left), 0, Math.PI * 2);
+      context.clip();
+    }
+    context.drawImage(image, left * image.naturalWidth, top * image.naturalHeight, sw, sh, 0, 0, crop.width, crop.height);
+    if (disc) return crop;
+    const holes = openings.map(([x, y]) => [localX(x), localY(y)]);
+    const sticker = tolerance ? cutBackground(crop, tolerance, 'edge', 0, holes) : crop;
     if (!sticker) throw new Error('Could not read sticker background');
-    return sticker;
+    return isolateSticker(sticker);
   }
 
   let stickerPackLoad = 0;
@@ -4350,7 +4400,10 @@
       }));
       const regions = boxes.length ? boxes : [[0, 0, 1, 1]];
       regions.forEach((rect, index) => {
-        const id = `pack:${file}:${index}${screen ? ':open' : ''}`;
+        const detail = window.StickerPackDetails[file]?.[index];
+        const openings = detail?.openings || (screen ? [screen] : []);
+        const disc = detail?.disc;
+        const id = `pack:${file}:${index}${screen ? ':open' : ''}:clean${detail ? ':detail' : ''}`;
         const button = document.createElement('button');
         button.type = 'button';
         button.hidden = true;
@@ -4359,7 +4412,7 @@
         grid.append(button);
         const preview = loaded.then(() => {
           if (!button.isConnected) return;
-          button.append(packCutout(image, rect, tolerance, 104, screen));
+          button.append(packCutout(image, rect, tolerance, 104, openings, disc));
           button.hidden = false;
         });
         previews.push(preview);
@@ -4370,7 +4423,7 @@
           try {
             if (!assets.stickers[id]) {
               await loaded;
-              const crop = packCutout(image, rect, tolerance, 640, screen);
+              const crop = packCutout(image, rect, tolerance, 640, openings, disc);
               const blob = await new Promise((resolve) => crop.toBlob(resolve));
               const { el } = await imageSrc(blob);
               assets.stickers[id] = el;
@@ -4546,8 +4599,8 @@
     $('drawText').addEventListener('input', (e) => { draw.text = e.target.value; saveDraw(); });
     $('drawLabel').addEventListener('input', (e) => { draw.label = e.target.value; saveDraw(); });
     $('drawClear').onclick = () => {
-      /* весь рисунок: штрихи и дудлы */
-      const drawn = (l) => l.type === 'ink' || (l.vec && Render.DOODLES.some(([id]) => id === l.vec));
+      /* весь рисунок: штрихи, дудлы и подписи, созданные кистью */
+      const drawn = (l) => l.type === 'ink' || l.drawLabel || (l.vec && Render.DOODLES.some(([id]) => id === l.vec));
       if (!state.layers.some(drawn)) return;
       state.layers = state.layers.filter((l) => !drawn(l));
       selectedLayer = -1;
@@ -4560,10 +4613,10 @@
       const r = card.getBoundingClientRect();
       return [((e.clientX - r.left) / r.width) * card.width, ((e.clientY - r.top) / r.height) * card.height];
     };
-    /* дудл стирается, если ластик коснулся его рамки (с учётом поворота) */
+    /* Дудлы и надписи стираются при касании рамки с учётом поворота. Старые подписи сохранены как обычный текст. */
     const doodleIds = new Set(Render.DOODLES.map(([id]) => id));
-    const doodleHit = (l, px, py, r) => {
-      if (!l.vec || !doodleIds.has(l.vec)) return false;
+    const erasableLayerHit = (l, px, py, r) => {
+      if (!doodleIds.has(l.vec) && (l.type !== 'text' || l.card)) return false;
       const b = Render.layerBox(ctx, l, assets, card.width, card.height);
       const dx = px - l.x * card.width;
       const dy = py - l.y * card.height;
@@ -4572,10 +4625,10 @@
       const ly = dx * Math.sin(a) + dy * Math.cos(a);
       return Math.abs(lx) <= b.w / 2 + r && Math.abs(ly) <= b.h / 2 + r;
     };
-    /* ластик стирает целые штрихи и дудлы, которых коснулся; фото-стикеры и надписи не трогает */
+    /* Ластик стирает целые штрихи, дудлы и надписи, которых коснулся. */
     const eraseAt = (px, py) => {
       const r = Math.min(card.width, card.height) * 0.03;
-      const keep = state.layers.filter((l) => !(l.type === 'ink' ? Render.inkHit(l, px, py, card.width, card.height, r) : doodleHit(l, px, py, r * 0.3)));
+      const keep = state.layers.filter((l) => !(l.type === 'ink' ? Render.inkHit(l, px, py, card.width, card.height, r) : erasableLayerHit(l, px, py, r * 0.3)));
       if (keep.length === state.layers.length) return false;
       state.layers = keep;
       selectedLayer = -1;
@@ -4618,7 +4671,7 @@
       const white = (draw.color || '').toLowerCase() === '#ffffff';
       const style = draw.labelStyle || '';
       const t0 = {
-        type: 'text', text: draw.label || '♡', font: draw.font || 'caveat', size: 0.025 + draw.size * 0.008, rot: 0,
+        type: 'text', drawLabel: true, text: draw.label || '♡', font: draw.font || 'caveat', size: 0.025 + draw.size * 0.008, rot: 0,
         /* на белой дымке белый текст пропал бы: тогда пишем зелёным, как на примерах */
         color: style === 'haze' && white ? '#5b8a3a' : draw.color,
         style, bg: style === 'outline' ? (white ? '#111111' : '#ffffff') : '#ffffff', shadow: style ? 'none' : undefined,
@@ -4765,7 +4818,7 @@
   /* Цвет фона берём самый частый по краю картинки. «Фон вокруг» заливает от краёв всё похожее на него,
      «Этот цвет везде» убирает похожие пиксели по всей картинке. Край выреза мягкий: почти похожие
      пиксели становятся полупрозрачными, чтобы не было белой каймы. */
-  function cutBackground(img, tol, mode, edgePx = 1, hole) {
+  function cutBackground(img, tol, mode, edgePx = 1, holes = []) {
     const k = Math.min(1, 2000 / Math.max(img.naturalWidth || img.width, img.naturalHeight || img.height));
     const c = canvas((img.naturalWidth || img.width) * k, (img.naturalHeight || img.height) * k);
     const x = c.getContext('2d', { willReadFrequently: true });
@@ -4814,7 +4867,9 @@
       const push = (p) => { if (!seen[p]) { seen[p] = 1; stack.push(p); } };
       for (let px = 0; px < w; px++) { push(px); push((h - 1) * w + px); }
       for (let py = 0; py < h; py++) { push(py * w); push(py * w + w - 1); }
-      if (hole) push(Math.floor(hole[1] * h) * w + Math.floor(hole[0] * w));
+      for (const [x, y] of holes) {
+        if (x >= 0 && x < 1 && y >= 0 && y < 1) push(Math.floor(y * h) * w + Math.floor(x * w));
+      }
       while (stack.length) {
         const p = stack.pop();
         const a = keep(p * 4);
@@ -5995,7 +6050,7 @@
     { id: 'color', name: 'Цвет', tabs: [['color', 'Цвет']] },
     { id: 'fx', name: 'Эффекты', tabs: [['fx', 'Эффекты'], ['film', 'Блёстки и плёнка'], ['motif', 'Фигуры']] },
     { id: 'layout', name: 'Макет', tabs: [['collage', 'Коллаж'], ['paper', 'Бумага'], ['format', 'Размер']] },
-    { id: 'text', name: 'Текст', tabs: [['note', 'Подпись'], ['layers', 'Стикеры и надписи'], ['draw', 'Рисунок']] },
+    { id: 'text', name: 'Декор', tabs: [['note', 'Подпись'], ['layers', 'Стикеры и надписи'], ['draw', 'Рисунок']] },
     { id: 'video', name: 'Видео', tabs: [['motion', 'Видео']] },
   ];
   const lastTab = {};

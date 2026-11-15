@@ -708,6 +708,7 @@ window.I18n = (function () {
     'Ёлочные шары': 'Hanging baubles',
     'Карточки': 'Cards',
     'Мои картинки': 'My images',
+    'Декор': 'Decor',
     'Загружаю стикеры…': 'Loading stickers…',
     'Часть стикеров не загрузилась. Открой вкладку ещё раз.': 'Some stickers couldn’t load. Open the tab again to retry.',
     'Фигурки': 'Figures',
