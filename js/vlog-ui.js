@@ -1207,7 +1207,19 @@ window.Vlog = (function () {
     if (p.music.fileId) {
       body.append(slider('Начало трека', 0, 300, 1, p.music.start, (v) => fmt(v * 1000).replace(/\.\d$/, ''), (v) => { p.music.start = v; }));
     }
-    body.append(el('p', 'hint', t('Музыка играет под всем роликом и затихает в конце. Звук самих клипов настраивается у каждого клипа.')));
+    if (p.music.track || p.music.fileId) {
+      const sec = (v) => (v ? `${v.toFixed(1)} ${t('с')}` : t('сразу'));
+      body.append(slider('Плавное начало', 0, 5, 0.5, Number(p.music.fadeIn) || 0, sec, (v) => { p.music.fadeIn = v; }));
+      body.append(slider('Затухание в конце', 0, 5, 0.5, Number(p.music.fadeOut ?? 1), sec, (v) => { p.music.fadeOut = v; }));
+      const duckBox = el('label', 'check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = p.music.duck !== false;
+      box.onchange = () => commit(() => { p.music.duck = box.checked; });
+      duckBox.append(box, document.createTextNode(t('Тише, когда в клипе звучит голос')));
+      body.append(duckBox);
+    }
+    body.append(el('p', 'hint', t('Музыка играет под всем роликом. Пока в клипе говорят, она сама становится тише. Звук самих клипов настраивается у каждого клипа.')));
   }
 
   /* превью цвета: кадр клипа, перекрашенный каждым шаблоном */

@@ -15,14 +15,26 @@ window.VlogEngine = (function () {
   const playable = (blob) => (isMov(blob) ? new Blob([blob], { type: 'video/mp4' }) : blob);
 
   /* ---------- звук: один контекст на просмотр и запись ---------- */
+  /* Звук клипов идёт через общую шину clips: по ней слушаем, есть ли в клипе голос.
+     Музыка идёт через duck: эта ступень приглушает музыку, пока звучит клип. */
   let ac = null;
   let master = null;
+  let clips = null;
+  let meter = null;
+  let duckNode = null;
   let speakers = true;
   function audio() {
     if (!ac) {
       ac = new (window.AudioContext || window.webkitAudioContext)();
       master = ac.createGain();
       master.connect(ac.destination);
+      clips = ac.createGain();
+      clips.connect(master);
+      meter = ac.createAnalyser();
+      meter.fftSize = 1024;
+      clips.connect(meter);
+      duckNode = ac.createGain();
+      duckNode.connect(master);
     }
     if (ac.state === 'suspended') ac.resume().catch(() => {});
     return ac;
@@ -164,7 +176,7 @@ window.VlogEngine = (function () {
       const c = audio();
       v.node = c.createMediaElementSource(el);
       v.gain = c.createGain();
-      v.node.connect(v.gain).connect(master);
+      v.node.connect(v.gain).connect(clips);
     } catch { el.muted = true; }
     pool.set(id, v);
     return v;
@@ -475,10 +487,17 @@ window.VlogEngine = (function () {
     return m.track && window.Music ? window.Music.buffer(m.track) : null;
   }
 
+  let musicRun = 0;
   async function startMusic(p, at, total) {
     stopMusic();
+    /* если за время ожидания ролик перемотали, этот запуск устарел: иначе зазвучали бы две музыки сразу */
+    const run = ++musicRun;
     const buf = await musicBuffer(p).catch(() => null);
-    if (!buf || !playing) return;
+    if (!buf || !playing || run !== musicRun) return;
+    /* мелодия собирается не мгновенно: пока ждали, ролик ушёл вперёд. Считаем от того места, где он сейчас,
+       иначе затухание съезжает за конец и музыка обрывается */
+    at = Math.max(at, from + (ac.currentTime - t0) * 1000);
+    if (at >= total - 50) return;
     const c = audio();
     const s = c.createBufferSource();
     s.buffer = buf;
@@ -487,20 +506,28 @@ window.VlogEngine = (function () {
     const g = c.createGain();
     const v = Math.max(0.0001, p.music.vol / 100);
     const now = c.currentTime;
+    const pos = at / 1000;
     const left = Math.max(0.1, (total - at) / 1000);
+    /* плавное начало от начала ролика и затухание к его концу (по умолчанию за секунду);
+       если включили посередине, громкость сразу такая, какой была бы в этот момент */
+    const fi = Math.max(0, Number(p.music.fadeIn) || 0);
+    const fo = Math.max(0, Number(p.music.fadeOut ?? 1));
+    const level = (x) => (fi > 0 ? v * Math.min(1, x / fi) : v);
+    const outAt = Math.max(0.06, left - fo);
+    const inEnd = Math.min(outAt, Math.max(0.05, fi - pos));
     g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(v, now + 0.05);
-    /* в конце ролика музыка затихает за секунду */
-    const fadeAt = Math.max(0.06, left - 1);
-    g.gain.setValueAtTime(v, now + fadeAt);
+    g.gain.linearRampToValueAtTime(Math.max(0.0001, level(pos + 0.05)), now + 0.05);
+    if (fi > pos + 0.05) g.gain.linearRampToValueAtTime(Math.max(0.0001, level(pos + inEnd)), now + inEnd);
+    g.gain.setValueAtTime(Math.max(0.0001, level(pos + outAt)), now + outAt);
     g.gain.linearRampToValueAtTime(0.0001, now + left);
-    s.connect(g).connect(master);
+    s.connect(g).connect(duckNode);
     const offset = own ? (p.music.start || 0) + at / 1000 : (at / 1000) % buf.duration;
     if (own && offset >= buf.duration) return;
     s.start(now, offset);
     music = { s, g };
   }
   function stopMusic() {
+    unduck();
     if (!music) return;
     try { music.s.stop(); } catch { /* уже остановлена */ }
     music.s.disconnect();
@@ -513,15 +540,60 @@ window.VlogEngine = (function () {
     pool.forEach((v, id) => { if (id !== except && !v.el.paused) v.el.pause(); });
   }
 
+  /* ---------- звук на стыках ---------- */
+  /* Клип не обрывается на склейке, а за пару кадров затихает и так же проявляется: без щелчков.
+     На стыке с переходом звук уходит и приходит за половину перехода, вместе с картинкой. */
+  const EDGE_MS = 60;
+  function edgeLevel(p, i, into, l) {
+    const fin = i > 0 ? Math.max(EDGE_MS, Timeline.trDur(p, i - 1) / 2) : EDGE_MS;
+    const fout = i < p.clips.length - 1 ? Math.max(EDGE_MS, Timeline.trDur(p, i) / 2) : EDGE_MS;
+    return Math.max(0, Math.min(1, into / fin, (l - into) / fout));
+  }
+  function setClipGain(v, value) {
+    if (!v.gain || Math.abs((v.level ?? -1) - value) < 0.005) return;
+    v.level = value;
+    v.gain.gain.setTargetAtTime(value, ac.currentTime, 0.012);
+  }
+
+  /* ---------- музыка тише, пока в клипе звучит голос ---------- */
+  /* Слушаем шину клипов: громче порога — музыка быстро уходит вниз, тишина дольше HOLD — медленно возвращается. */
+  const DUCK_TO = 0.3;
+  const DUCK_RMS = 0.02;
+  const DUCK_HOLD = 0.35;
+  let meterBuf = null;
+  let lastVoice = -1;
+  let duckTarget = 1;
+  function duck(p) {
+    if (!meter || !duckNode) return;
+    if (!meterBuf) meterBuf = new Float32Array(meter.fftSize);
+    meter.getFloatTimeDomainData(meterBuf);
+    let sum = 0;
+    for (let k = 0; k < meterBuf.length; k++) sum += meterBuf[k] * meterBuf[k];
+    if (Math.sqrt(sum / meterBuf.length) > DUCK_RMS) lastVoice = ac.currentTime;
+    const on = p.music.duck !== false && !!music && lastVoice >= 0 && ac.currentTime - lastVoice < DUCK_HOLD;
+    const target = on ? DUCK_TO : 1;
+    if (target === duckTarget) return;
+    duckTarget = target;
+    duckNode.gain.setTargetAtTime(target, ac.currentTime, on ? 0.06 : 0.3);
+  }
+  function unduck() {
+    lastVoice = -1;
+    duckTarget = 1;
+    if (!duckNode) return;
+    duckNode.gain.cancelScheduledValues(ac.currentTime);
+    duckNode.gain.setValueAtTime(1, ac.currentTime);
+  }
+
   /* каждый кадр: текущее видео играет со своей скоростью, следующее ждёт на первом кадре */
   function steer(p, t) {
     const hit = Timeline.at(p, t);
     if (!hit) return;
     const { i, clip, local, into } = hit;
+    duck(p);
     if (clip.kind === 'video') {
       const v = video(clip.media);
       if (v) {
-        if (v.gain) v.gain.gain.value = clip.vol / 100;
+        setClipGain(v, (clip.vol / 100) * edgeLevel(p, i, into, Timeline.len(clip)));
         v.el.playbackRate = clip.speed;
         if (Math.abs(v.el.currentTime * 1000 - local) > DRIFT_MS * clip.speed) v.el.currentTime = local / 1000;
         if (v.el.paused && v.ready) v.el.play().catch(() => {});
