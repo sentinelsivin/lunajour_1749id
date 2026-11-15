@@ -3778,5 +3778,123 @@
     },
   });
 
+  COLLAGES.unshift({
+    id: 'moodboard', name: 'Мудборд', shuffle: true, noNote: true, under: 'light',
+    palette: [{ key: 'board', name: 'Фон мудборда' }, { key: 'trackColor', name: 'Цвет карточки трека' }],
+    choices: [
+      { key: 'layout', name: 'Композиция', def: 'center', options: [['center', 'Акцент в центре'], ['offset', 'Со смещением']] },
+      { key: 'shape', name: 'Края фото', def: 'straight', options: [['straight', 'Прямые'], ['mixed', 'Разные']] },
+      { key: 'quoteTheme', name: 'Оформление цитаты', def: 'light', options: [['light', 'Светлое'], ['dark', 'Тёмное']] },
+      { key: 'trackTheme', name: 'Оформление трека', def: 'dark', options: [['light', 'Светлое'], ['dark', 'Тёмное']] },
+    ],
+    fields() { return [
+      { key: 'quote', name: 'Цитата', placeholder: 'Оставь здесь мысль дня', multiline: true, maxLength: 240 },
+      { key: 'author', name: 'Автор цитаты', placeholder: '@имя', maxLength: 36 },
+      { key: 'quoteWidth', name: 'Ширина цитаты', range: [32, 71, 53] },
+      { key: 'song', name: 'Название песни', placeholder: 'Твоя любимая песня' },
+      { key: 'artist', name: 'Исполнитель', placeholder: 'Исполнитель' },
+      { key: 'trackWidth', name: 'Ширина карточки трека', range: [30, 70, 54] },
+    ]; },
+    layout(W, H, env) {
+      const offset = env.pick('layout', 'center') === 'offset';
+      const mixed = env.pick('shape', 'straight') === 'mixed';
+      const photoBoxes = offset ? [
+        [.10, .10, .35, .27], [.61, .15, .35, .21], [.34, .32, .34, .34], [.04, .40, .25, .19],
+        [.73, .43, .21, .16], [.16, .58, .34, .26], [.55, .64, .39, .23], [.10, .81, .18, .15],
+      ] : [
+        [.05, .15, .38, .19], [.64, .11, .28, .24], [.31, .28, .37, .35], [.08, .39, .21, .15],
+        [.71, .39, .25, .21], [.09, .58, .28, .28], [.34, .74, .25, .20], [.67, .66, .27, .23],
+      ];
+      const order = env.pick('photoOrder', null);
+      const previewSeed = env.pick('previewSeed', 0);
+      const rng = Motifs.makeRng(previewSeed);
+      const proportions = photoBoxes.map(([, , w, h]) => [w, h]);
+      if (previewSeed) {
+        for (let i = proportions.length - 1; i > 0; i--) {
+          const j = Math.floor(rng() * (i + 1));
+          [proportions[i], proportions[j]] = [proportions[j], proportions[i]];
+        }
+      }
+      const withinBoard = (start, length) => Math.max(.035, Math.min(.965 - length, start));
+      const cells = photoBoxes.map(([x, y, w, h], i) => {
+        const [width, height] = proportions[i];
+        const left = previewSeed ? withinBoard(x + (w - width) / 2 + (rng() - .5) * .13, width) : x;
+        const top = previewSeed ? withinBoard(y + (h - height) / 2 + (rng() - .5) * .10, height) : y;
+        return {
+          x: left * W, y: top * H, w: width * W, h: height * H, rot: 0, slot: order?.[i] ?? i,
+          shape: mixed && (i === 3 || i === 7) ? 'round' : mixed && i === 4 ? 'rounded' : 'rect',
+        };
+      });
+      const quoteW = W * Number(env.pick('quoteWidth', 53)) / 100;
+      const trackW = W * Number(env.pick('trackWidth', 54)) / 100;
+      return {
+        cells,
+        quote: { x: offset ? W * .96 - quoteW : W * .155, y: H * .045, w: quoteW },
+        track: { x: Math.min(W * (offset ? .34 : .28), W * .96 - trackW), y: H * .88, w: trackW, h: Math.min(H * .085, W * .12) },
+      };
+    },
+    deco(ctx, box, u, geo, opt) {
+      ctx.fillStyle = opt.c('board', '#fff');
+      ctx.fillRect(0, 0, geo.W, geo.H);
+    },
+    overlay(ctx, geo, u, opt) {
+      const t = (text) => window.I18n ? window.I18n.t(text) : text;
+      const scale = Math.min(geo.W, geo.H);
+      const q = geo.quote, m = geo.track;
+      const pad = scale * .014;
+      const size = scale * .024;
+      const lineHeight = size * 1.25;
+      const dark = opt.c('quoteTheme', 'light') === 'dark';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.font = `400 ${size}px ${SANS}`;
+      const lines = [];
+      let line = '';
+      for (const char of opt.c('quote', t('Оставь здесь мысль дня'))) {
+        if (char === '\n' || ctx.measureText(line + char).width > q.w - 2 * pad) {
+          lines.push(line.trimEnd());
+          line = '';
+        }
+        if (char !== '\n' && (line || char !== ' ')) line += char;
+      }
+      lines.push(line);
+      const limit = Math.max(1, Math.floor((geo.H * .32 - pad * 2) / lineHeight) - 1);
+      if (lines.length > limit) {
+        lines.length = limit;
+        lines[limit - 1] = lines[limit - 1].trimEnd() + '…';
+      }
+      const height = pad * 2 + lineHeight * (lines.length + 1);
+      ctx.fillStyle = dark ? '#242326' : '#faf9f7';
+      ctx.fillRect(q.x, q.y, q.w, height);
+      ctx.fillStyle = dark ? '#c4b8d5' : '#64566f';
+      ctx.font = `600 ${size * .67}px ${SANS}`;
+      ctx.fillText(opt.c('author', '@имя'), q.x + pad, q.y + pad + lineHeight / 2, q.w - pad * 2);
+      ctx.font = `400 ${size}px ${SANS}`;
+      ctx.fillStyle = dark ? '#fff' : '#201c24';
+      lines.forEach((text, i) => ctx.fillText(text, q.x + pad, q.y + pad + lineHeight * (i + 1.5), q.w - pad * 2));
+      const trackColor = opt.c('trackColor', opt.c('trackTheme', 'dark') === 'light' ? '#fff' : '#151416');
+      const lightTrack = window.Render.luminance(trackColor) > .32;
+      ctx.fillStyle = trackColor;
+      ctx.fillRect(m.x, m.y, m.w, m.h);
+      const icon = m.h * .67;
+      const top = m.y + (m.h - icon) / 2;
+      ctx.fillStyle = lightTrack ? 'rgba(0,0,0,.10)' : 'rgba(255,255,255,.14)';
+      ctx.fillRect(m.x + pad, top, icon, icon);
+      ctx.textAlign = 'center';
+      ctx.font = `600 ${icon * .58}px ${SANS}`;
+      ctx.fillStyle = lightTrack ? '#251e2a' : '#eee7f3';
+      ctx.fillText('♪', m.x + pad + icon / 2, m.y + m.h / 2);
+      ctx.textAlign = 'left';
+      const textX = m.x + pad * 2 + icon;
+      const textW = m.w - 3 * pad - icon;
+      ctx.font = `600 ${m.h * .27}px ${SANS}`;
+      ctx.fillStyle = lightTrack ? '#17131b' : '#fff';
+      ctx.fillText(opt.c('song', t('Твоя любимая песня')), textX, m.y + m.h * .36, textW);
+      ctx.font = `400 ${m.h * .21}px ${SANS}`;
+      ctx.fillStyle = lightTrack ? '#342a3b' : '#ece6ef';
+      ctx.fillText(opt.c('artist', t('Исполнитель')), textX, m.y + m.h * .68, textW);
+    },
+  });
+
   window.Collages = { COLLAGES, ready: collageAssetsReady, COLORABLE, hasColorFrame, paletteOf, count, byId, geometry, cellAt, cellOf, drawFrame, drawOver, clipBox, clipCell };
 })();

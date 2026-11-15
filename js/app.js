@@ -182,7 +182,9 @@
       groups.append(group);
       const current = (state.tints[id] && state.tints[id][item.key]) || item.def;
       item.options.forEach(([value, name]) => chip(row, t(name), value === current, () => {
-        state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: value } };
+        const options = { ...(state.tints[id] || {}), [item.key]: value };
+        if (id === 'moodboard' && item.key === 'trackTheme') delete options.trackColor;
+        state.tints = { ...state.tints, [id]: options };
         /* от варианта может зависеть число снимков, например у листа марок */
         syncSlotCount();
         syncCollages();
@@ -207,9 +209,23 @@
       tpl.fields(state).forEach((item) => {
         const label = document.createElement('label'); label.className = 'group';
         const caption = document.createElement('span'); caption.className = 'label'; caption.textContent = t(item.name);
-        const input = document.createElement('input'); input.type = 'text'; input.maxLength = item.maxLength || 90;
-        input.setAttribute('aria-label', t(item.name)); input.placeholder = t(item.placeholder || '');
-        input.value = state.tints[id]?.[item.key] || '';
+        const input = document.createElement(item.multiline ? 'textarea' : 'input');
+        if (item.range) {
+          const [min, max, def] = item.range;
+          input.type = 'range';
+          input.min = min;
+          input.max = max;
+          input.value = state.tints[id]?.[item.key] ?? def;
+          label.className = 'slider';
+        } else {
+          if (id === 'moodboard') label.classList.add('field');
+          if (item.multiline) input.rows = 3;
+          else input.type = 'text';
+          input.maxLength = item.maxLength || 90;
+          input.placeholder = t(item.placeholder || '');
+          input.value = state.tints[id]?.[item.key] || '';
+        }
+        input.setAttribute('aria-label', t(item.name));
         input.addEventListener('input', () => {
           state.tints = { ...state.tints, [id]: { ...(state.tints[id] || {}), [item.key]: input.value } };
           update();
@@ -219,7 +235,13 @@
     }
     $('collageShuffle').hidden = !(tpl && tpl.shuffle);
     /* у вырезок кнопка тасует кусочки, у остальных шаблонов всю раскладку */
-    if (tpl && tpl.shuffle) $('collageShuffle').textContent = t(tpl.id === 'cutouts' ? 'Перемешать вырезки' : 'Перемешать');
+    if (tpl && tpl.shuffle) {
+      const label = { moodboard: 'Перемешать фото', cutouts: 'Перемешать вырезки' };
+      $('collageShuffle').textContent = t(label[tpl.id] || 'Перемешать');
+    }
+    $('cellHelp').textContent = t(tpl?.id === 'moodboard'
+      ? 'Добавь до восьми фото. Перетащи фото на другую ячейку, чтобы поменять их местами.'
+      : 'Нажми на ячейку на карточке, чтобы выбрать её. Несколько фото из галереи разложатся по пустым ячейкам. Перетащи фото на другую ячейку, чтобы поменять их местами. Текст и окошки фраз пишутся во вкладке «Подпись»: () ставит окошко.');
     $('markTools').hidden = !(tpl && tpl.marks);
     $('cellButtons').hidden = !!(tpl && tpl.marks);
     keepInView($('collageGrid'));
@@ -3354,6 +3376,35 @@
     };
     $('markFind').onclick = findPeople;
     $('collageShuffle').onclick = () => {
+      if (state.collage === 'moodboard') {
+        const filled = slots.map((slot, i) => hasPhoto(slot) ? i : -1).filter((i) => i >= 0);
+        if (!filled.length) {
+          const options = state.tints.moodboard || {};
+          const seed = Math.floor(Math.random() * 1e6) + 1;
+          commitHistory();
+          state.tints = { ...state.tints, moodboard: { ...options, previewSeed: seed } };
+          update();
+          commitHistory();
+          return;
+        }
+        const order = filled.length > 1 ? filled : slots.map((_, i) => i);
+        const shuffled = order.map((i) => slots[i]);
+        for (let i = shuffled.length - 1; i > 0; i--) {
+          const j = Math.floor(Math.random() * (i + 1));
+          [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+        }
+        if (order.every((slot, i) => slots[slot].src === shuffled[i].src)) shuffled.push(shuffled.shift());
+        bankBefore();
+        slots = slots.map((slot, i) => {
+          const position = order.indexOf(i);
+          return position < 0 ? slot : shuffled[position];
+        });
+        bankAfter();
+        syncSlotUI();
+        update();
+        commitHistory();
+        return;
+      }
       state.seed = Math.floor(Math.random() * 1e6);
       update();
     };
