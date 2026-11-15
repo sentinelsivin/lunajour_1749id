@@ -41,12 +41,15 @@ window.Vlog = (function () {
   }
 
   let toastTimer = 0;
-  function toast(text) {
+  function toast(text, ms = 3500) {
     const el = $('toast');
     el.textContent = text;
+    /* место сообщения могла сдвинуть карточка: во влоге оно всегда сверху */
+    el.style.top = '';
+    el.style.bottom = '';
     el.hidden = false;
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => { el.hidden = true; }, 3500);
+    toastTimer = setTimeout(() => { el.hidden = true; }, ms);
   }
 
   /* ---------- сохранение черновика ---------- */
@@ -1295,7 +1298,10 @@ window.Vlog = (function () {
         failed++;
       }
     }
-    if (failed) toast(t('Часть файлов не открылась. Попробуй MP4 или фото JPG/PNG.'));
+    const unsaved = fresh.filter((m) => m.unsaved).length;
+    fresh.forEach((m) => { delete m.unsaved; });
+    if (unsaved) toast(t('В памяти браузера не хватило места: эти клипы пропадут после перезагрузки. Сохрани ролик, пока вкладка открыта.'), 9000);
+    else if (failed) toast(t('Часть файлов не открылась. Попробуй MP4 или фото JPG/PNG.'));
     else $('toast').hidden = true;
     if (!fresh.length) return;
     const index = sel >= 0 ? sel + 1 : p.clips.length;

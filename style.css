@@ -505,7 +505,7 @@ button { cursor: pointer; }
   .deco, .readout { display: none; }
   .seg.lang { width: 72px; }
   .app.editing { --dock-h: calc(84px + env(safe-area-inset-bottom)); }
-  .app.tool-open { --dock-h: var(--dock-open, 58dvh); }
+  .app.tool-open { --dock-h: var(--dock-open, 50dvh); }
   .app.dock-drag .dock { transition: none; }
   .app.editing .seg.lang { display: none; }
   .app.editing .logo { font-size: 20px; }
@@ -842,6 +842,7 @@ details.fine > .slider { margin-top: 12px; }
 /* стартовый экран: три понятные кнопки вместо затвора без подписи */
 .starter { display: none; flex-direction: column; gap: 8px; padding: 4px 12px 8px; }
 .starter .row { display: flex; gap: 8px; }
+.starter-tag { margin: 0 0 4px; color: var(--muted); font-size: 13px; line-height: 1.35; text-align: center; text-wrap: balance; }
 .starter .row .btn { flex: 1; }
 .app.idle .starter { display: flex; }
 .app.idle .shoot-row, .app.idle #tools { display: none; }
@@ -850,7 +851,11 @@ details.fine > .slider { margin-top: 12px; }
 #fxSlots button { border-radius: 0; margin-left: -1px; }
 #fxSlots button:first-child { border-radius: 6px 0 0 6px; margin-left: 0; }
 #fxSlots button:last-child { border-radius: 0 6px 6px 0; }
-@media (max-width: 860px) { .app.idle { --dock-h: calc(122px + env(safe-area-inset-bottom)); } }
+@media (max-width: 860px) {
+  .app.idle { --dock-h: calc(176px + env(safe-area-inset-bottom)); }
+  /* на старте в полосе ещё строка о приложении: даём ей место */
+  .app.idle .bar { max-height: 176px; }
+}
 /* шапка панели: подписанные кнопки */
 .panel-head .btn { min-width: 84px; }
 
@@ -872,7 +877,12 @@ details.fine > .slider { margin-top: 12px; }
 .search-list button.on, .search-list button:hover { background: rgba(49, 113, 198, .2); }
 /* карточка в редакторе стоит под переключателем «Фото | Видео», а не под ним */
 .app.editing #card { top: 52px; max-height: calc(100% - 80px); }
-@media (max-width: 860px) { .app.editing #card { top: 48px; max-height: calc(100% - 58px); } }
+@media (max-width: 860px) {
+  .app.editing #card { top: 48px; max-height: calc(100% - 58px); }
+  /* пока открыта панель, место над ней целиком отдаём карточке: «Фото | Видео» вернётся, когда панель закроют */
+  .app.editing.tool-open .out-bar { display: none; }
+  .app.editing.tool-open #card { top: 6px; max-height: calc(100% - 12px); max-width: calc(100% - 56px); }
+}
 
 /* ---------- что делаем: фото или видео, над карточкой ---------- */
 .out-bar {

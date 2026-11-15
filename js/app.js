@@ -92,6 +92,7 @@
     syncKind();
     syncSlotUI();
     update();
+    if (tpl && phase === 'edit') showHint('collage');
   }
 
   /* В коллаже фигуры, раскладка бумаги и будка не нужны: прячем их. */
@@ -622,9 +623,34 @@
       el.append(b);
     }
     el.hidden = false;
+    placeToast(el);
+    /* панель могла ещё выезжать: уточняем место, когда она встанет */
+    setTimeout(() => { if (!el.hidden) placeToast(el); }, 350);
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => { el.hidden = true; }, action ? 12000 : 4000);
   }
+  /* На телефоне в редакторе сверху кнопки «Сохранить» и отмена: сообщение встаёт над панелью, а не на них */
+  function placeToast(el) {
+    const dock = document.querySelector('.dock');
+    const r = dock && dock.getBoundingClientRect();
+    const low = phase === 'edit' && $('vlog').hidden && matchMedia('(max-width: 860px)').matches && r && r.top > innerHeight * 0.3;
+    el.style.top = low ? 'auto' : '';
+    el.style.bottom = low ? `${Math.round(innerHeight - r.top + 10)}px` : '';
+  }
+
+  /* Запись в память браузера не удалась: говорим сразу, а не после перезагрузки, когда фото уже не вернуть.
+     Одно сообщение на серию неудач, чтобы не мигало при каждом сохранении черновика. */
+  let storeWarned = 0;
+  window.addEventListener('store-error', (e) => {
+    if (Date.now() - storeWarned < 20000) return;
+    storeWarned = Date.now();
+    const text = e.detail && e.detail.full
+      ? t('В памяти браузера кончилось место: последние изменения не сохранились. Сохрани работу файлом и удали лишнее из влога.')
+      : t('Не получилось сохранить на этом устройстве. Сохрани работу файлом, пока вкладка открыта.');
+    toast(text);
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => { $('toast').hidden = true; }, 9000);
+  });
 
   /* ---------- этапы ---------- */
   function setPhase(next) {
@@ -1021,6 +1047,8 @@
     state.fx2 = { ...defaults().fx2, ...(draft.state.fx2 || {}) };
     state.scan = { ...Scanner.defaults(), ...(draft.state.scan || {}) };
     state.motion = { ...defaults().motion, ...(draft.state.motion || {}) };
+    /* у старого черновика нет ползунков цвета, добавленных позже: берём их значения по умолчанию */
+    state.adjust = { ...defaults().adjust, ...(draft.state.adjust || {}) };
     ['fx', 'fx2'].forEach((key) => {
       const f = state[key];
       const to = Scanner.fromEffect(f);
@@ -1031,13 +1059,24 @@
     mode = draft.mode;
     markSeg($('modeSeg'), mode);
     const restored = [];
+    let lost = 0;
     for (const s of draft.slots) {
       /* пустая ячейка коллажа так и остаётся пустой, а не превращается в пример */
       const empty = draft.state.collage && s.kind !== 'sample';
-      const src = !s.blob ? (empty ? null : sampleSrc) : s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
+      let src = !s.blob ? (empty ? null : sampleSrc) : null;
+      /* один испорченный файл не должен ломать весь черновик: его место остаётся пустым */
+      if (s.blob) {
+        try {
+          src = s.kind === 'video' ? await videoSrc(s.blob) : await imageSrc(s.blob);
+        } catch {
+          lost++;
+          src = draft.state.collage ? null : sampleSrc;
+        }
+      }
       restored.push({ ...newSlot(src), x: s.x, y: s.y, zoom: s.zoom, flip: s.flip, turn: s.turn || 0, tilt: s.tilt || 0 });
     }
     slots = restored;
+    if (lost) setTimeout(() => toast(t('Часть фото из черновика не открылась, их место пустое.')), 600);
     if (draft.bgBlob) {
       const paper = state.paper;
       await setBackground(draft.bgBlob);
@@ -1860,10 +1899,19 @@
 
   /* ---------- подсказки: первые два раза полностью, потом значок «?» ---------- */
   const HINTS_KEY = 'lunajour-hints';
+  /* всплывающие подсказки при первом открытии раздела: свой ключ, чтобы не путаться со счётом подсказок в панелях */
+  const TIPS_KEY = 'lunajour-tips';
   /* эти подсказки меняют текст по ходу дела, их не сворачиваем */
   const LIVE_HINTS = new Set(['fxTextHint', 'fxMaskHint', 'fxCenterHint', 'cellHint']);
   let hintSeen = {};
-  try { hintSeen = JSON.parse(localStorage.getItem(HINTS_KEY)) || {}; } catch { /* счёт просто начнётся заново */ }
+  try {
+    const raw = JSON.parse(localStorage.getItem(HINTS_KEY));
+    /* раньше всплывающие подсказки писали сюда же список; список переносим в свой ключ, счёт начинаем заново */
+    if (Array.isArray(raw)) {
+      localStorage.setItem(TIPS_KEY, JSON.stringify(raw));
+      localStorage.removeItem(HINTS_KEY);
+    } else if (raw && typeof raw === 'object') hintSeen = raw;
+  } catch { /* счёт просто начнётся заново */ }
   /* вызывается до перевода интерфейса, поэтому ключ подсказки всегда русский текст */
   function prepHints() {
     document.querySelectorAll('.panels .hint').forEach((p) => {
@@ -5506,7 +5554,7 @@
     ['Сохранить', 'экспорт скачать сохранить поделиться save export share', '#save', null],
     ['Клавиши', 'горячие клавиши shortcuts keys', '#keys', null],
   ];
-  const WHERE = { '#brand': 'Меню ⋯ → Мой набор', '#feed': 'Меню ⋯', '#more': 'Меню ⋯', '#keys': 'Меню ⋯', '#video': 'Над карточкой', '#el': 'Сверху', '#save': 'Готово' };
+  const WHERE = { '#brand': 'Меню ⋯ → Мой набор', '#feed': 'Меню ⋯', '#more': 'Меню ⋯', '#keys': 'Меню ⋯', '#video': 'Над карточкой', '#el': 'Сверху', '#save': 'Сохранить' };
   const placeOf = (where) => {
     if (WHERE[where]) return t(WHERE[where]);
     const sec = secOf(where);
@@ -5675,10 +5723,13 @@
   };
   function showHint(name) {
     if (!HINTS[name]) return;
+    /* про ячейки говорим, только когда коллаж правда выбран: у обычной карточки ячеек нет */
+    if (name === 'collage' && !collageTpl()) return;
     try {
-      const seen = JSON.parse(localStorage.getItem('lunajour-hints') || '[]');
+      const raw = JSON.parse(localStorage.getItem(TIPS_KEY) || '[]');
+      const seen = Array.isArray(raw) ? raw : [];
       if (seen.includes(name)) return;
-      localStorage.setItem('lunajour-hints', JSON.stringify([...seen, name]));
+      localStorage.setItem(TIPS_KEY, JSON.stringify([...seen, name]));
     } catch { return; }
     toast(t(HINTS[name]));
   }

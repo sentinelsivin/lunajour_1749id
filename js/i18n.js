@@ -1350,6 +1350,14 @@ window.I18n = (function () {
     'Цвет подложки': 'Backing color',
     'Сначала добавь клипы или фото.': 'Add clips or photos first.',
     'Эта картинка не открылась. Попробуй PNG или JPG.': 'This image didn’t open. Try PNG or JPG.',
+    'Золотой час с тобой': 'Golden hour with you',
+    'Париж, наша кухня': 'Paris, our kitchen',
+    'Что найти: блёстки, музыка, ник…': 'Find: glitter, music, handle…',
+    'В памяти браузера кончилось место: последние изменения не сохранились. Сохрани работу файлом и удали лишнее из влога.': 'The browser ran out of storage: your latest changes were not saved. Save your work as a file and remove extra clips from the vlog.',
+    'Не получилось сохранить на этом устройстве. Сохрани работу файлом, пока вкладка открыта.': 'Couldn’t save on this device. Save your work as a file while the tab is open.',
+    'В памяти браузера не хватило места: эти клипы пропадут после перезагрузки. Сохрани ролик, пока вкладка открыта.': 'Not enough browser storage: these clips will be gone after a reload. Save the video while the tab is open.',
+    'Часть фото из черновика не открылась, их место пустое.': 'Some photos from the draft didn’t open; their spots are empty.',
+    'Фото проступает сквозь звёзды, слова и узоры на бумаге. Всё остаётся на твоём устройстве.': 'Your photo shows through stars, words and patterns on paper. Everything stays on your device.',
   };
 
   const KEY = 'lunajour-lang';
@@ -1369,8 +1377,8 @@ window.I18n = (function () {
       const ru = walker.currentNode.nodeValue.trim();
       if (/[а-яё]/i.test(ru)) texts.push([walker.currentNode, ru]);
     }
-    document.querySelectorAll('[aria-label],[title]').forEach((el) => {
-      ['aria-label', 'title'].forEach((name) => {
+    document.querySelectorAll('[aria-label],[title],[placeholder]').forEach((el) => {
+      ['aria-label', 'title', 'placeholder'].forEach((name) => {
         const ru = el.getAttribute(name);
         if (ru && /[а-яё]/i.test(ru)) attrs.push([el, name, ru]);
       });

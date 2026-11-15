@@ -120,7 +120,8 @@ window.VlogEngine = (function () {
       m.h = small.height;
       m.thumb = thumbOf(small, m.w, m.h);
     }
-    await Store.set(blobKey(id), file);
+    /* файл не лёг в базу (чаще всего кончилось место): в этот раз клип работает, но после перезагрузки его не будет */
+    if (!(await Store.set(blobKey(id), file))) m.unsaved = true;
     blobs.set(id, file);
     return m;
   }

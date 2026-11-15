@@ -32,7 +32,7 @@
         <button class="btn small" id="redoBtn" type="button" aria-label="Вернуть" title="Вернуть (Ctrl+Shift+Z)" disabled>↷</button>
         <button class="btn small icon edit-only" id="compareBtn" type="button" aria-label="Сравнить с исходным фото" title="Нажми: шторка до и после. Удерживай: без эффектов и цвета (пробел)"><svg viewBox="0 0 20 20" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" aria-hidden="true"><circle cx="10" cy="10" r="7"/><path d="M10 3a7 7 0 0 1 0 14z" fill="currentColor"/></svg></button>
         <button class="btn small icon" id="moreBtn" type="button" aria-label="Ещё" title="Меню: план ленты, мой набор, стили, язык" aria-expanded="false" aria-controls="moreMenu">⋯</button>
-        <button class="btn small primary edit-only" id="finish" type="button">Готово</button>
+        <button class="btn small primary edit-only" id="finish" type="button">Сохранить</button>
       </div>
       <span class="readout" id="readout"></span>
     </div>
@@ -137,6 +137,7 @@
         <button type="button" data-v="vlog">Влог</button>
       </div>
       <div class="starter" id="starter">
+        <p class="starter-tag">Фото проступает сквозь звёзды, слова и узоры на бумаге. Всё остаётся на твоём устройстве.</p>
         <button class="btn primary" id="starterPick" type="button">Выбрать фото или видео</button>
         <div class="row">
           <button class="btn" id="starterCam" type="button">Снять камерой</button>
@@ -605,8 +606,8 @@
           <label class="check grow"><input id="noteSign" type="checkbox">Мой ник на карточке</label>
           <button class="btn small" id="signSetup" type="button">Мой набор</button>
         </div>
-        <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Golden hour with you"></label>
-        <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Paris, our kitchen"></label>
+        <label class="field">Подпись<input id="noteTitle" type="text" maxlength="200" data-bind="note.title" placeholder="Золотой час с тобой"></label>
+        <label class="field">Место<input id="notePlace" type="text" maxlength="40" data-bind="note.place" placeholder="Париж, наша кухня"></label>
         <label class="field">Дата<input id="noteDate" type="date" data-bind="note.date"></label>
         <label class="check"><input id="noteShowDate" type="checkbox" data-bind="note.showDate">Показывать дату</label>
         <label class="field">Штамп настроения<input id="noteMood" type="text" maxlength="16" data-bind="note.mood" placeholder="warm"></label>
