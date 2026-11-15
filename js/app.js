@@ -4352,6 +4352,7 @@
 
   const PACK_TABS = [
     ['figures', 'Фигурки'], ['cats', 'Котики'], ['retro', 'Ретро-техника'], ['chrome', 'Хром'], ['objects', 'Мелочи'],
+    ['tins', 'Шкатулки'],
   ];
 
   function isolateSticker(sticker) {

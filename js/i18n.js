@@ -729,6 +729,7 @@ window.I18n = (function () {
     'Загружаю стикеры…': 'Loading stickers…',
     'Часть стикеров не загрузилась. Открой вкладку ещё раз.': 'Some stickers couldn’t load. Open the tab again to retry.',
     'Фигурки': 'Figures',
+    'Шкатулки': 'Tins',
     'Котики': 'Cats',
     'Ретро-техника': 'Retro tech',
     'Хром': 'Chrome',
