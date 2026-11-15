@@ -130,6 +130,9 @@ button { cursor: pointer; }
   touch-action: pan-y;
 }
 #card.grab { cursor: grab; touch-action: none; }
+/* «Рисунок»: палец рисует, страница не листается */
+#card.drawing { cursor: crosshair; touch-action: none; }
+#drawDoodles button.on { outline: 2px solid var(--accent-light, #8fb4ef); outline-offset: -2px; }
 #card.grab:active { cursor: grabbing; }
 
 /* Парящие символы на фоне. */

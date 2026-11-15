@@ -1769,6 +1769,15 @@
       const pad = l.style === 'plaque' ? size * 0.35 : size * 0.1;
       return { w: w + pad * 2, h: lines.length * size * 1.2 + pad * 1.2, size, lines, pad };
     }
+    if (l.type === 'ink') {
+      /* рамка штриха: по его точкам и с запасом на толщину линии или значки */
+      const P = inkPoints(l, m);
+      const scale = l.size / (l.base || l.size || 1);
+      const pad = (l.brush === 'line' || !l.brush ? (l.w || 0.008) : (l.w || 0.03) * (l.brush === 'scatter' ? 1.9 : 0.7)) * m * scale;
+      let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
+      P.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+      return { w: Math.max(x1, -x0) * 2 + pad * 2, h: Math.max(y1, -y0) * 2 + pad * 2, size };
+    }
     const img = l.img && assets.stickers && assets.stickers[l.img];
     if (img) {
       const k = size / Math.max(img.width, img.height);
@@ -1852,6 +1861,11 @@
     ctx.lineCap = 'butt';
     const line = (w, pts) => { ctx.lineWidth = w; ctx.beginPath(); ctx.moveTo(pts[0], pts[1]); ctx.lineTo(pts[2], pts[3]); ctx.stroke(); };
     const ring = (r, w) => { ctx.lineWidth = w; ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.stroke(); };
+    if (DOODLE_IDS.has(id)) {
+      drawDoodle(ctx, id, s * 0.92);
+      ctx.restore();
+      return;
+    }
     switch (id) {
       case 'pixelLove': {
         const rows = ['01100110', '11111111', '11111111', '01111110', '00111100', '00011000'];
@@ -2076,6 +2090,350 @@
     }
     ctx.restore();
   }
+  /* ---------- дудлы: рисованные от руки значки, белым маркером поверх фото ---------- */
+  /* Каждый рисуется контуром в квадрате от -1 до 1. Линия круглая и чуть толстая, как маркером. */
+  const DOODLES = [
+    ['dFlower', 'Цветочек'], ['dDaisy', 'Ромашка'], ['dSparkle', 'Искра'], ['dSparkles', 'Искорки'], ['dStar', 'Звезда'],
+    ['dHeart', 'Сердечко'], ['dHearts', 'Сердечки'], ['dBow', 'Бантик'], ['dRays', 'Сияние'], ['dBurst', 'Лучики'],
+    ['dArrow', 'Стрелка-завиток'], ['dCloud', 'Облачко-реплика'], ['dCup', 'Чашка'], ['dSmile', 'Улыбка'],
+    ['dSwirl', 'Завиток'], ['dWave', 'Волна'], ['dDots', 'Точки'], ['dLeaf', 'Листик'], ['dMoon', 'Месяц'], ['dShy', 'Смущение'],
+  ];
+  const DOODLE_IDS = new Set(DOODLES.map(([id]) => id));
+  function heartPath(ctx, cx, cy, k) {
+    ctx.moveTo(cx, cy + 0.75 * k);
+    ctx.bezierCurveTo(cx - 1.05 * k, cy - 0.05 * k, cx - 0.55 * k, cy - 0.95 * k, cx, cy - 0.35 * k);
+    ctx.bezierCurveTo(cx + 0.55 * k, cy - 0.95 * k, cx + 1.05 * k, cy - 0.05 * k, cx, cy + 0.75 * k);
+  }
+  function sparklePath(ctx, cx, cy, k) {
+    const q = 0.14 * k;
+    ctx.moveTo(cx, cy - k);
+    ctx.quadraticCurveTo(cx + q, cy - q, cx + k, cy);
+    ctx.quadraticCurveTo(cx + q, cy + q, cx, cy + k);
+    ctx.quadraticCurveTo(cx - q, cy + q, cx - k, cy);
+    ctx.quadraticCurveTo(cx - q, cy - q, cx, cy - k);
+  }
+  /* лепесток-капля от центра наружу под углом a */
+  function petal(ctx, a, r0, r1, wide) {
+    const p = (r, d) => [Math.cos(a + d) * r, Math.sin(a + d) * r];
+    const [ax, ay] = p(r0, -wide);
+    const [bx, by] = p(r0, wide);
+    const [c1x, c1y] = p(r1 * 1.05, -wide * 1.3);
+    const [c2x, c2y] = p(r1 * 1.05, wide * 1.3);
+    ctx.moveTo(ax, ay);
+    ctx.bezierCurveTo(c1x, c1y, c2x, c2y, bx, by);
+  }
+  function drawDoodle(ctx, id, s) {
+    ctx.scale(s, s);
+    ctx.lineWidth = 0.1;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    const path = (fn) => { ctx.beginPath(); fn(); ctx.stroke(); };
+    const dot = (x, y, r) => { ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill(); };
+    switch (id) {
+      case 'dFlower':
+        path(() => { for (let k = 0; k < 5; k++) petal(ctx, -Math.PI / 2 + (k * Math.PI * 2) / 5, 0.26, 0.95, 0.55); });
+        path(() => ctx.arc(0, 0, 0.17, 0, Math.PI * 2));
+        break;
+      case 'dDaisy':
+        path(() => { for (let k = 0; k < 8; k++) petal(ctx, (k * Math.PI * 2) / 8, 0.3, 0.98, 0.28); });
+        path(() => ctx.arc(0, 0, 0.24, 0, Math.PI * 2));
+        break;
+      case 'dSparkle':
+        path(() => sparklePath(ctx, 0, 0, 0.95));
+        break;
+      case 'dSparkles':
+        path(() => sparklePath(ctx, -0.22, 0.1, 0.72));
+        path(() => sparklePath(ctx, 0.62, -0.58, 0.32));
+        dot(0.7, 0.55, 0.07);
+        break;
+      case 'dStar':
+        path(() => {
+          for (let k = 0; k <= 10; k++) {
+            const a = -Math.PI / 2 + (k * Math.PI) / 5;
+            const r = k % 2 ? 0.42 : 0.95;
+            if (k) ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r + 0.08); else ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r + 0.08);
+          }
+        });
+        break;
+      case 'dHeart':
+        path(() => heartPath(ctx, 0, 0.05, 1));
+        break;
+      case 'dHearts':
+        path(() => heartPath(ctx, -0.3, 0.2, 0.62));
+        path(() => heartPath(ctx, 0.5, -0.45, 0.38));
+        break;
+      case 'dBow':
+        path(() => {
+          ctx.moveTo(-0.08, -0.05);
+          ctx.bezierCurveTo(-0.5, -0.75, -1.05, -0.35, -0.85, 0.05);
+          ctx.bezierCurveTo(-0.7, 0.35, -0.3, 0.1, -0.08, -0.05);
+          ctx.moveTo(0.08, -0.05);
+          ctx.bezierCurveTo(0.5, -0.75, 1.05, -0.35, 0.85, 0.05);
+          ctx.bezierCurveTo(0.7, 0.35, 0.3, 0.1, 0.08, -0.05);
+          ctx.moveTo(-0.08, 0.02);
+          ctx.quadraticCurveTo(-0.35, 0.45, -0.55, 0.9);
+          ctx.moveTo(0.08, 0.02);
+          ctx.quadraticCurveTo(0.3, 0.45, 0.6, 0.85);
+        });
+        path(() => ctx.arc(0, -0.03, 0.12, 0, Math.PI * 2));
+        break;
+      case 'dRays':
+        /* три штриха веером: «сияет» */
+        path(() => {
+          [[-0.95, 0.15, -0.35, 0.3], [-0.6, -0.65, -0.15, -0.15], [0.05, -0.95, 0.12, -0.3]].forEach(([a, b, c, d]) => { ctx.moveTo(a, b); ctx.lineTo(c, d); });
+        });
+        break;
+      case 'dBurst':
+        path(() => {
+          for (let k = 0; k < 8; k++) {
+            const a = (k * Math.PI * 2) / 8;
+            const r0 = k % 2 ? 0.5 : 0.42;
+            const r1 = k % 2 ? 0.8 : 0.98;
+            ctx.moveTo(Math.cos(a) * r0, Math.sin(a) * r0);
+            ctx.lineTo(Math.cos(a) * r1, Math.sin(a) * r1);
+          }
+        });
+        break;
+      case 'dArrow':
+        path(() => {
+          ctx.moveTo(-0.95, 0.55);
+          ctx.bezierCurveTo(-0.55, 0.85, -0.05, 0.6, -0.25, 0.25);
+          ctx.bezierCurveTo(-0.4, -0.05, -0.75, 0.25, -0.45, 0.4);
+          ctx.bezierCurveTo(-0.05, 0.6, 0.45, 0.2, 0.85, -0.55);
+          ctx.moveTo(0.85, -0.55);
+          ctx.lineTo(0.5, -0.45);
+          ctx.moveTo(0.85, -0.55);
+          ctx.lineTo(0.85, -0.2);
+        });
+        break;
+      case 'dCloud':
+        /* облачко с хвостиком: волны по овалу, бугорки наружу */
+        path(() => {
+          const n = 9;
+          const pt = (k) => { const a = (k / n) * Math.PI * 2; return [Math.cos(a) * 0.82, Math.sin(a) * 0.5 - 0.1]; };
+          let [x0, y0] = pt(0);
+          ctx.moveTo(x0, y0);
+          for (let k = 1; k <= n; k++) {
+            const [x1, y1] = pt(k);
+            const am = ((k - 0.5) / n) * Math.PI * 2;
+            ctx.quadraticCurveTo(Math.cos(am) * 1.12, Math.sin(am) * 0.78 - 0.1, x1, y1);
+            x0 = x1; y0 = y1;
+          }
+          ctx.moveTo(-0.42, 0.42);
+          ctx.quadraticCurveTo(-0.55, 0.75, -0.85, 0.9);
+          ctx.quadraticCurveTo(-0.5, 0.82, -0.2, 0.5);
+        });
+        break;
+      case 'dCup':
+        path(() => {
+          ctx.moveTo(-0.62, -0.1);
+          ctx.lineTo(-0.5, 0.55);
+          ctx.quadraticCurveTo(-0.45, 0.78, -0.2, 0.78);
+          ctx.lineTo(0.22, 0.78);
+          ctx.quadraticCurveTo(0.47, 0.78, 0.52, 0.55);
+          ctx.lineTo(0.62, -0.1);
+          ctx.closePath();
+          ctx.moveTo(0.58, 0.08);
+          ctx.bezierCurveTo(0.98, 0.0, 0.98, 0.45, 0.53, 0.45);
+          [-0.25, 0.0, 0.25].forEach((x) => { ctx.moveTo(x, -0.3); ctx.bezierCurveTo(x - 0.12, -0.45, x + 0.12, -0.6, x, -0.8); });
+        });
+        path(() => heartPath(ctx, 0, 0.33, 0.22));
+        break;
+      case 'dSmile':
+        path(() => ctx.arc(0, 0, 0.9, 0, Math.PI * 2));
+        path(() => {
+          ctx.moveTo(-0.5, -0.12); ctx.quadraticCurveTo(-0.32, -0.38, -0.14, -0.12);
+          ctx.moveTo(0.14, -0.12); ctx.quadraticCurveTo(0.32, -0.38, 0.5, -0.12);
+          ctx.moveTo(-0.38, 0.22); ctx.quadraticCurveTo(0, 0.6, 0.38, 0.22);
+        });
+        break;
+      case 'dSwirl':
+        path(() => {
+          for (let k = 0; k <= 60; k++) {
+            const a = k * 0.21;
+            const r = 0.04 + k * 0.0155;
+            const x = Math.cos(a) * r;
+            const y = Math.sin(a) * r;
+            if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+          }
+        });
+        break;
+      case 'dWave':
+        path(() => {
+          for (let k = 0; k <= 40; k++) {
+            const x = -0.95 + (k / 40) * 1.9;
+            const y = Math.sin((k / 40) * Math.PI * 4) * 0.18;
+            if (k) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+          }
+        });
+        break;
+      case 'dDots':
+        [[-0.6, -0.5, 0.09], [0.1, -0.7, 0.06], [0.65, -0.2, 0.1], [-0.2, 0.05, 0.07], [0.35, 0.55, 0.08], [-0.7, 0.6, 0.06]].forEach(([x, y, r]) => dot(x, y, r));
+        break;
+      case 'dLeaf':
+        path(() => {
+          ctx.moveTo(-0.8, 0.8);
+          ctx.bezierCurveTo(-0.9, -0.2, -0.1, -0.85, 0.85, -0.85);
+          ctx.bezierCurveTo(0.85, 0.1, 0.2, 0.85, -0.8, 0.8);
+          ctx.moveTo(-0.8, 0.8);
+          ctx.quadraticCurveTo(0, 0.1, 0.55, -0.55);
+        });
+        break;
+      case 'dMoon':
+        path(() => {
+          ctx.arc(0, 0, 0.85, Math.PI * 0.35, Math.PI * 1.65);
+          ctx.bezierCurveTo(-0.15, -0.55, -0.15, 0.55, Math.cos(Math.PI * 0.35) * 0.85, Math.sin(Math.PI * 0.35) * 0.85);
+        });
+        break;
+      case 'dShy':
+        /* «>o<» и румянец штрихами */
+        path(() => {
+          ctx.moveTo(-0.85, -0.35); ctx.lineTo(-0.5, -0.15); ctx.lineTo(-0.85, 0.05);
+          ctx.moveTo(0.85, -0.35); ctx.lineTo(0.5, -0.15); ctx.lineTo(0.85, 0.05);
+          ctx.moveTo(-0.85, 0.45); ctx.lineTo(-0.7, 0.3); ctx.moveTo(-0.65, 0.5); ctx.lineTo(-0.5, 0.35);
+          ctx.moveTo(0.5, 0.45); ctx.lineTo(0.65, 0.3); ctx.moveTo(0.7, 0.5); ctx.lineTo(0.85, 0.35);
+        });
+        path(() => ctx.arc(0, -0.12, 0.13, 0, Math.PI * 2));
+        break;
+      default: break;
+    }
+  }
+
+  /* ---------- рисунок кистью: слой «ink» ---------- */
+  /* Штрих хранит точки относительно своего центра в долях короткой стороны карточки, как было при рисовании (base).
+     Слой двигают, крутят и растягивают как стикер: масштаб — это size / base.
+     brush: line (линия), text (текст вдоль линии), symbols (значки и эмодзи вдоль линии), scatter (россыпь вокруг). */
+  const INK_SCATTER = ['dSparkle', 'dot', 'dFlower', 'dot', 'dHeart', 'dSparkle', 'dot', 'dStar'];
+  function inkPoints(l, m) {
+    const k = m * (l.size / (l.base || l.size || 1));
+    return (l.pts || []).map(([x, y]) => [x * k, y * k]);
+  }
+  /* точки через равные промежутки вдоль линии, с направлением */
+  function alongPath(P, step, from = 0) {
+    const out = [];
+    if (P.length < 2) { if (P.length) out.push({ x: P[0][0], y: P[0][1], a: 0, i: 0 }); return out; }
+    let need = from;
+    let acc = 0;
+    let n = 0;
+    for (let i = 1; i < P.length; i++) {
+      const [ax, ay] = P[i - 1];
+      const [bx, by] = P[i];
+      const seg = Math.hypot(bx - ax, by - ay);
+      if (!seg) continue;
+      while (need <= acc + seg) {
+        const t = (need - acc) / seg;
+        out.push({ x: ax + (bx - ax) * t, y: ay + (by - ay) * t, a: Math.atan2(by - ay, bx - ax), i: n++ });
+        need += typeof step === 'function' ? step(n) : step;
+        if (out.length > 4000) return out;
+      }
+      acc += seg;
+    }
+    return out;
+  }
+  function inkSymbol(ctx, sym, x, y, size, color, rot) {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(rot);
+    if (sym === 'dot') {
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      ctx.arc(0, 0, size * 0.14, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (sym.startsWith('v:') || DOODLE_IDS.has(sym)) {
+      const id = sym.startsWith('v:') ? sym.slice(2) : sym;
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      drawDoodle(ctx, id, size / 2);
+    } else {
+      ctx.fillStyle = color;
+      ctx.font = `${size}px "Golos Text", ${EMOJI_FONT}`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sym, 0, 0);
+    }
+    ctx.restore();
+  }
+  function drawInk(ctx, l, m) {
+    const P = inkPoints(l, m);
+    if (!P.length) return;
+    const scale = l.size / (l.base || l.size || 1);
+    const w = Math.max(0.5, (l.w || 0.008) * m * scale);
+    const color = l.color || '#ffffff';
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (!l.brush || l.brush === 'line') {
+      ctx.lineWidth = w;
+      if (l.dash === 'dash') ctx.setLineDash([w * 2.6, w * 2.2]);
+      if (l.dash === 'dots') ctx.setLineDash([0.001, w * 2.3]);
+      ctx.beginPath();
+      ctx.moveTo(P[0][0], P[0][1]);
+      if (P.length === 1) ctx.lineTo(P[0][0] + 0.01, P[0][1]);
+      /* сглаживание: кривые через середины соседних точек, линия не ломаная */
+      for (let i = 1; i < P.length - 1; i++) {
+        const mx = (P[i][0] + P[i + 1][0]) / 2;
+        const my = (P[i][1] + P[i + 1][1]) / 2;
+        ctx.quadraticCurveTo(P[i][0], P[i][1], mx, my);
+      }
+      if (P.length > 1) ctx.lineTo(P[P.length - 1][0], P[P.length - 1][1]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      return;
+    }
+    /* у текста и значков w — их высота */
+    const size = Math.max(4, (l.w || 0.03) * m * scale);
+    if (l.brush === 'text') {
+      const f = FONTS.find((x) => x.id === l.font) || FONTS.find((x) => x.id === 'caveat') || FONTS[0];
+      ctx.font = `${f.weight} ${size}px ${f.css}`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      const word = `${String(l.text || '♡').trim() || '♡'}  `;
+      const chars = [...word];
+      /* шаг после буквы — её ширина: буквы идут вплотную, как написано */
+      const widths = chars.map((ch) => ctx.measureText(ch).width || size * 0.3);
+      alongPath(P, (n) => widths[(n - 1) % chars.length]).forEach((p) => {
+        const ch = chars[p.i % chars.length];
+        if (!ch.trim()) return;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.a);
+        ctx.fillText(ch, 0, 0);
+        ctx.restore();
+      });
+      return;
+    }
+    const rng = makeRng(l.seed || 7);
+    if (l.brush === 'symbols') {
+      const list = (l.symbols && l.symbols.length) ? l.symbols : ['v:dHeart'];
+      alongPath(P, size * (l.gap || 1.5), size * 0.3).forEach((p) => {
+        inkSymbol(ctx, list[p.i % list.length], p.x, p.y, size, color, (rng() - 0.5) * 0.5);
+      });
+      return;
+    }
+    if (l.brush === 'scatter') {
+      alongPath(P, size * 0.9).forEach((p) => {
+        const d = (rng() - 0.5) * size * 2.6;
+        const sym = INK_SCATTER[Math.floor(rng() * INK_SCATTER.length)];
+        const k = sym === 'dot' ? rng() * 0.6 + 0.6 : rng() * 0.6 + 0.45;
+        inkSymbol(ctx, sym, p.x - Math.sin(p.a) * d, p.y + Math.cos(p.a) * d, size * k, color, (rng() - 0.5) * 0.8);
+      });
+    }
+  }
+  /* задета ли линия слоя точкой (px, py) в пикселях карточки: для ластика */
+  function inkHit(l, px, py, W, H, r) {
+    const m = Math.min(W, H);
+    const cos = Math.cos(-(l.rot || 0));
+    const sin = Math.sin(-(l.rot || 0));
+    const dx = px - l.x * W;
+    const dy = py - l.y * H;
+    let lx = dx * cos - dy * sin;
+    const ly = dx * sin + dy * cos;
+    if (l.flip) lx = -lx;
+    const reach = r + ((l.brush === 'line' || !l.brush) ? (l.w || 0.008) : (l.w || 0.03)) * m * (l.size / (l.base || l.size || 1));
+    return inkPoints(l, m).some(([x, y]) => Math.hypot(x - lx, y - ly) < reach);
+  }
+
   function vectorBitmap(id, color, size) {
     const c = canvas(size, size);
     drawVector(c.getContext('2d'), id, size / 2, size / 2, size * 0.94, color);
@@ -2175,6 +2533,9 @@
       a.apply(ctx);
       if (l.card) {
         layerShadow(ctx, l, 'none', b.size * 12); drawTextCard(ctx, l, b, assets);
+      } else if (l.type === 'ink') {
+        layerShadow(ctx, l, 'none', Math.min(W, H) * 0.05);
+        drawInk(ctx, l, Math.min(W, H));
       } else if (l.type === 'text') {
         const f = layerFont(l);
         layerShadow(ctx, l, 'none', b.size * 1.6);
@@ -2345,7 +2706,7 @@
   }
 
   window.Render = {
-    RATIOS, PAPERS, FONTS, VECTORS, CARDS, drawMusicPlayer, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
+    RATIOS, PAPERS, FONTS, VECTORS, DOODLES, inkHit, CARDS, drawMusicPlayer, STICKER_FX, LOOKS, applyAdjust, loadLut, registerLut,
     onLut: (fn) => { lutListener = fn; }, layerThumb, drawLayers, drawVector, canvas, layout, slotFrame, coverGeom, fxRect, paintPaper, renderCard, sampleScene, luminance, drawCover, layerBox,
     clearMasks: () => maskCache.clear(),
     /* время для мерцания блёсток в видео; null — неподвижная картинка */

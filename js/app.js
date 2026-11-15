@@ -4167,7 +4167,7 @@
   const SUBS = { look: 'Вид', text: 'Текст', color: 'Цвет', fx: 'Эффект', edge: 'Обводка и тень', bg: 'Фон картинки' };
   function syncLayerSub(l) {
     const isText = l.type === 'text';
-    const list = isText ? ['text', 'look', 'edge'] : ['look', 'fx', 'edge', ...(l.vec ? ['color'] : []), ...(l.img ? ['bg'] : [])];
+    const list = isText ? ['text', 'look', 'edge'] : l.type === 'ink' ? ['look', 'color', 'edge'] : ['look', 'fx', 'edge', ...(l.vec ? ['color'] : []), ...(l.img ? ['bg'] : [])];
     const cur = list.includes(layerSub) ? layerSub : list[0];
     const row = $('layerSub');
     row.replaceChildren();
@@ -4203,6 +4203,14 @@
     syncStickers();
   }
 
+  /* значок по id: из готовых или из дудлов (дудлы белые, как маркером по фото) */
+  function vecDef(id) {
+    const v = Render.VECTORS.find((x) => x.id === id);
+    if (v) return v;
+    const d = Render.DOODLES.find(([x]) => x === id);
+    return d ? { id: d[0], name: d[1], color: '#ffffff', size: 0.16 } : null;
+  }
+
   function syncStickers() {
     const grid = $('stickerGrid');
     grid.replaceChildren();
@@ -4220,9 +4228,9 @@
     /* вкладки набора: эмодзи или готовые рисованные значки */
     const tabs = $('stickerTabs');
     tabs.replaceChildren();
-    const stRec = recentOf('sticker').filter((k) => k.startsWith('e:') || Render.VECTORS.some((v) => `v:${v.id}` === k));
+    const stRec = recentOf('sticker').filter((k) => k.startsWith('e:') || !!vecDef(k.slice(2)));
     if (stickerSet === 'recent' && !stRec.length) stickerSet = 'emoji';
-    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['ready', 'Готовые'], ['cards', 'Карточки'], ['mine', 'Мои картинки']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
+    [...(stRec.length ? [['recent', 'Недавние']] : []), ['emoji', 'Эмодзи'], ['doodles', 'Дудлы'], ['ready', 'Готовые'], ['cards', 'Карточки'], ['mine', 'Мои картинки']].forEach(([id, name]) => chip(tabs, t(name), stickerSet === id, () => { stickerSet = id; syncStickers(); }));
     if (stickerSet === 'mine') return;
     if (stickerSet === 'cards') {
       Render.CARDS.forEach(def => {
@@ -4253,7 +4261,11 @@
       grid.append(b);
     };
     if (stickerSet === 'recent') {
-      stRec.forEach((k) => (k.startsWith('e:') ? emojiButton(k.slice(2)) : vecButton(Render.VECTORS.find((v) => `v:${v.id}` === k))));
+      stRec.forEach((k) => (k.startsWith('e:') ? emojiButton(k.slice(2)) : vecButton(vecDef(k.slice(2)))));
+      return;
+    }
+    if (stickerSet === 'doodles') {
+      Render.DOODLES.forEach(([id]) => vecButton(vecDef(id)));
       return;
     }
     if (stickerSet === 'ready') {
@@ -4261,6 +4273,177 @@
       return;
     }
     EMOJIS.forEach(emojiButton);
+  }
+
+  /* ---------- рисунок кистью ---------- */
+  /* Каждый штрих — отдельный слой «ink» (js/render.js): его потом двигают и меняют, как стикер.
+     Настройки кисти — не часть карточки, а инструмент: помним их в браузере между сеансами. */
+  const DRAW_COLORS = ['#ffffff', '#111111', '#cfe6a8', '#86c96b', '#f4c6cf', '#f472b6', '#d64545', '#ffe27a', '#e8913a', '#6c9fe0', '#a78bfa'];
+  const BRUSHES = [['line', 'Линия'], ['text', 'Текстом'], ['symbols', 'Значками'], ['scatter', 'Россыпь'], ['doodle', 'Дудлы'], ['erase', 'Ластик']];
+  /* что повторять вдоль линии: рисованные значки (v:) и эмодзи */
+  const DRAW_SYMS = [['v:dHeart', '♡'], ['v:dSparkle', '✦'], ['v:dStar', '☆'], ['v:dFlower', '✿'], ['dot', '•'], ['v:dSmile', '☺'], ['🌸', '🌸'], ['🍓', '🍓'], ['✨', '✨'], ['💗', '💗'], ['🎀', '🎀'], ['⭐', '⭐']];
+  const DRAW_FONTS = ['caveat', 'golos', 'yeseva', 'mono'];
+  let draw = { brush: 'line', color: '#ffffff', size: 3, dash: '', text: 'love you ♡', font: 'caveat', syms: ['v:dHeart', 'v:dSparkle'], doodle: 'dFlower' };
+  try { draw = { ...draw, ...(JSON.parse(localStorage.getItem('lunajour-draw')) || {}) }; } catch { /* настройки по умолчанию */ }
+  const saveDraw = () => { try { localStorage.setItem('lunajour-draw', JSON.stringify(draw)); } catch { /* только на этот раз */ } };
+  /* как и стикеры, рисовать можно, как только открыта вкладка */
+  const drawMode = () => tab === 'draw';
+  /* толщина в долях короткой стороны карточки: у линии это ширина, у текста и значков их высота */
+  const drawWidth = (brush) => draw.size * (brush === 'line' ? 0.003 : brush === 'doodle' ? 0.035 : brush === 'scatter' ? 0.012 : brush === 'text' ? 0.015 : 0.012);
+
+  function syncDraw() {
+    const brushRow = $('drawBrush');
+    brushRow.replaceChildren();
+    BRUSHES.forEach(([id, name]) => chip(brushRow, t(name), draw.brush === id, () => { draw.brush = id; saveDraw(); syncDraw(); }));
+    const b = draw.brush;
+    $('drawColorBox').hidden = b === 'erase';
+    swatches($('drawColor'), DRAW_COLORS, draw.color, (c) => { draw.color = c; saveDraw(); syncDraw(); });
+    $('drawSizeField').hidden = b === 'erase';
+    $('drawSizeLabel').textContent = t(b === 'line' ? 'Толщина' : 'Размер');
+    $('drawSize').value = draw.size;
+    $('drawLineBox').hidden = b !== 'line';
+    const dash = $('drawDash');
+    dash.replaceChildren();
+    [['', 'Сплошная'], ['dash', 'Пунктир'], ['dots', 'Точки']].forEach(([v, name]) => chip(dash, t(name), (draw.dash || '') === v, () => { draw.dash = v; saveDraw(); syncDraw(); }));
+    $('drawTextBox').hidden = b !== 'text';
+    if ($('drawText').value !== draw.text) $('drawText').value = draw.text;
+    const fonts = $('drawFont');
+    fonts.replaceChildren();
+    DRAW_FONTS.forEach((id) => {
+      const f = Render.FONTS.find((x) => x.id === id);
+      if (f) chip(fonts, t(f.name), draw.font === id, () => { draw.font = id; saveDraw(); syncDraw(); });
+    });
+    $('drawSymBox').hidden = b !== 'symbols';
+    const syms = $('drawSyms');
+    syms.replaceChildren();
+    DRAW_SYMS.forEach(([v, label]) => chip(syms, label, draw.syms.includes(v), () => {
+      /* можно выбрать несколько: они пойдут по очереди; хотя бы один остаётся */
+      const next = draw.syms.includes(v) ? draw.syms.filter((x) => x !== v) : [...draw.syms, v];
+      draw.syms = next.length ? next : [v];
+      saveDraw();
+      syncDraw();
+    }));
+    $('drawDoodleBox').hidden = b !== 'doodle';
+    const grid = $('drawDoodles');
+    if (b === 'doodle') {
+      grid.replaceChildren();
+      Render.DOODLES.forEach(([id, name]) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.title = t(name);
+        btn.setAttribute('aria-label', t(name));
+        btn.classList.toggle('on', draw.doodle === id);
+        const c = canvas(64, 64);
+        Render.drawVector(c.getContext('2d'), id, 32, 32, 52, '#ffffff');
+        btn.append(c);
+        btn.onclick = () => { draw.doodle = id; saveDraw(); syncDraw(); };
+        grid.append(btn);
+      });
+    }
+  }
+
+  function bindDraw() {
+    $('drawSize').addEventListener('input', (e) => { draw.size = Number(e.target.value); saveDraw(); });
+    $('drawText').addEventListener('input', (e) => { draw.text = e.target.value; saveDraw(); });
+    $('drawClear').onclick = () => {
+      if (!state.layers.some((l) => l.type === 'ink')) return;
+      state.layers = state.layers.filter((l) => l.type !== 'ink');
+      selectedLayer = -1;
+      update();
+      toast(t('Рисунок стёрт.'), { label: t('Отменить'), run: undo });
+    };
+
+    let cur = null;
+    const at = (e) => {
+      const r = card.getBoundingClientRect();
+      return [((e.clientX - r.left) / r.width) * card.width, ((e.clientY - r.top) / r.height) * card.height];
+    };
+    /* ластик стирает целые штрихи, которых коснулся */
+    const eraseAt = (px, py) => {
+      const r = Math.min(card.width, card.height) * 0.03;
+      const keep = state.layers.filter((l) => l.type !== 'ink' || !Render.inkHit(l, px, py, card.width, card.height, r));
+      if (keep.length === state.layers.length) return false;
+      state.layers = keep;
+      selectedLayer = -1;
+      invalidate();
+      return true;
+    };
+    /* обработчики в фазе захвата: в «Рисунке» палец по карточке только рисует, остальные жесты молчат */
+    card.addEventListener('pointerdown', (e) => {
+      if (!drawMode() || e.button > 0) return;
+      e.stopImmediatePropagation();
+      e.preventDefault();
+      if (cur) return; /* второй палец во время штриха не мешает */
+      /* каждый штрих — отдельный шаг отмены, даже если рисовать быстро подряд */
+      commitHistory();
+      try { card.setPointerCapture(e.pointerId); } catch { /* без захвата тоже рисует */ }
+      const [px, py] = at(e);
+      const W = card.width;
+      const H = card.height;
+      if (draw.brush === 'erase') {
+        cur = { id: e.pointerId, erase: true, changed: eraseAt(px, py), last: [px, py] };
+        return;
+      }
+      if (draw.brush === 'doodle') {
+        /* дудл ставится туда, куда нажали, чуть наклонённым, как от руки */
+        state.layers = [...state.layers, { type: 'sticker', vec: draw.doodle, color: draw.color, size: drawWidth('doodle'), x: px / W, y: py / H, rot: (Math.random() - 0.5) * 0.35 }];
+        remember('sticker', `v:${draw.doodle}`);
+        update();
+        commitHistory();
+        return;
+      }
+      const l = { type: 'ink', brush: draw.brush, x: px / W, y: py / H, rot: 0, base: 1, size: 1, pts: [[0, 0]], color: draw.color, w: drawWidth(draw.brush), seed: Math.floor(Math.random() * 1e6) };
+      if (draw.brush === 'line' && draw.dash) l.dash = draw.dash;
+      if (draw.brush === 'text') { l.text = draw.text; l.font = draw.font; }
+      if (draw.brush === 'symbols') l.symbols = [...draw.syms];
+      state.layers = [...state.layers, l];
+      cur = { id: e.pointerId, l };
+      invalidate();
+    }, true);
+    card.addEventListener('pointermove', (e) => {
+      if (!cur || e.pointerId !== cur.id) return;
+      e.stopImmediatePropagation();
+      const [px, py] = at(e);
+      if (cur.erase) {
+        /* быстрый жест даёт редкие точки: проверяем и путь между ними, чтобы ластик не перепрыгивал линии */
+        const [lx, ly] = cur.last || [px, py];
+        const step = Math.min(card.width, card.height) * 0.015;
+        const n = Math.max(1, Math.ceil(Math.hypot(px - lx, py - ly) / step));
+        for (let k = 1; k <= n; k++) if (eraseAt(lx + ((px - lx) * k) / n, ly + ((py - ly) * k) / n)) cur.changed = true;
+        cur.last = [px, py];
+        return;
+      }
+      const m = Math.min(card.width, card.height);
+      const { l } = cur;
+      const p = [(px - l.x * card.width) / m, (py - l.y * card.height) / m];
+      const last = l.pts[l.pts.length - 1];
+      if (Math.hypot(p[0] - last[0], p[1] - last[1]) > 0.004) { l.pts.push(p); invalidate(); }
+    }, true);
+    const end = (e) => {
+      if (!cur || e.pointerId !== cur.id) return;
+      e.stopImmediatePropagation();
+      const was = cur;
+      cur = null;
+      if (was.erase) { if (was.changed) { update(); commitHistory(); } return; }
+      /* штрих готов: центр слоя — середина рисунка, точки от неё; размер — его ширина или высота */
+      const { l } = was;
+      const m = Math.min(card.width, card.height);
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      l.pts.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+      const cx = (x0 + x1) / 2;
+      const cy = (y0 + y1) / 2;
+      const ext = Math.max(0.01, x1 - x0, y1 - y0);
+      l.pts = l.pts.map(([x, y]) => [+(x - cx).toFixed(4), +(y - cy).toFixed(4)]);
+      l.x += (cx * m) / card.width;
+      l.y += (cy * m) / card.height;
+      /* base — размер при рисовании: слой растягивают, меняя size, и рисунок масштабируется как size / base */
+      l.base = ext;
+      l.size = ext;
+      update();
+      commitHistory();
+    };
+    card.addEventListener('pointerup', end, true);
+    card.addEventListener('pointercancel', end, true);
   }
 
   /* ---------- убрать фон у картинки-стикера ---------- */
@@ -4452,9 +4635,10 @@
     const isText = l.type === 'text';
     $('textTools').hidden = !isText;
     $('layerFlip').hidden = isText;
-    /* эффект наклейки включается у каждого стикера отдельно */
-    $('dieTools').hidden = isText;
-    if (!isText) {
+    /* эффект наклейки включается у каждого стикера отдельно; у рисунка кистью его нет */
+    const isInk = l.type === 'ink';
+    $('dieTools').hidden = isText || isInk;
+    if (!isText && !isInk) {
       markSeg($('dieSeg'), l.die ? 'on' : 'off');
       $('dieWidthField').hidden = !l.die;
       $('dieWidth').value = l.dieW ?? 0.05;
@@ -4462,8 +4646,8 @@
       if (l.die) swatches($('dieColor'), ['#ffffff', '#111111', '#f4c6cf', '#f472b6', '#ffe27a', '#86c96b', '#6c9fe0', '#a78bfa', '#d64545'], l.dieColor || '#ffffff', (c) => editLayer({ dieColor: c }));
     }
     /* эффект стикера: только на сам стикер, не на фото */
-    $('lookTools').hidden = isText;
-    if (!isText) {
+    $('lookTools').hidden = isText || isInk;
+    if (!isText && !isInk) {
       const fxRow = $('layerFx');
       fxRow.replaceChildren();
       const cur = (l.fx && l.fx.id) || '';
@@ -4489,8 +4673,9 @@
       markSeg($('bgMode'), l.cut ? l.cut.mode : 'edge');
     }
     /* у готовых значков меняется цвет */
-    $('vecTools').hidden = !l.vec;
-    if (l.vec) swatches($('vecColor'), ['#ff1a1a', '#ffffff', '#111111', '#39ff6a', '#f5c518', '#ff5a1f', '#6c9fe0', '#f472b6', '#a78bfa'], l.color, (c) => editLayer({ color: c }));
+    $('vecTools').hidden = !l.vec && !isInk;
+    if (isInk) swatches($('vecColor'), DRAW_COLORS, l.color, (c) => editLayer({ color: c }));
+    else if (l.vec) swatches($('vecColor'), ['#ff1a1a', '#ffffff', '#111111', '#39ff6a', '#f5c518', '#ff5a1f', '#6c9fe0', '#f472b6', '#a78bfa'], l.color, (c) => editLayer({ color: c }));
     $('layerSize').value = l.size;
     $('layerRot').value = Math.round(((l.rot || 0) * 180) / Math.PI);
     syncLayerSub(l);
@@ -5474,6 +5659,7 @@
     bindKeysSheet();
     bindSliding();
     bindLayerList();
+    bindDraw();
     bindDesk();
     buildPalette();
   }
@@ -5485,7 +5671,7 @@
     { id: 'color', name: 'Цвет', tabs: [['color', 'Цвет']] },
     { id: 'fx', name: 'Эффекты', tabs: [['fx', 'Эффекты'], ['film', 'Блёстки и плёнка'], ['motif', 'Фигуры']] },
     { id: 'layout', name: 'Макет', tabs: [['collage', 'Коллаж'], ['paper', 'Бумага'], ['format', 'Размер']] },
-    { id: 'text', name: 'Текст', tabs: [['note', 'Подпись'], ['layers', 'Стикеры и надписи']] },
+    { id: 'text', name: 'Текст', tabs: [['note', 'Подпись'], ['layers', 'Стикеры и надписи'], ['draw', 'Рисунок']] },
     { id: 'video', name: 'Видео', tabs: [['motion', 'Видео']] },
   ];
   const lastTab = {};
@@ -5524,6 +5710,7 @@
     ['Виньетка', 'края темнее vignette', 'color', 'adjV', 'detail'],
     ['Загрузить LUT', 'cube таблица lut photoshop lightroom', 'color', 'lookCube'],
     ['Эффекты', 'глитч буквы точки ascii пиксели слова glitch effects', 'fx', 'fxCats'],
+    ['Рисунок и дудлы', 'рисовать кисть обвести обводка дудл цветочки искры сердечки текст вдоль линии draw doodle brush', 'draw', 'drawBrush'],
     ['Сканер', 'рамки распознавание камера наблюдения досье scanner', 'fx', 'fxCats', 'scan'],
     ['Блёстки', 'искры звёздочки сердечки боке пыль sparkles glitter', 'film', 'adjSp'],
     ['Засветка', 'плёнка свет пятно light leak', 'film', 'adjLk'],
@@ -5672,6 +5859,9 @@
     app.classList.toggle('tool-open', !!tab);
     if (!tab) app.classList.remove('dock-full');
     document.querySelectorAll('[data-panel]').forEach((p) => { p.hidden = p.dataset.panel !== tab; });
+    /* в «Рисунке» палец по карточке рисует, а не двигает фото */
+    card.classList.toggle('drawing', tab === 'draw');
+    if (tab === 'draw') syncDraw();
     const sec = secOf(tab);
     if (sec) lastTab[sec.id] = tab;
     syncSecTabs();
