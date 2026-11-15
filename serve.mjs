@@ -10,6 +10,8 @@ const types = {
   '.css': 'text/css; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.mjs': 'text/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.tflite': 'application/octet-stream',
   '.svg': 'image/svg+xml',
   '.webmanifest': 'application/manifest+json',
   '.png': 'image/png',

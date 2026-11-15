@@ -4283,7 +4283,7 @@
   /* что повторять вдоль линии: рисованные значки (v:) и эмодзи */
   const DRAW_SYMS = [['v:dHeart', '♡'], ['v:dSparkle', '✦'], ['v:dStar', '☆'], ['v:dFlower', '✿'], ['dot', '•'], ['v:dSmile', '☺'], ['🌸', '🌸'], ['🍓', '🍓'], ['✨', '✨'], ['💗', '💗'], ['🎀', '🎀'], ['⭐', '⭐']];
   const DRAW_FONTS = ['caveat', 'golos', 'yeseva', 'mono'];
-  let draw = { brush: 'line', color: '#ffffff', size: 3, dash: '', arrow: false, text: 'love you ♡', label: 'мой образ ♡', labelStyle: '', font: 'caveat', syms: ['v:dHeart', 'v:dSparkle'], doodle: 'dFlower' };
+  let draw = { brush: 'line', color: '#ffffff', size: 3, gap: 3, dash: '', arrow: false, text: 'love you ♡', label: 'мой образ ♡', labelStyle: '', font: 'caveat', syms: ['v:dHeart', 'v:dSparkle'], doodle: 'dFlower' };
   try { draw = { ...draw, ...(JSON.parse(localStorage.getItem('lunajour-draw')) || {}) }; } catch { /* настройки по умолчанию */ }
   const saveDraw = () => { try { localStorage.setItem('lunajour-draw', JSON.stringify(draw)); } catch { /* только на этот раз */ } };
   /* как и стикеры, рисовать можно, как только открыта вкладка */
@@ -4301,6 +4301,7 @@
     $('drawSizeField').hidden = b === 'erase';
     $('drawSizeLabel').textContent = t(b === 'line' ? 'Толщина' : 'Размер');
     $('drawSize').value = draw.size;
+    $('outlineGap').value = draw.gap ?? 3;
     $('drawLineBox').hidden = b !== 'line';
     const dash = $('drawDash');
     dash.replaceChildren();
@@ -4416,13 +4417,7 @@
         commitHistory();
         return;
       }
-      /* подпись — это линия со стрелкой, а текст встанет у её начала, когда палец отпустят */
-      const brush = draw.brush === 'callout' ? 'line' : draw.brush;
-      const l = { type: 'ink', brush, x: px / W, y: py / H, rot: 0, base: 1, size: 1, pts: [[0, 0]], color: draw.color, w: drawWidth(draw.brush), seed: Math.floor(Math.random() * 1e6) };
-      if (draw.brush === 'line' && draw.dash) l.dash = draw.dash;
-      if ((draw.brush === 'line' && draw.arrow) || draw.brush === 'callout') l.arrow = true;
-      if (draw.brush === 'text') { l.text = draw.text; l.font = draw.font; }
-      if (draw.brush === 'symbols') l.symbols = [...draw.syms];
+      const l = newInk(draw.brush, px / W, py / H);
       state.layers = [...state.layers, l];
       cur = { id: e.pointerId, l, callout: draw.brush === 'callout' };
       invalidate();
@@ -4495,22 +4490,86 @@
         }
         addLabel(sx, sy, (q[0] - l.pts[0][0]) * m, (q[1] - l.pts[0][1]) * m);
       }
-      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-      l.pts.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
-      const cx = (x0 + x1) / 2;
-      const cy = (y0 + y1) / 2;
-      const ext = Math.max(0.01, x1 - x0, y1 - y0);
-      l.pts = l.pts.map(([x, y]) => [+(x - cx).toFixed(4), +(y - cy).toFixed(4)]);
-      l.x += (cx * m) / card.width;
-      l.y += (cy * m) / card.height;
-      /* base — размер при рисовании: слой растягивают, меняя size, и рисунок масштабируется как size / base */
-      l.base = ext;
-      l.size = ext;
+      finishInk(l);
       update();
       commitHistory();
     };
     card.addEventListener('pointerup', end, true);
     card.addEventListener('pointercancel', end, true);
+
+    $('outlineGap').addEventListener('input', (e) => { draw.gap = Number(e.target.value); saveDraw(); });
+    $('outlineBtn').onclick = outlinePerson;
+  }
+
+  /* новый штрих выбранной кистью с началом в (x, y) — доли карточки; точки потом добавляются от этого места */
+  function newInk(brushName, x, y) {
+    /* подпись — это линия со стрелкой, а текст встанет у её начала, когда палец отпустят */
+    const brush = brushName === 'callout' ? 'line' : brushName;
+    const l = { type: 'ink', brush, x, y, rot: 0, base: 1, size: 1, pts: [[0, 0]], color: draw.color, w: drawWidth(brushName), seed: Math.floor(Math.random() * 1e6) };
+    if (brushName === 'line' && draw.dash) l.dash = draw.dash;
+    if ((brushName === 'line' && draw.arrow) || brushName === 'callout') l.arrow = true;
+    if (brushName === 'text') { l.text = draw.text; l.font = draw.font; }
+    if (brushName === 'symbols') l.symbols = [...draw.syms];
+    return l;
+  }
+  /* штрих готов: центр слоя — середина рисунка, точки от неё; размер — его ширина или высота */
+  function finishInk(l) {
+    const m = Math.min(card.width, card.height);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    l.pts.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const ext = Math.max(0.01, x1 - x0, y1 - y0);
+    l.pts = l.pts.map(([x, y]) => [+(x - cx).toFixed(4), +(y - cy).toFixed(4)]);
+    l.x += (cx * m) / card.width;
+    l.y += (cy * m) / card.height;
+    /* base — размер при рисовании: слой растягивают, меняя size, и рисунок масштабируется как size / base */
+    l.base = ext;
+    l.size = ext;
+    return l;
+  }
+
+  /* ---------- автообводка человека (js/outline.js) ---------- */
+  /* Карточка рисуется в маленькую картинку без стикеров и эффектов, модель находит на ней человека,
+     контур с отступом становится обычным штрихом выбранной кисти: его двигают, перекрашивают и стирают. */
+  let outlineLoaded = false;
+  async function outlinePerson() {
+    if (!window.Outline) return;
+    const btn = $('outlineBtn');
+    btn.disabled = true;
+    toast(t(outlineLoaded ? 'Ищу человека…' : 'Загружаю распознавание: один раз, около 15 МБ…'));
+    try {
+      const k = 420 / Math.max(card.width, card.height);
+      const c = canvas(card.width * k, card.height * k);
+      const plain = { ...state, layers: [], fx: { ...state.fx, id: '' }, fx2: { ...state.fx2, id: '' }, scan: { ...state.scan, on: false } };
+      renderCard(c.getContext('2d'), plain, slots, assets);
+      const gap = (draw.gap ?? 3) * Math.min(c.width, c.height) * 0.008;
+      const res = await window.Outline.find(c, gap);
+      outlineLoaded = true;
+      if (!res) {
+        toast(t('Человека на фото не нашла. Лучше всего выходит, когда человек виден целиком или по пояс.'));
+        return;
+      }
+      /* кисть та, что выбрана; у подписи, дудлов и ластика обводка обычной линией */
+      const brush = ['line', 'text', 'symbols', 'scatter', 'haze'].includes(draw.brush) ? draw.brush : 'line';
+      const m = Math.min(card.width, card.height);
+      const sx = card.width / res.w;
+      const sy = card.height / res.h;
+      const [ax, ay] = res.pts[0];
+      const l = newInk(brush, (ax * sx) / card.width, (ay * sy) / card.height);
+      delete l.arrow;
+      l.pts = res.pts.map(([x, y]) => [((x - ax) * sx) / m, ((y - ay) * sy) / m]);
+      commitHistory();
+      state.layers = [...state.layers, finishInk(l)];
+      update();
+      commitHistory();
+      toast(t('Обвела. Линию можно сдвинуть во вкладке «Стикеры и надписи» или стереть ластиком.'));
+    } catch (err) {
+      console.warn('outline', err);
+      toast(t('Распознавание не запустилось в этом браузере. Попробуй Chrome или Safari поновее.'));
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   /* ---------- убрать фон у картинки-стикера ---------- */

@@ -398,6 +398,11 @@
         </div>
         <div class="group" id="drawFontBox" hidden><span class="label">Шрифт</span><div class="chips" id="drawFont"></div></div>
         <div class="group" id="drawSymBox" hidden><span class="label">Что повторять вдоль линии</span><div class="chips" id="drawSyms"></div></div>
+        <div class="group outline-box"><span class="label">Обвести человека</span>
+          <label class="slider">Отступ от человека<input id="outlineGap" type="range" min="0" max="10" step="0.5"></label>
+          <button class="btn" id="outlineBtn" type="button">Обвести человека</button>
+          <p class="hint">Обводка рисуется кистью, выбранной выше: линией, текстом, значками, россыпью или дымкой. Распознавание работает на устройстве, в первый раз скачается около 15 МБ.</p>
+        </div>
         <div class="row"><button class="btn small" id="drawClear" type="button">Стереть весь рисунок</button></div>
         <p class="hint">Рисуй пальцем или мышью прямо по карточке. Нарисованное можно двигать, крутить и перекрашивать во вкладке «Стикеры и надписи».</p>
       </section>
@@ -850,6 +855,7 @@
 <script src="js/vlog-fast.js"></script>
 <script src="js/vlog-ui.js"></script>
 <script src="js/memory.js"></script>
+<script src="js/outline.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>
