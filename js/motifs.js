@@ -2129,9 +2129,133 @@
     }
   }
 
+  const ORBIT_STYLES = [
+    ['arcs', 'Дуги'], ['crossings', 'Пересечения'], ['moons', 'Фазы луны'],
+    ['map', 'Карта орбит'], ['trails', 'Следы'], ['system', 'Солнечная система'],
+    ['flare', 'Вспышки'], ['precession', 'Прецессия'],
+  ];
+
+  function orbits(ctx, w, h, rng, options) {
+    const { x = 0.5, y = 0.46, size = 1, rot = -24, style = 'arcs' } = options.orbit || {};
+    const unit = Math.min(w, h) * size;
+    ctx.save();
+    ctx.translate(x * w, y * h);
+    ctx.rotate(rot * Math.PI / 180);
+    ctx.scale(unit, unit);
+    ctx.strokeStyle = ctx.fillStyle;
+    ctx.lineCap = 'round';
+    const track = (x, y, a, b, width, start = 0, end = TAU, angle = 0) => {
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.ellipse(x, y, a, b, angle, start, end);
+      ctx.stroke();
+    };
+    const dot = (x, y, r) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, TAU);
+      ctx.fill();
+    };
+    const flare = (x, y, r, a) => {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(a);
+      ctx.beginPath();
+      ctx.moveTo(r, 0);
+      ctx.quadraticCurveTo(0, 0, 0, r * 0.68);
+      ctx.quadraticCurveTo(0, 0, -r, 0);
+      ctx.quadraticCurveTo(0, 0, 0, -r * 0.68);
+      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.fill();
+      ctx.restore();
+    };
+
+    if (style === 'crossings') {
+      const circles = [[-0.19, -0.17, 0.21], [0.16, -0.10, 0.30], [-0.09, 0.20, 0.31]];
+      circles.forEach(([x, y, r], i) => {
+        track(x, y, r, r, 0.007);
+        circles.slice(i + 1).forEach(([xx, yy, rr]) => {
+          const dx = xx - x, dy = yy - y;
+          const d = Math.hypot(dx, dy);
+          const a = Math.atan2(dy, dx);
+          const offset = Math.acos((r * r + d * d - rr * rr) / (2 * r * d));
+          for (const t of [a - offset, a + offset]) flare(x + r * Math.cos(t), y + r * Math.sin(t), 0.066, t + 0.4);
+        });
+      });
+    } else if (style === 'moons') {
+      for (let i = 0; i < 18; i++) {
+        const a = i * TAU / 18;
+        const x = 0.40 * Math.cos(a), y = 0.25 * Math.sin(a);
+        const r = 0.039 + 0.016 * (1 + Math.sin(a));
+        track(x, y, r, r, 0.004);
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(a - 0.6);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, -Math.PI / 2, Math.PI / 2);
+        ctx.bezierCurveTo(r * Math.cos(a), r * 0.54, r * Math.cos(a), -r * 0.54, 0, -r);
+        ctx.fill();
+        ctx.restore();
+      }
+    } else if (style === 'map' || style === 'trails') {
+      const trails = style === 'trails';
+      for (let i = 0; i < 13; i++) {
+        const r = 0.105 + i * 0.059;
+        const x = trails ? -0.13 : -0.32;
+        const y = trails ? 0 : -0.29;
+        const start = trails ? i * 1.47 : 0;
+        const end = start + (trails ? 4.35 + 0.16 * (i % 4) : TAU);
+        track(x, y, r, r, trails ? 0.0045 : 0.0055, start, end);
+        for (const fraction of (trails ? [0.32, 1] : [0.08, 0.22, 0.68])) {
+          const a = start + (end - start) * (fraction === 1 ? 1 : fraction + rng() * 0.1);
+          dot(x + r * Math.cos(a), y + r * Math.sin(a), 0.006 + rng() * 0.012);
+        }
+      }
+    } else if (style === 'system') {
+      dot(0, 0, 0.063);
+      [0.10, 0.15, 0.20, 0.25, 0.32, 0.38, 0.44].forEach((r, i) => {
+        track(0, 0, r, r, 0.005);
+        const a = i * 2.39 + 0.55;
+        const x = r * Math.cos(a), y = r * Math.sin(a);
+        dot(x, y, 0.013 + 0.004 * i);
+        if (i === 4) track(x, y, 0.054, 0.038, 0.006, 0, TAU, -0.45);
+      });
+      for (let i = 0; i < 100; i++) {
+        const a = i * TAU / 100;
+        const r = 0.282 + rng() * 0.016;
+        dot(r * Math.cos(a), r * Math.sin(a), 0.0015 + rng() * 0.004);
+      }
+    } else if (style === 'flare') {
+      track(0, 0, 0.43, 0.21, 0.007, -2.38, 0.27);
+      track(0, 0, 0.43, 0.21, 0.007, 0.39, 3.78);
+      for (const [a, r] of [[1.77, 0.089], [4.92, 0.046]]) {
+        flare(0.43 * Math.cos(a), 0.21 * Math.sin(a), r, a + 0.22);
+      }
+    } else if (style === 'precession') {
+      for (const angle of [-0.62, 0.47, 1.48]) {
+        track(-0.04, 0, 0.45, 0.26, 0.0055, 0, TAU, angle);
+        const a = angle * 2.2 + 1.8;
+        const x = 0.45 * Math.cos(a), y = 0.26 * Math.sin(a);
+        dot(-0.04 + x * Math.cos(angle) - y * Math.sin(angle), x * Math.sin(angle) + y * Math.cos(angle), 0.013);
+      }
+      for (const r of [0.032, 0.067, 0.114, 0.166, 0.22]) track(0.16, 0.04, r, r, 0.005);
+      dot(0.16, 0.04, 0.012);
+    } else {
+      const rings = [
+        [0.16, 0.027, [[0.2, 2.5], [3.05, 5.5]]],
+        [0.29, 0.042, [[-0.8, 1.55], [2.1, 3.95], [4.35, 4.95]]],
+        [0.43, 0.022, [[-0.25, 0.85], [1.35, 3.2], [3.8, 5.55]]],
+      ];
+      rings.forEach(([radius, width, arcs]) => {
+        arcs.forEach(([start, end]) => track(0, 0, radius, radius * 0.76, width, start, end));
+      });
+    }
+    ctx.restore();
+  }
+
   const MOTIFS = [
     { id: 'none', name: 'Без фигуры', cat: 'none', draw: () => {} },
     { id: 'hand-place', name: 'Своя раскладка', cat: 'hand', usesPieces: true, draw: placed },
+    { id: 'orbits', name: 'Орбиты', cat: 'stars', draw: orbits },
 
     { id: 'star-flock', name: 'Стайка', cat: 'stars', draw: scatterMotif('star', 'flock') },
     { id: 'star-fall', name: 'Ночной ливень', cat: 'stars', draw: scatterMotif('star', 'fall') },
@@ -2253,5 +2377,5 @@
     { id: 'own-mask', name: 'Своя фигура', cat: 'mine', usesImage: true, draw: ownImage },
   ];
 
-  window.Motifs = { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, makeRng, byId: (id) => MOTIFS.find((m) => m.id === id) || MOTIFS[0] };
+  window.Motifs = { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, ORBIT_STYLES, makeRng, byId: (id) => MOTIFS.find((m) => m.id === id) || MOTIFS[0] };
 })();

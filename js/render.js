@@ -535,13 +535,14 @@
 
   /* ---------- маска мотива ---------- */
   function drawMask(s, w, h, assets) {
-    const key = [s.motif, s.seed, s.size, s.density, s.word, s.wordFont, assets.maskId, JSON.stringify(s.pieces), w, h].join('|');
+    const key = [s.motif, s.seed, s.size, s.density, s.word, s.wordFont, assets.maskId, JSON.stringify(s.pieces),
+      s.motif === 'orbits' ? JSON.stringify(s.orbit) : '', w, h].join('|');
     return maskCache(key, () => {
       const c = canvas(w, h);
       const x = c.getContext('2d');
       x.fillStyle = '#fff';
       byId(s.motif).draw(x, c.width, c.height, makeRng(s.seed), {
-        size: s.size, density: s.density, text: s.word, font: s.wordFont, image: assets.mask, pieces: s.pieces,
+        size: s.size, density: s.density, text: s.word, font: s.wordFont, image: assets.mask, pieces: s.pieces, orbit: s.orbit,
       });
       return c;
     });

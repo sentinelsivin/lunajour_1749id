@@ -363,6 +363,20 @@ button { cursor: pointer; }
 .chips button.on { background: var(--accent); border-color: var(--accent); color: #fff; }
 
 .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); gap: 8px; }
+.motif-variants {
+  margin-block: 16px 12px;
+  padding: 12px;
+  background: var(--surface2);
+  border: 1px solid var(--hairline);
+  border-inline-start: 3px solid var(--accent-light);
+  border-radius: 8px;
+}
+.motif-variants-title {
+  display: block;
+  margin-bottom: 10px;
+  color: var(--bone);
+}
+.motif-variants .thumbs { padding: 3px; }
 .thumbs:empty { display: none; }
 .thumb { padding: 0; border: 0; background: none; text-align: left; min-width: 0; }
 .thumb canvas, .thumb img {

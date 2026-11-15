@@ -236,6 +236,13 @@
           </div>
         </div>
         <button class="btn" id="maskUpload" type="button" hidden>Загрузить картинку для выреза</button>
+        <div class="group motif-variants" id="orbitTools" hidden>
+          <span class="label motif-variants-title" id="orbitStylesLabel">Варианты орбит</span>
+          <div class="thumbs" id="orbitStyles" role="group" aria-labelledby="orbitStylesLabel"></div>
+          <p class="hint">Нажми на карточку или проведи по ней, чтобы передвинуть центр орбит.</p>
+          <label class="slider">Размер орбит<input id="orbitSize" type="range" min="0.4" max="2.2" step="0.05" data-bind="orbit.size"></label>
+          <label class="slider">Поворот<input id="orbitRot" type="range" min="-180" max="180" step="1" data-bind="orbit.rot"></label>
+        </div>
         <p class="hint" id="maskHint" hidden>Подойдёт PNG с прозрачностью или чёрная фигура на белом фоне.</p>
         <div class="group" id="genTools">
           <label class="slider">Размер<input id="size" type="range" min="0.4" max="1.8" step="0.05" data-bind="size"></label>

@@ -1,6 +1,6 @@
 /* Экран приложения: связывает настройки, камеру, отрисовку и экспорт. */
 (function () {
-  const { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, makeRng, byId } = window.Motifs;
+  const { CATEGORIES, MOTIFS, SYMBOLS, DEMO_PIECES, WORD_FONTS, ORBIT_STYLES, makeRng, byId } = window.Motifs;
   const Render = window.Render;
   const { RATIOS, PAPERS, FONTS, renderCard, sampleScene, layout, slotFrame, canvas, clearMasks, paintPaper, drawCover, luminance } = window.Render;
   const { Camera, Export, Store, Templates, I18n, Collages, Scanner } = window;
@@ -19,6 +19,7 @@
     /* новая карточка: фото на весь лист и без фигуры; фигуру и бумагу добавляют сами */
     motif: 'none', seed: 7, size: 1, density: 1, ghost: 0, scatter: false, effect: 'none', word: '', wordFont: WORD_FONTS[0].id,
     pieces: [],
+    orbit: { x: 0.5, y: 0.46, size: 1, rot: -24 },
     paper: 'crumple', paperColor: PAPER_COLORS[0], paperPos: 'photo', ratio: '4:5', collage: '', tints: {}, marks: {}, layers: [],
     fx: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 1, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
     fx2: { id: '', color: '', text: '', font: '', style: '', amount: 1, seed: 2, boxes: [], mask: 'all', brush: [], brushSize: 1, live: true },
@@ -494,6 +495,23 @@
 
   /* Рамка вокруг выбранной фигуры видна только в превью, в файл она не попадает. */
   function drawSelection() {
+    if (orbitMode()) {
+      const r = layout(state, card.width, card.height).pieces;
+      if (r) {
+        const x = r.x + state.orbit.x * r.w;
+        const y = r.y + state.orbit.y * r.h;
+        const u = card.width / Math.max(1, card.getBoundingClientRect().width);
+        ctx.save();
+        ctx.lineWidth = 1.5 * u;
+        ctx.strokeStyle = '#fff';
+        ctx.shadowColor = '#000';
+        ctx.shadowBlur = 3 * u;
+        ctx.beginPath();
+        ctx.arc(x, y, 5 * u, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
     if (scanMode() && selectedIcon >= 0) {
       const b = (Scanner.lastIcons || [])[selectedIcon];
       if (!b) return;
@@ -2434,7 +2452,7 @@
   }
 
   /* ---------- панель фигур ---------- */
-  function drawThumb(c, motif) {
+  function drawThumb(c, motif, orbit) {
     const x = c.getContext('2d');
     if (motif.id === 'none') {
       /* значок «ничего»: перечёркнутый круг */
@@ -2449,7 +2467,7 @@
     }
     x.fillStyle = '#f0ede5';
     motif.draw(x, c.width, c.height, makeRng(7), {
-      size: 1, density: 0.8, text: '', font: state.wordFont, image: motif.usesImage ? assets.mask : null, pieces: DEMO_PIECES,
+      size: 1, density: 0.8, text: '', font: state.wordFont, image: motif.usesImage ? assets.mask : null, pieces: DEMO_PIECES, orbit,
     });
     /* своё фото видно сквозь фигуру, как на карточке; пока фото нет, перелив цветов заголовка */
     const src = thumbSrc();
@@ -2501,9 +2519,9 @@
         remember('motif', m.id);
         /* в формате «Только фото» фигуре негде лечь: кладём бумагу снизу */
         if (m.id !== 'none' && state.paperPos === 'photo') {
-          state.paperPos = 'bottom';
+          state.paperPos = m.id === 'orbits' ? 'pieces' : 'bottom';
           syncInputs();
-          toast(t('Фигура ложится на бумагу, поэтому формат стал «Снизу». Его можно поменять во вкладке «Формат».'));
+          if (m.id !== 'orbits') toast(t('Фигура ложится на бумагу, поэтому формат стал «Снизу». Его можно поменять во вкладке «Формат».'));
         }
         if (m.usesPieces && !state.pieces.length) state.pieces = DEMO_PIECES.map((p) => ({ ...p }));
         syncMotifs();
@@ -2518,8 +2536,31 @@
     $('maskUpload').hidden = !motif.usesImage;
     $('maskHint').hidden = !motif.usesImage;
     $('handTools').hidden = !motif.usesPieces;
+    $('orbitTools').hidden = motif.id !== 'orbits';
+    if (motif.id === 'orbits') {
+      const styles = $('orbitStyles');
+      styles.replaceChildren();
+      for (const [style, name] of ORBIT_STYLES) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'thumb';
+        button.dataset.v = style;
+        const preview = canvas(120, 126);
+        const label = document.createElement('span');
+        label.textContent = t(name);
+        button.append(preview, label);
+        drawThumb(preview, motif, { style, size: 0.9 });
+        button.onclick = () => {
+          state.orbit = { ...state.orbit, style };
+          markSeg(styles, style);
+          update();
+        };
+        styles.append(button);
+      }
+      markSeg(styles, state.orbit.style || 'arcs');
+    }
     const none = motif.id === 'none';
-    $('genTools').hidden = !!motif.usesPieces || none;
+    $('genTools').hidden = !!motif.usesPieces || none || motif.id === 'orbits';
     /* без фигуры настройки вырезов ни к чему */
     [$('ghost').closest('label'), document.querySelector('[data-seg="effect"]').closest('.group'), document.querySelector('[data-bind="scatter"]')?.closest('label')]
       .forEach((el) => { if (el) el.hidden = none; });
@@ -2543,7 +2584,8 @@
 
   /* ---------- ручная расстановка ---------- */
   const handMode = () => tab === 'motif' && !!byId(state.motif).usesPieces;
-  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || fxBoxMode() || scanMode() || handMode() || (tab === 'collage' && !!collageTpl()));
+  const orbitMode = () => tab === 'motif' && state.motif === 'orbits' && state.paperPos !== 'photo';
+  const syncGrab = () => card.classList.toggle('grab', tab === 'photo' || tab === 'layers' || fxBoxMode() || scanMode() || handMode() || orbitMode() || (tab === 'collage' && !!collageTpl()));
 
   function syncPieceTools() {
     const p = state.pieces[selected];
@@ -2593,8 +2635,23 @@
     const pointers = new Map();
     let grabbed = null;
     let pinch = 0;
+    let orbitDrag = null;
+    const moveOrbit = (x, y) => {
+      state.orbit = { ...state.orbit, x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
+      update();
+    };
 
     card.addEventListener('pointerdown', (e) => {
+      if (orbitMode()) {
+        if (orbitDrag || e.button !== 0) return;
+        const at = pointInFrame(e);
+        if (!at) return;
+        commitHistory();
+        orbitDrag = { id: e.pointerId, r: at.r };
+        card.setPointerCapture(e.pointerId);
+        moveOrbit(at.x, at.y);
+        return;
+      }
       if (!handMode()) return;
       pointers.set(e.pointerId, e);
       if (pointers.size > 1) return;
@@ -2615,6 +2672,14 @@
     });
 
     card.addEventListener('pointermove', (e) => {
+      if (orbitDrag?.id === e.pointerId && orbitMode()) {
+        const { r } = orbitDrag;
+        const box = card.getBoundingClientRect();
+        const px = (e.clientX - box.left) * card.width / box.width;
+        const py = (e.clientY - box.top) * card.height / box.height;
+        moveOrbit((px - r.x) / r.w, (py - r.y) / r.h);
+        return;
+      }
       if (!pointers.has(e.pointerId)) return;
       pointers.set(e.pointerId, e);
       const p = state.pieces[selected];
@@ -2637,12 +2702,17 @@
     });
 
     const release = (e) => {
+      if (orbitDrag?.id === e.pointerId) {
+        orbitDrag = null;
+        commitHistory();
+      }
       pointers.delete(e.pointerId);
       pinch = 0;
       if (!pointers.size) grabbed = null;
     };
     card.addEventListener('pointerup', release);
     card.addEventListener('pointercancel', release);
+    card.addEventListener('lostpointercapture', release);
     card.addEventListener('wheel', (e) => {
       const p = handMode() && state.pieces[selected];
       if (!p) return;
