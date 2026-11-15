@@ -1766,14 +1766,14 @@
       ctx.font = `${f.weight} ${size}px ${f.css}`;
       const lines = String(l.text || '').split('\n');
       const w = Math.max(...lines.map((ln) => ctx.measureText(ln).width), size * 0.5);
-      const pad = l.style === 'plaque' ? size * 0.35 : size * 0.1;
+      const pad = l.style === 'plaque' ? size * 0.35 : l.style === 'haze' ? size * 0.6 : size * 0.1;
       return { w: w + pad * 2, h: lines.length * size * 1.2 + pad * 1.2, size, lines, pad };
     }
     if (l.type === 'ink') {
       /* рамка штриха: по его точкам и с запасом на толщину линии или значки */
       const P = inkPoints(l, m);
       const scale = l.size / (l.base || l.size || 1);
-      const pad = (l.brush === 'line' || !l.brush ? (l.w || 0.008) : (l.w || 0.03) * (l.brush === 'scatter' ? 1.9 : 0.7)) * m * scale;
+      const pad = (l.brush === 'line' || !l.brush ? (l.w || 0.008) * (l.arrow ? 3 : 1) : (l.w || 0.03) * (l.brush === 'scatter' ? 1.9 : l.brush === 'haze' ? 1.2 : 0.7)) * m * scale;
       let x0 = 0, x1 = 0, y0 = 0, y1 = 0;
       P.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
       return { w: Math.max(x1, -x0) * 2 + pad * 2, h: Math.max(y1, -y0) * 2 + pad * 2, size };
@@ -2379,6 +2379,11 @@
       if (P.length > 1) ctx.lineTo(P[P.length - 1][0], P[P.length - 1][1]);
       ctx.stroke();
       ctx.setLineDash([]);
+      if (l.arrow && P.length > 1) arrowHead(ctx, P, w, Math.max(w * 4.5, m * 0.022 * scale));
+      return;
+    }
+    if (l.brush === 'haze') {
+      drawHaze(ctx, P, Math.max(4, (l.w || 0.05) * m * scale), color, l.seed || 3);
       return;
     }
     /* у текста и значков w — их высота */
@@ -2420,6 +2425,71 @@
       });
     }
   }
+  /* ---------- дымка: мягкое меловое пятно под надпись ---------- */
+  /* Вдоль линии ставятся мягкие круги с размытым краем, потом по краю выбиваются крупинки, как от мела.
+     Готовое пятно кешируем: жесты перерисовывают карточку часто. */
+  const hazeCache = lruCache(12);
+  function rgba(hex, a) {
+    const h = String(hex || '#ffffff').replace('#', '');
+    const n = parseInt(h.length === 3 ? h.replace(/./g, '$&$&') : h.slice(0, 6), 16) || 0xffffff;
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  }
+  function haze(P, r, color, seed) {
+    const key = `${seed}|${color}|${Math.round(r)}|${P.length}|${P.map(([x, y]) => `${Math.round(x)},${Math.round(y)}`).filter((_, i, a) => i === 0 || i === a.length - 1 || i % 8 === 0).join(';')}`;
+    return hazeCache(key, () => {
+      let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+      P.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
+      const pad = r * 1.4;
+      const c = canvas(x1 - x0 + pad * 2, y1 - y0 + pad * 2);
+      const x = c.getContext('2d');
+      x.translate(pad - x0, pad - y0);
+      const rng = makeRng(seed || 3);
+      const stamps = P.length > 1 ? alongPath(P, Math.max(1, r * 0.3)) : [{ x: P[0][0], y: P[0][1] }];
+      stamps.forEach((p) => {
+        const rr = r * (0.8 + rng() * 0.4);
+        const cx = p.x + (rng() - 0.5) * r * 0.25;
+        const cy = p.y + (rng() - 0.5) * r * 0.25;
+        const g = x.createRadialGradient(cx, cy, 0, cx, cy, rr);
+        g.addColorStop(0, rgba(color, 0.5));
+        g.addColorStop(0.5, rgba(color, 0.32));
+        g.addColorStop(1, rgba(color, 0));
+        x.fillStyle = g;
+        x.beginPath();
+        x.arc(cx, cy, rr, 0, Math.PI * 2);
+        x.fill();
+      });
+      /* крупинки мела: мелкие дырочки, гуще к краю */
+      x.setTransform(1, 0, 0, 1, 0, 0);
+      x.globalCompositeOperation = 'destination-out';
+      const n = Math.min(9000, Math.round((c.width * c.height) / Math.max(16, r * r) * 90));
+      const d = Math.max(1, r * 0.035);
+      for (let i = 0; i < n; i++) {
+        x.fillStyle = `rgba(0,0,0,${0.15 + rng() * 0.45})`;
+        x.fillRect(rng() * c.width, rng() * c.height, d, d);
+      }
+      x.globalCompositeOperation = 'source-over';
+      return { c, ox: x0 - pad, oy: y0 - pad };
+    });
+  }
+  function drawHaze(ctx, P, r, color, seed) {
+    const h = haze(P, r, color, seed);
+    ctx.drawImage(h.c, h.ox, h.oy);
+  }
+  /* наконечник стрелки в конце линии: направление берём чуть раньше конца, чтобы дрожание пальца не крутило его */
+  function arrowHead(ctx, P, w, len) {
+    const [ex, ey] = P[P.length - 1];
+    let k = P.length - 2;
+    while (k > 0 && Math.hypot(ex - P[k][0], ey - P[k][1]) < len * 1.2) k--;
+    if (k < 0) return;
+    const a = Math.atan2(ey - P[k][1], ex - P[k][0]);
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(ex - Math.cos(a - 0.5) * len, ey - Math.sin(a - 0.5) * len);
+    ctx.lineTo(ex, ey);
+    ctx.lineTo(ex - Math.cos(a + 0.5) * len, ey - Math.sin(a + 0.5) * len);
+    ctx.stroke();
+  }
+
   /* задета ли линия слоя точкой (px, py) в пикселях карточки: для ластика */
   function inkHit(l, px, py, W, H, r) {
     const m = Math.min(W, H);
@@ -2542,6 +2612,15 @@
         if (l.style === 'plaque') {
           ctx.fillStyle = l.bg || '#ffffff';
           ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h);
+        }
+        if (l.style === 'haze') {
+          /* дымка под надписью: мягкое пятно по ширине текста, без тени */
+          ctx.save();
+          ctx.shadowColor = 'transparent';
+          const r = Math.min(b.h * 0.62, b.size * 1.1);
+          const half = Math.max(0, b.w / 2 - r * 0.7);
+          drawHaze(ctx, [[-half, 0], [half, 0]], r, l.bg || '#ffffff', 5 + (b.lines ? b.lines.join('').length : 0));
+          ctx.restore();
         }
         ctx.font = `${f.weight} ${b.size}px ${f.css}`;
         ctx.textAlign = 'center';

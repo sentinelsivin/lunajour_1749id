@@ -4279,17 +4279,17 @@
   /* Каждый штрих — отдельный слой «ink» (js/render.js): его потом двигают и меняют, как стикер.
      Настройки кисти — не часть карточки, а инструмент: помним их в браузере между сеансами. */
   const DRAW_COLORS = ['#ffffff', '#111111', '#cfe6a8', '#86c96b', '#f4c6cf', '#f472b6', '#d64545', '#ffe27a', '#e8913a', '#6c9fe0', '#a78bfa'];
-  const BRUSHES = [['line', 'Линия'], ['text', 'Текстом'], ['symbols', 'Значками'], ['scatter', 'Россыпь'], ['doodle', 'Дудлы'], ['erase', 'Ластик']];
+  const BRUSHES = [['line', 'Линия'], ['callout', 'Подпись'], ['text', 'Текстом'], ['symbols', 'Значками'], ['scatter', 'Россыпь'], ['haze', 'Дымка'], ['doodle', 'Дудлы'], ['erase', 'Ластик']];
   /* что повторять вдоль линии: рисованные значки (v:) и эмодзи */
   const DRAW_SYMS = [['v:dHeart', '♡'], ['v:dSparkle', '✦'], ['v:dStar', '☆'], ['v:dFlower', '✿'], ['dot', '•'], ['v:dSmile', '☺'], ['🌸', '🌸'], ['🍓', '🍓'], ['✨', '✨'], ['💗', '💗'], ['🎀', '🎀'], ['⭐', '⭐']];
   const DRAW_FONTS = ['caveat', 'golos', 'yeseva', 'mono'];
-  let draw = { brush: 'line', color: '#ffffff', size: 3, dash: '', text: 'love you ♡', font: 'caveat', syms: ['v:dHeart', 'v:dSparkle'], doodle: 'dFlower' };
+  let draw = { brush: 'line', color: '#ffffff', size: 3, dash: '', arrow: false, text: 'love you ♡', label: 'мой образ ♡', labelStyle: '', font: 'caveat', syms: ['v:dHeart', 'v:dSparkle'], doodle: 'dFlower' };
   try { draw = { ...draw, ...(JSON.parse(localStorage.getItem('lunajour-draw')) || {}) }; } catch { /* настройки по умолчанию */ }
   const saveDraw = () => { try { localStorage.setItem('lunajour-draw', JSON.stringify(draw)); } catch { /* только на этот раз */ } };
   /* как и стикеры, рисовать можно, как только открыта вкладка */
   const drawMode = () => tab === 'draw';
   /* толщина в долях короткой стороны карточки: у линии это ширина, у текста и значков их высота */
-  const drawWidth = (brush) => draw.size * (brush === 'line' ? 0.003 : brush === 'doodle' ? 0.035 : brush === 'scatter' ? 0.012 : brush === 'text' ? 0.015 : 0.012);
+  const drawWidth = (brush) => draw.size * (brush === 'line' || brush === 'callout' ? 0.003 : brush === 'doodle' ? 0.035 : brush === 'scatter' ? 0.012 : brush === 'text' ? 0.015 : brush === 'haze' ? 0.02 : 0.012);
 
   function syncDraw() {
     const brushRow = $('drawBrush');
@@ -4305,7 +4305,16 @@
     const dash = $('drawDash');
     dash.replaceChildren();
     [['', 'Сплошная'], ['dash', 'Пунктир'], ['dots', 'Точки']].forEach(([v, name]) => chip(dash, t(name), (draw.dash || '') === v, () => { draw.dash = v; saveDraw(); syncDraw(); }));
+    const arrow = $('drawArrow');
+    arrow.replaceChildren();
+    [[false, 'Без стрелки'], [true, 'Со стрелкой']].forEach(([v, name]) => chip(arrow, t(name), !!draw.arrow === v, () => { draw.arrow = v; saveDraw(); syncDraw(); }));
+    $('drawCallBox').hidden = b !== 'callout';
+    if ($('drawLabel').value !== draw.label) $('drawLabel').value = draw.label;
+    const ls = $('drawLabelStyle');
+    ls.replaceChildren();
+    [['', 'Без фона'], ['haze', 'На дымке'], ['outline', 'С контуром']].forEach(([v, name]) => chip(ls, t(name), (draw.labelStyle || '') === v, () => { draw.labelStyle = v; saveDraw(); syncDraw(); }));
     $('drawTextBox').hidden = b !== 'text';
+    $('drawFontBox').hidden = b !== 'text' && b !== 'callout';
     if ($('drawText').value !== draw.text) $('drawText').value = draw.text;
     const fonts = $('drawFont');
     fonts.replaceChildren();
@@ -4345,9 +4354,12 @@
   function bindDraw() {
     $('drawSize').addEventListener('input', (e) => { draw.size = Number(e.target.value); saveDraw(); });
     $('drawText').addEventListener('input', (e) => { draw.text = e.target.value; saveDraw(); });
+    $('drawLabel').addEventListener('input', (e) => { draw.label = e.target.value; saveDraw(); });
     $('drawClear').onclick = () => {
-      if (!state.layers.some((l) => l.type === 'ink')) return;
-      state.layers = state.layers.filter((l) => l.type !== 'ink');
+      /* весь рисунок: штрихи и дудлы */
+      const drawn = (l) => l.type === 'ink' || (l.vec && Render.DOODLES.some(([id]) => id === l.vec));
+      if (!state.layers.some(drawn)) return;
+      state.layers = state.layers.filter((l) => !drawn(l));
       selectedLayer = -1;
       update();
       toast(t('Рисунок стёрт.'), { label: t('Отменить'), run: undo });
@@ -4358,10 +4370,22 @@
       const r = card.getBoundingClientRect();
       return [((e.clientX - r.left) / r.width) * card.width, ((e.clientY - r.top) / r.height) * card.height];
     };
-    /* ластик стирает целые штрихи, которых коснулся */
+    /* дудл стирается, если ластик коснулся его рамки (с учётом поворота) */
+    const doodleIds = new Set(Render.DOODLES.map(([id]) => id));
+    const doodleHit = (l, px, py, r) => {
+      if (!l.vec || !doodleIds.has(l.vec)) return false;
+      const b = Render.layerBox(ctx, l, assets, card.width, card.height);
+      const dx = px - l.x * card.width;
+      const dy = py - l.y * card.height;
+      const a = -(l.rot || 0);
+      const lx = dx * Math.cos(a) - dy * Math.sin(a);
+      const ly = dx * Math.sin(a) + dy * Math.cos(a);
+      return Math.abs(lx) <= b.w / 2 + r && Math.abs(ly) <= b.h / 2 + r;
+    };
+    /* ластик стирает целые штрихи и дудлы, которых коснулся; фото-стикеры и надписи не трогает */
     const eraseAt = (px, py) => {
       const r = Math.min(card.width, card.height) * 0.03;
-      const keep = state.layers.filter((l) => l.type !== 'ink' || !Render.inkHit(l, px, py, card.width, card.height, r));
+      const keep = state.layers.filter((l) => !(l.type === 'ink' ? Render.inkHit(l, px, py, card.width, card.height, r) : doodleHit(l, px, py, r * 0.3)));
       if (keep.length === state.layers.length) return false;
       state.layers = keep;
       selectedLayer = -1;
@@ -4392,14 +4416,41 @@
         commitHistory();
         return;
       }
-      const l = { type: 'ink', brush: draw.brush, x: px / W, y: py / H, rot: 0, base: 1, size: 1, pts: [[0, 0]], color: draw.color, w: drawWidth(draw.brush), seed: Math.floor(Math.random() * 1e6) };
+      /* подпись — это линия со стрелкой, а текст встанет у её начала, когда палец отпустят */
+      const brush = draw.brush === 'callout' ? 'line' : draw.brush;
+      const l = { type: 'ink', brush, x: px / W, y: py / H, rot: 0, base: 1, size: 1, pts: [[0, 0]], color: draw.color, w: drawWidth(draw.brush), seed: Math.floor(Math.random() * 1e6) };
       if (draw.brush === 'line' && draw.dash) l.dash = draw.dash;
+      if ((draw.brush === 'line' && draw.arrow) || draw.brush === 'callout') l.arrow = true;
       if (draw.brush === 'text') { l.text = draw.text; l.font = draw.font; }
       if (draw.brush === 'symbols') l.symbols = [...draw.syms];
       state.layers = [...state.layers, l];
-      cur = { id: e.pointerId, l };
+      cur = { id: e.pointerId, l, callout: draw.brush === 'callout' };
       invalidate();
     }, true);
+    /* надпись подписи: рукописная, у начала линии, по другую сторону от стрелки */
+    const addLabel = (sx, sy, dx, dy) => {
+      const W = card.width;
+      const H = card.height;
+      const white = (draw.color || '').toLowerCase() === '#ffffff';
+      const style = draw.labelStyle || '';
+      const t0 = {
+        type: 'text', text: draw.label || '♡', font: draw.font || 'caveat', size: 0.025 + draw.size * 0.008, rot: 0,
+        /* на белой дымке белый текст пропал бы: тогда пишем зелёным, как на примерах */
+        color: style === 'haze' && white ? '#5b8a3a' : draw.color,
+        style, bg: style === 'outline' ? (white ? '#111111' : '#ffffff') : '#ffffff', shadow: style ? 'none' : undefined,
+        x: sx / W, y: sy / H,
+      };
+      const b = Render.layerBox(ctx, t0, assets, W, H);
+      const len = Math.hypot(dx, dy) || 1;
+      const gap = b.w / 2 + b.size * 0.35;
+      /* надпись целиком остаётся на карточке, даже если линию начали у самого края */
+      const hx = Math.min(0.5, (b.w / 2 + b.size * 0.15) / W);
+      const hy = Math.min(0.5, (b.h / 2 + b.size * 0.1) / H);
+      t0.x = clamp((sx - (dx / len) * gap) / W, hx, 1 - hx);
+      t0.y = clamp((sy - (dy / len) * (b.h / 2 + b.size * 0.2)) / H, hy, 1 - hy);
+      if (!t0.shadow) delete t0.shadow;
+      state.layers = [...state.layers, t0];
+    };
     card.addEventListener('pointermove', (e) => {
       if (!cur || e.pointerId !== cur.id) return;
       e.stopImmediatePropagation();
@@ -4428,6 +4479,22 @@
       /* штрих готов: центр слоя — середина рисунка, точки от неё; размер — его ширина или высота */
       const { l } = was;
       const m = Math.min(card.width, card.height);
+      if (was.callout) {
+        /* начало линии и куда она пошла: подпись встаёт перед началом */
+        const sx = l.x * card.width + l.pts[0][0] * m;
+        const sy = l.y * card.height + l.pts[0][1] * m;
+        const q = l.pts[Math.min(l.pts.length - 1, 6)];
+        const moved = Math.hypot(q[0] - l.pts[0][0], q[1] - l.pts[0][1]) * m;
+        if (l.pts.length < 3 || moved < m * 0.02) {
+          /* просто нажали: только надпись, без стрелки */
+          state.layers = state.layers.filter((x) => x !== l);
+          addLabel(sx, sy, 0, 0);
+          update();
+          commitHistory();
+          return;
+        }
+        addLabel(sx, sy, (q[0] - l.pts[0][0]) * m, (q[1] - l.pts[0][1]) * m);
+      }
       let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
       l.pts.forEach(([x, y]) => { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); });
       const cx = (x0 + x1) / 2;

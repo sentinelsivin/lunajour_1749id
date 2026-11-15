@@ -1033,10 +1033,10 @@ window.Vlog = (function () {
         if (f && document.fonts) document.fonts.load(`${f.weight} 40px ${f.css}`).then(() => { dirty = true; kick(); }).catch(() => {});
         editLayer(o, { font: v });
       })));
-      body.append(group('Подложка', chips([['none', t('Нет')], ['plaque', t('Плашка')], ['outline', t('Контур')]], l.style || 'none', (v) => editLayer(o, { style: v }))));
+      body.append(group('Подложка', chips([['none', t('Нет')], ['plaque', t('Плашка')], ['outline', t('Контур')], ['haze', t('Дымка')]], l.style || 'none', (v) => editLayer(o, { style: v }))));
     }
     body.append(group('Цвет текста', swatches(l.color, (c) => editLayer(o, { color: c }))));
-    if (l.card || l.style === 'plaque' || l.style === 'outline') body.append(group(l.card ? 'Фон' : 'Цвет подложки', swatches(l.bg, (c) => editLayer(o, { bg: c }))));
+    if (l.card || l.style === 'plaque' || l.style === 'outline' || l.style === 'haze') body.append(group(l.card ? 'Фон' : 'Цвет подложки', swatches(l.bg, (c) => editLayer(o, { bg: c }))));
     body.append(slider('Размер', 2, 40, 0.5, Math.round(l.size * 200) / 2, (v) => `${Math.round(v)}`, (v) => { l.size = v / 100; }));
     body.append(el('p', 'hint', t('На кадре надпись можно тянуть; угол рамки меняет размер и поворот. Двумя пальцами тоже.')));
   }

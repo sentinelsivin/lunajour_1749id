@@ -328,6 +328,7 @@
                 <button type="button" data-v="none">Без фона</button>
                 <button type="button" data-v="plaque">Плашка</button>
                 <button type="button" data-v="outline">Контур</button>
+                <button type="button" data-v="haze">Дымка</button>
               </div>
             </div>
             <div class="group"><span class="label">Шрифт</span><div class="chips" id="layerFonts"></div></div>
@@ -386,11 +387,16 @@
         <div class="group" id="drawDoodleBox" hidden><span class="label">Выбери дудл и нажми на карточку</span><div class="stickers" id="drawDoodles"></div></div>
         <div class="group" id="drawColorBox"><span class="label">Цвет</span><div class="swatches" id="drawColor"></div></div>
         <label class="slider" id="drawSizeField"><span id="drawSizeLabel">Толщина</span><input id="drawSize" type="range" min="1" max="10" step="0.5"></label>
-        <div class="group" id="drawLineBox"><span class="label">Линия</span><div class="chips" id="drawDash"></div></div>
+        <div class="group" id="drawLineBox"><span class="label">Линия</span><div class="chips" id="drawDash"></div><div class="chips" id="drawArrow"></div></div>
+        <div class="group" id="drawCallBox" hidden>
+          <p class="hint">Веди от места, где будет подпись, к тому, на что она указывает: в конце встанет стрелка.</p>
+          <label class="field">Текст подписи<input id="drawLabel" type="text" maxlength="60"></label>
+          <div class="chips" id="drawLabelStyle"></div>
+        </div>
         <div class="group" id="drawTextBox" hidden>
           <label class="field">Текст вдоль линии<input id="drawText" type="text" maxlength="60"></label>
-          <div class="chips" id="drawFont"></div>
         </div>
+        <div class="group" id="drawFontBox" hidden><span class="label">Шрифт</span><div class="chips" id="drawFont"></div></div>
         <div class="group" id="drawSymBox" hidden><span class="label">Что повторять вдоль линии</span><div class="chips" id="drawSyms"></div></div>
         <div class="row"><button class="btn small" id="drawClear" type="button">Стереть весь рисунок</button></div>
         <p class="hint">Рисуй пальцем или мышью прямо по карточке. Нарисованное можно двигать, крутить и перекрашивать во вкладке «Стикеры и надписи».</p>
