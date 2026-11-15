@@ -1,0 +1,10 @@
+# Выкладка на Netlify сама: после каждого git push в main сайт собирается и обновляется.
+# Сборка та же, что на компьютере: node build.mjs кладёт нужные файлы в dist.
+# Кэш не настраиваем: Netlify и так велит браузеру сверять файлы с сайтом, а sw.js берёт свежие из сети.
+
+[build]
+  command = "node build.mjs"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
