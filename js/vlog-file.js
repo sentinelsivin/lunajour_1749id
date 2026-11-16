@@ -6,7 +6,7 @@
   const MAGIC = 'LUNAVLOG1\n';
   const EXT = 'lunavlog';
 
-  /* все ссылки проекта на файлы: клипы, картинки-стикеры, своя фигура, своя музыка */
+  /* все ссылки проекта на файлы: клипы, картинки-стикеры, своя фигура, своя музыка, озвучка */
   function mediaIds(p) {
     return Object.keys(p.media || {});
   }
@@ -22,7 +22,10 @@
       c.media = id(c.media);
       if (c.shape && c.shape.mask) c.shape.mask = id(c.shape.mask);
     });
-    (q.overlays || []).forEach((o) => { if (o.layer && o.layer.img) o.layer.img = id(o.layer.img); });
+    (q.overlays || []).forEach((o) => {
+      if (o.layer && o.layer.img) o.layer.img = id(o.layer.img);
+      if (o.layer && o.layer.media) o.layer.media = id(o.layer.media);
+    });
     if (q.music && q.music.fileId) q.music.fileId = id(q.music.fileId);
     return q;
   }

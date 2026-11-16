@@ -141,7 +141,7 @@ window.Timeline = (function () {
     const total = duration(p);
     const start = Math.max(0, Math.min(t, total - MIN_MS));
     /* у эффекта на время нет появления и затухания: он просто идёт от начала до конца полоски */
-    const fx = layer.type === 'effect';
+    const fx = layer.type === 'effect' || layer.type === 'voice';
     const o = { id: uid(), start: Math.round(start), end: Math.round(Math.min(total, start + OV_MS)), anim: fx ? '' : 'pop', fadeOut: !fx, layer };
     p.overlays.push(o);
     return o;
@@ -202,7 +202,7 @@ window.Timeline = (function () {
   /* файлы, на которые больше не ссылается ни один клип, стикер и не музыка */
   function unused(p) {
     const used = new Set(p.clips.map((c) => c.media));
-    (p.overlays || []).forEach((o) => { if (o.layer.img) used.add(o.layer.img); });
+    (p.overlays || []).forEach((o) => { if (o.layer.img) used.add(o.layer.img); if (o.layer.media) used.add(o.layer.media); });
     /* своя фигура-вырез у клипа тоже файл */
     p.clips.forEach((c) => { if (c.shape && c.shape.mask) used.add(c.shape.mask); });
     if (p.music.fileId) used.add(p.music.fileId);

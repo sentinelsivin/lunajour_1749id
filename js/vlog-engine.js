@@ -584,7 +584,7 @@ window.VlogEngine = (function () {
     const now = visible(p, t);
     now.filter((o) => o.layer.type === 'effect').forEach((o) => drawEffect(ctx, o, t, W, H));
     now.forEach((o) => {
-      if (o.layer.type === 'effect') return;
+      if (o.layer.type === 'effect' || o.layer.type === 'voice') return;
       if (o.layer.img && !stickerReady(o.layer.img)) return;
       Render.drawLayers(ctx, { layers: [overlayLayer(o, t, o.id === calm)] }, assets, W, H);
     });
@@ -744,7 +744,54 @@ window.VlogEngine = (function () {
     s.start(now, offset);
     music = { s, g };
   }
+  /* ---------- озвучка: полоски layer.type 'voice' (layer.media — запись, layer.from — откуда в записи, мс) ----------
+     Голос идёт через шину клипов: музыка под ним приглушается так же, как под голосом в клипе. */
+  const voiceBufs = new Map();
+  let voiceRun = 0;
+  let voicesOn = [];
+  async function voiceBuffer(id) {
+    if (!voiceBufs.has(id)) {
+      voiceBufs.set(id, blobOf(id).then(async (b) => {
+        if (!b) return null;
+        const data = await b.arrayBuffer();
+        return new Promise((resolve, reject) => {
+          const r = audio().decodeAudioData(data, resolve, reject);
+          if (r && r.then) r.then(resolve, reject);
+        });
+      }).catch(() => { voiceBufs.delete(id); return null; }));
+    }
+    return voiceBufs.get(id);
+  }
+  async function startVoices(p, at) {
+    stopVoices();
+    const run = ++voiceRun;
+    const list = (p.overlays || []).filter((o) => o.layer.type === 'voice' && o.end > at);
+    for (const o of list) {
+      const buf = await voiceBuffer(o.layer.media);
+      if (!buf || !playing || run !== voiceRun) continue;
+      const c = audio();
+      /* пока ждали расшифровку, ролик ушёл вперёд */
+      const nowMs = from + (c.currentTime - t0) * 1000;
+      const begin = Math.max(nowMs, o.start);
+      if (begin >= o.end) continue;
+      const s = c.createBufferSource();
+      s.buffer = buf;
+      const g = c.createGain();
+      g.gain.value = Math.max(0, (o.layer.vol ?? 100) / 100);
+      s.connect(g).connect(clips);
+      const offset = ((o.layer.from || 0) + (begin - o.start)) / 1000;
+      if (offset >= buf.duration) continue;
+      s.start(c.currentTime + (begin - nowMs) / 1000, offset, (o.end - begin) / 1000);
+      voicesOn.push(s);
+    }
+  }
+  function stopVoices() {
+    voiceRun++;
+    voicesOn.forEach((s) => { try { s.stop(); } catch { /* уже кончилась */ } s.disconnect(); });
+    voicesOn = [];
+  }
   function stopMusic() {
+    stopVoices();
     unduck();
     if (!music) return;
     try { music.s.stop(); } catch { /* уже остановлена */ }
@@ -843,6 +890,7 @@ window.VlogEngine = (function () {
     playing = true;
     steer(p, from);
     startMusic(p, from, total);
+    startVoices(p, from);
     return true;
   }
   function pause() {
@@ -985,7 +1033,7 @@ window.VlogEngine = (function () {
   }
 
   return {
-    importFile, forget, blobOf, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
+    importFile, forget, blobOf, muteSpeakers, voiceBuffer, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
     /* для быстрой записи (js/vlog-fast.js) */
     preload, prepareFrame, frameNeeds, seekClip, setFrame, setExporting, musicBuffer, musicInfo, beatTimes, WAVE_RATE, edgeMs, DUCK_TO, DUCK_RMS, DUCK_HOLD,
     audio, looks, lookOf, TRANSITIONS, ANIMS, FITS, MOVES, ZOOM_MAX, framing, visible, overlayBox, assets,

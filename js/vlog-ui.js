@@ -36,7 +36,10 @@ window.Vlog = (function () {
   const overlay = () => (ov && p.overlays.find((o) => o.id === ov)) || null;
   /* эффект на время — тоже полоска на ленте, но на кадре его нельзя тянуть: для просмотра нужны только надписи и стикеры */
   const isFxOv = (o) => !!(o && o.layer.type === 'effect');
-  const layerOv = () => { const o = overlay(); return isFxOv(o) ? null : o; };
+  const isVoiceOv = (o) => !!(o && o.layer.type === 'voice');
+  /* на кадре тянутся только надписи и стикеры: у эффекта и озвучки на просмотре ничего нет */
+  const isLayerOv = (o) => !!(o && (o.layer.type === 'text' || o.layer.type === 'sticker'));
+  const layerOv = () => { const o = overlay(); return isLayerOv(o) ? o : null; };
   const desktop = () => window.matchMedia('(min-width: 900px)').matches;
 
   function fmt(ms) {
@@ -395,6 +398,7 @@ window.Vlog = (function () {
   function ovLabel(o) {
     const l = o.layer;
     if (l.type === 'text') return `T  ${String(l.text || '').replace(/\s+/g, ' ').slice(0, 24)}`;
+    if (l.type === 'voice') return `🎙 ${t('Голос')} ${fmt(o.end - o.start)}`;
     if (l.type === 'effect') {
       const E = window.Effects;
       const S = window.Scanner;
@@ -409,7 +413,8 @@ window.Vlog = (function () {
   /* две дорожки: эффекты на время сразу под клипами, ниже надписи и стикеры */
   function renderOverlays() {
     renderLane($('vlogFxs'), (o) => isFxOv(o));
-    renderLane($('vlogOvs'), (o) => !isFxOv(o));
+    renderLane($('vlogVoices'), (o) => isVoiceOv(o));
+    renderLane($('vlogOvs'), (o) => isLayerOv(o));
   }
   function renderLane(box, which) {
     box.textContent = '';
@@ -419,7 +424,7 @@ window.Vlog = (function () {
     box.hidden = !list.length;
     list.forEach((o) => {
       const el = document.createElement('div');
-      el.className = `vlog-ov${o.id === ov ? ' sel' : ''}${o.layer.type === 'text' ? ' text' : ''}${o.layer.type === 'effect' ? ' fx' : ''}`;
+      el.className = `vlog-ov${o.id === ov ? ' sel' : ''}${o.layer.type === 'text' ? ' text' : ''}${o.layer.type === 'effect' ? ' fx' : ''}${o.layer.type === 'voice' ? ' voice' : ''}`;
       el.dataset.id = o.id;
       el.style.left = `${(o.start * pps) / 1000}px`;
       el.style.width = `${Math.max(6, ((o.end - o.start) * pps) / 1000)}px`;
@@ -592,6 +597,7 @@ window.Vlog = (function () {
     bindClipGestures();
     bindOverlayGestures($('vlogOvs'));
     bindOverlayGestures($('vlogFxs'));
+    bindOverlayGestures($('vlogVoices'));
     $('vlogClips').addEventListener('click', (e) => {
       const j = e.target.closest('.vlog-join');
       if (j) selectJoin(Number(j.dataset.join));
@@ -749,7 +755,7 @@ window.Vlog = (function () {
       }
       if (Engine.playing) { Engine.pause(); syncPlay(); }
       const o = p.overlays.find((x) => x.id === id);
-      g = { kind: edge ? 'trim' : 'move', edge, id, x: e.clientX, pid: e.pointerId, start: o.start, end: o.end, pushed: false };
+      g = { kind: edge ? 'trim' : 'move', edge, id, x: e.clientX, pid: e.pointerId, start: o.start, end: o.end, from: o.layer.from || 0, pushed: false };
       try { box.setPointerCapture(e.pointerId); } catch { /* палец уже отпущен */ }
       if (id !== ov) selectOv(id, false);
       e.preventDefault();
@@ -774,10 +780,15 @@ window.Vlog = (function () {
         o.end = o.start + l;
         peek = o.start;
       } else if (g.edge === 'in') {
-        o.start = Math.round(Math.max(0, Math.min(o.end - MIN, g.start + ms)));
+        /* у голоса начало полоски сдвигает и место в записи: нельзя уйти раньше начала записи */
+        const minStart = isVoiceOv(o) ? g.start - g.from : 0;
+        o.start = Math.round(Math.max(0, minStart, Math.min(o.end - MIN, g.start + ms)));
+        if (isVoiceOv(o)) o.layer.from = Math.max(0, g.from + (o.start - g.start));
         peek = o.start;
       } else {
-        o.end = Math.round(Math.max(o.start + MIN, Math.min(T, g.end + ms)));
+        /* голос не тянется дальше конца записи */
+        const maxEnd = isVoiceOv(o) ? o.start + (o.layer.dur || Infinity) - (o.layer.from || 0) : T;
+        o.end = Math.round(Math.max(o.start + MIN, Math.min(T, maxEnd, g.end + ms)));
         peek = o.end - 1;
       }
       dirty = true;
@@ -801,16 +812,16 @@ window.Vlog = (function () {
   }
 
   const CLIP_SHEETS = ['frame', 'card', 'layout', 'look', 'fx', 'scan', 'shape', 'speed', 'vol', 'dur'];
-  const OV_SHEETS = ['text', 'style', 'anim', 'ovfx', 'ovscan'];
+  const OV_SHEETS = ['text', 'style', 'anim', 'ovfx', 'ovscan', 'voicevol'];
   /* у эффекта на время свои шторки, у надписи и стикера свои */
-  const ovSheetOk = (o, s) => (isFxOv(o) ? ['ovfx', 'ovscan'] : ['text', 'style', 'anim']).includes(s);
+  const ovSheetOk = (o, s) => (isFxOv(o) ? ['ovfx', 'ovscan'] : isVoiceOv(o) ? ['voicevol'] : ['text', 'style', 'anim']).includes(s);
   function selectOv(id, jump = true) {
     ov = id;
     sel = -1;
     join = -1;
     if (CLIP_SHEETS.includes(sheet) || sheet === 'trans' || (!id && OV_SHEETS.includes(sheet))) sheet = '';
     const o = overlay();
-    if (o && OV_SHEETS.includes(sheet) && !ovSheetOk(o, sheet)) sheet = isFxOv(o) ? 'ovfx' : '';
+    if (o && OV_SHEETS.includes(sheet) && !ovSheetOk(o, sheet)) sheet = isFxOv(o) ? 'ovfx' : isVoiceOv(o) ? 'voicevol' : '';
     if (o && jump && (at < o.start || at >= o.end)) at = o.start;
     syncAll();
   }
@@ -864,7 +875,7 @@ window.Vlog = (function () {
     const now = peek ?? at;
     const sel0 = layerOv();
     if (sel0 && now >= sel0.start && now < sel0.end && inside(sel0, pt)) return sel0;
-    return Engine.visible(p, now).filter((o) => o.layer.type !== 'effect').reverse().find((o) => inside(o, pt)) || null;
+    return Engine.visible(p, now).filter((o) => isLayerOv(o)).reverse().find((o) => inside(o, pt)) || null;
   }
 
   /* ---------- кадр клипа на просмотре: тянуть — сдвиг, щипок или колесо — масштаб ---------- */
@@ -1072,6 +1083,8 @@ window.Vlog = (function () {
     text: '<path d="M4 4h12M10 4v13"/>',
     'g-dress': '<rect x="3.5" y="2.5" width="13" height="15" rx="1"/><rect x="6" y="5" width="8" height="7"/><path d="M6 14.5h5"/>',
     auto: '<path d="M4 16L13 7M11.5 5.5l3 3"/><path d="M15 2.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6zM6 3l.5 1 1 .5-1 .5L6 6l-.5-1-1-.5 1-.5zM16 12l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5z"/>',
+    voice: '<rect x="7.5" y="2.5" width="5" height="9" rx="2.5"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/>',
+    voicevol: '<path d="M3 8h3l4-3v10l-4-3H3z"/><path d="M13 7c1.5 1.5 1.5 4.5 0 6M15.5 5c3 3 3 7 0 10"/>',
     newFx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     ovfx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     ovscan: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><rect x="7" y="7" width="6" height="6"/>',
@@ -1101,6 +1114,11 @@ window.Vlog = (function () {
     const o = overlay();
     nav.classList.toggle('clip-mode', !!(c || o));
     $('vlogStage').classList.toggle('pan', !!c && !o);
+    if (isVoiceOv(o)) {
+      nav.append(toolBtn('back', 'Все клипы'), toolBtn('voicevol', 'Громкость', sheet === 'voicevol'), toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
+      requestAnimationFrame(fadeTools);
+      return;
+    }
     if (isFxOv(o)) {
       nav.append(toolBtn('back', 'Все клипы'), toolBtn('ovfx', 'Эффект', sheet === 'ovfx'), toolBtn('ovscan', 'Сканер', sheet === 'ovscan'), toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
       requestAnimationFrame(fadeTools);
@@ -1115,7 +1133,7 @@ window.Vlog = (function () {
     }
     if (!c) {
       nav.append(
-        toolBtn('add', 'Добавить'), toolBtn('auto', 'Собрать', sheet === 'auto'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'),
+        toolBtn('add', 'Добавить'), toolBtn('auto', 'Собрать', sheet === 'auto'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'), toolBtn('voice', 'Озвучка', sheet === 'voice'),
         toolBtn('trans', 'Переход', sheet === 'trans'), toolBtn('music', 'Музыка', sheet === 'music'), toolBtn('format', 'Формат', sheet === 'format'),
       );
       return;
@@ -1234,7 +1252,7 @@ window.Vlog = (function () {
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
     music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
-    projects: 'Мои влоги', auto: 'Собрать за меня', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
+    projects: 'Мои влоги', voice: 'Озвучка', voicevol: 'Голос', auto: 'Собрать за меня', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
     sheet = id;
@@ -1298,7 +1316,7 @@ window.Vlog = (function () {
     const side = $('vlogSide');
     const body = $('vlogSheetBody');
     const o = overlay();
-    const id = sheet || (desktop() ? (o ? (isFxOv(o) ? 'ovfx' : o.layer.type === 'text' ? 'text' : 'style') : clip() ? 'look' : join >= 0 ? 'trans' : 'project') : '');
+    const id = sheet || (desktop() ? (o ? (isFxOv(o) ? 'ovfx' : isVoiceOv(o) ? 'voicevol' : o.layer.type === 'text' ? 'text' : 'style') : clip() ? 'look' : join >= 0 ? 'trans' : 'project') : '');
     $('vlog').classList.toggle('sheet-open', !!sheet);
     $('vlog').style.setProperty('--vlog-tools-h', `${$('vlogTools').offsetHeight}px`);
     body.textContent = '';
@@ -1337,6 +1355,8 @@ window.Vlog = (function () {
     if (o && id === 'anim') sheetAnim(body, o);
     if (isFxOv(o) && id === 'ovfx') { sheetFx(body, o.layer, shotOf(o)); sheetSpan(body, o); }
     if (isFxOv(o) && id === 'ovscan') { sheetScan(body, o.layer, shotOf(o)); sheetSpan(body, o); }
+    if (isVoiceOv(o) && id === 'voicevol') sheetVoiceVol(body, o);
+    if (id === 'voice') sheetVoice(body);
     if (!c) return;
     if (id === 'frame') sheetFrame(body, c);
     if (id === 'card') sheetCard(body, c);
@@ -1796,6 +1816,106 @@ window.Vlog = (function () {
       autoBusy = false;
       syncSheet();
     }
+  }
+
+  /* ---------- озвучка: голос с микрофона поверх ролика ----------
+     Запись идёт с линии воспроизведения; ролик в это время играет без звука в динамиках, чтобы микрофон
+     не записал музыку и звук клипов. Готовая запись ложится зелёной полоской на свою дорожку. */
+  let rec = null;
+  function sheetVoice(body) {
+    if (!p.clips.length) { body.append(el('p', 'hint', t('Сначала добавь клипы и фото.'))); return; }
+    const can = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder);
+    const row = el('div', 'vlog-rec');
+    if (rec) {
+      const stop = el('button', 'btn primary', `■ ${t('Стоп')}`);
+      stop.type = 'button';
+      stop.onclick = stopVoice;
+      const dot = el('i', 'vlog-rec-dot');
+      const time = el('b', '', fmt(0));
+      time.id = 'vlogRecTime';
+      row.append(stop, dot, time);
+    } else {
+      const go = el('button', 'btn primary', `● ${t('Записать с')} ${fmt(at)}`);
+      go.type = 'button';
+      go.disabled = !can;
+      go.onclick = startVoice;
+      row.append(go);
+    }
+    body.append(row);
+    body.append(el('p', 'hint', t(can
+      ? 'Ролик пойдёт с линии воспроизведения без звука, говори в микрофон. Лучше в наушниках. Музыка под голосом сама станет тише. Запись можно двигать и обрезать на ленте.'
+      : 'Этот браузер не даёт записывать с микрофона.')));
+  }
+  async function startVoice() {
+    if (rec) return;
+    pauseNow();
+    let stream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+    } catch {
+      toast(t('Нет доступа к микрофону. Разреши его в настройках браузера.'), 6000);
+      return;
+    }
+    const type = ['audio/webm;codecs=opus', 'audio/mp4', 'audio/webm', 'audio/ogg'].find((m) => MediaRecorder.isTypeSupported(m)) || '';
+    const mr = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+    const parts = [];
+    mr.ondataavailable = (e) => { if (e.data && e.data.size) parts.push(e.data); };
+    rec = { mr, stream, parts, start: Math.min(at, Math.max(0, total() - Timeline.MIN_MS)), t0: performance.now(), timer: 0 };
+    mr.start(250);
+    Engine.muteSpeakers(true);
+    if (Engine.play(p, rec.start)) syncPlay();
+    rec.timer = setInterval(() => {
+      const el2 = $('vlogRecTime');
+      if (el2) el2.textContent = fmt(performance.now() - rec.t0);
+      /* ролик кончился: запись тоже */
+      if (!Engine.playing) stopVoice();
+    }, 200);
+    syncSheet();
+  }
+  async function stopVoice() {
+    if (!rec) return;
+    const r = rec;
+    rec = null;
+    clearInterval(r.timer);
+    await new Promise((done) => { r.mr.onstop = done; try { r.mr.stop(); } catch { done(); } });
+    r.stream.getTracks().forEach((tr) => tr.stop());
+    pauseNow();
+    Engine.muteSpeakers(false);
+    const blob = new Blob(r.parts, { type: r.mr.mimeType || 'audio/webm' });
+    syncSheet();
+    if (blob.size < 1000) { toast(t('Запись получилась пустой.')); return; }
+    const id = Timeline.uid();
+    if (!(await Store.set(`vlog-m-${id}`, blob))) return;
+    const buf = await Engine.voiceBuffer(id).catch(() => null);
+    const dur = Math.round(buf ? buf.duration * 1000 : performance.now() - r.t0);
+    let o = null;
+    commit(() => {
+      p.media[id] = { id, kind: 'voice', name: '', w: 0, h: 0, dur, thumb: '' };
+      o = Timeline.addOverlay(p, { type: 'voice', media: id, from: 0, dur, vol: 100 }, r.start);
+      o.start = Math.round(r.start);
+      o.end = Math.round(Math.min(total(), r.start + dur));
+    });
+    ov = o.id;
+    sel = -1;
+    sheet = 'voicevol';
+    syncAll();
+    toast(`${t('Голос записан')}: ${fmt(dur)}.`);
+  }
+  function sheetVoiceVol(body, o) {
+    body.append(slider('Громкость голоса', 0, 200, 5, o.layer.vol ?? 100, (v) => `${v}%`, (v) => { o.layer.vol = v; }));
+    sheetSpanVoice(body, o);
+  }
+  function sheetSpanVoice(body, o) {
+    body.append(el('p', 'hint', `${t('Звучит')} ${fmt(o.start)} – ${fmt(o.end)}. ${t('Тяни полоску, чтобы сдвинуть голос, края обрезают начало и конец.')}`));
+    const row = el('div', 'row');
+    const look = el('button', 'btn small', t('Послушать'));
+    look.type = 'button';
+    look.onclick = () => previewFrom(o.start, o.end);
+    const again = el('button', 'btn small', t('Записать ещё'));
+    again.type = 'button';
+    again.onclick = () => { at = o.end; selectOv(''); openSheet('voice'); };
+    row.append(look, again);
+    body.append(row);
   }
 
   /* ---------- влог файлом ---------- */

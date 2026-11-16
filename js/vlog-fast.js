@@ -112,6 +112,27 @@ window.VlogFast = (function () {
       any = true;
     }
 
+    /* озвучка: как звук клипа, со своей громкостью; музыка под ней тоже приглушается */
+    for (const o of (p.overlays || []).filter((x) => x.layer.type === 'voice')) {
+      if (signal && signal.aborted) return null;
+      if (!buffers.has(o.layer.media)) buffers.set(o.layer.media, await decode(o.layer.media));
+      const buf = buffers.get(o.layer.media);
+      if (!buf) continue;
+      const s = o.start / 1000;
+      const l = Math.max(0, Math.min(o.end, total) - o.start) / 1000;
+      const off = (o.layer.from || 0) / 1000;
+      if (!l || off >= buf.duration) continue;
+      const v = Math.max(0, (o.layer.vol ?? 100) / 100);
+      const src = oc.createBufferSource();
+      src.buffer = buf;
+      const g = oc.createGain();
+      g.gain.value = v;
+      src.connect(g).connect(oc.destination);
+      src.start(s, off, l);
+      voices.push({ s, l, buf, off, v });
+      any = true;
+    }
+
     const mbuf = await Engine.musicBuffer(p).catch(() => null);
     if (mbuf) {
       const src = oc.createBufferSource();

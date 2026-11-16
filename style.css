@@ -1274,6 +1274,14 @@ button.vlog-title svg { flex: none; opacity: .6; }
 .vlog-ov.fx { background: rgba(167, 139, 250, .38); }
 /* дорожка эффектов: тонкая линия отделяет её от надписей */
 .vlog-fxs { padding-bottom: 4px; border-bottom: 1px dashed rgb(167 139 250 / .35); }
+/* озвучка: зелёные полоски голоса на своей дорожке */
+.vlog-ov.voice { background: rgba(134, 201, 107, .38); }
+.vlog-voices { padding-bottom: 4px; border-bottom: 1px dashed rgb(134 201 107 / .35); }
+.vlog-rec { display: flex; align-items: center; gap: 12px; }
+.vlog-rec .btn { min-width: 150px; }
+.vlog-rec-dot { width: 12px; height: 12px; border-radius: 50%; background: #e5484d; animation: vlog-rec 1s steps(2) infinite; }
+@keyframes vlog-rec { 50% { opacity: .2; } }
+.vlog-rec b { font: 15px var(--mono); font-variant-numeric: tabular-nums; }
 .vlog-ov span { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .vlog-ov.sel { z-index: 1; overflow: visible; outline: 2px solid var(--bone); outline-offset: -2px; touch-action: none; padding: 0 20px; }
 .vlog-ov .vlog-handle { width: 14px; }

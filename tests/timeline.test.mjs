@@ -113,3 +113,11 @@ test('новое фото добавляется без движения, у в�
   assert.equal(p.clips[0].move, 'none');
   assert.equal(p.clips[1].move, undefined);
 });
+
+test('озвучка: запись не считается лишним файлом, появляется и уходит без анимации', () => {
+  const p = project(['image', 6000]);
+  p.media.v1 = { id: 'v1', kind: 'voice' };
+  const o = Timeline.addOverlay(p, { type: 'voice', media: 'v1', from: 0, dur: 2000 }, 1000);
+  assert.deepEqual([o.anim, o.fadeOut], ['', false]);
+  assert.deepEqual([...Timeline.unused(p)], []);
+});

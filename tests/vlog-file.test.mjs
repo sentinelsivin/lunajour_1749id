@@ -64,3 +64,12 @@ test('новые номера файлов: все ссылки проекта �
   /* исходный проект не меняется */
   assert.equal(project().clips[0].media, 'a');
 });
+
+test('новые номера файлов: запись озвучки тоже переходит на новый номер', () => {
+  const p = project();
+  p.media.vo = { id: 'vo', kind: 'voice' };
+  p.overlays.push({ id: 'o3', start: 0, end: 500, layer: { type: 'voice', media: 'vo' } });
+  const q = VlogFile.remap(p, { vo: 'VO' });
+  assert.equal(q.overlays[2].layer.media, 'VO');
+  assert.ok(q.media.VO);
+});
