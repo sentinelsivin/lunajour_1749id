@@ -4512,6 +4512,10 @@
   }
   /* наборы стикеров для влога: те же листы и вырезка, что в карточке */
   window.StickerLib = { PACK_TABS, fill: fillStickerPack };
+  /* пустая карточка редактора: влог кладёт в неё клип, когда у клипа есть фигура */
+  window.CardDefaults = defaults;
+  window.PaperColors = PAPER_COLORS;
+  window.CollageThumb = collageThumb;
 
   function syncStickers() {
     stickerPackLoad++;

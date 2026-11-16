@@ -194,6 +194,9 @@ window.Vlog = (function () {
       if (c.speed !== 1) bits.push(`${c.speed}×`);
       if (c.look) bits.push('◐');
       if (c.fx) bits.push('✦');
+      if (c.scan && c.scan.on) bits.push('⌖');
+      if (c.shape && c.shape.motif && c.shape.motif !== 'none') bits.push('❋');
+      if (hasLayout(c)) bits.push('▦');
       if (c.card) bits.push('▤');
       else if (c.fit || (c.zoom || 1) > 1 || c.x || c.y) bits.push('⛶');
       if (c.kind === 'video' && c.vol === 0) bits.push('🔇');
@@ -574,7 +577,7 @@ window.Vlog = (function () {
     box.addEventListener('pointercancel', end);
   }
 
-  const CLIP_SHEETS = ['frame', 'card', 'look', 'fx', 'speed', 'vol', 'dur'];
+  const CLIP_SHEETS = ['frame', 'card', 'layout', 'look', 'fx', 'scan', 'shape', 'speed', 'vol', 'dur'];
   const OV_SHEETS = ['text', 'style', 'anim'];
   function selectOv(id, jump = true) {
     ov = id;
@@ -645,9 +648,11 @@ window.Vlog = (function () {
     const m = p.media[c.media];
     const cv = canvasEl();
     /* в карточке место кадра задаёт сама карточка: сдвигать нечего, работает только масштаб */
-    if (!m || !m.w || !m.h || c.card) return { mx: 0, my: 0 };
+    if (!m || !m.w || !m.h || c.card || hasShape(c) || hasLayout(c)) return { mx: 0, my: 0 };
     return Engine.framing({ ...c, move: 'none' }, m.w, m.h, cv.width, cv.height);
   }
+  const hasShape = (c) => !!(c.shape && c.shape.motif && c.shape.motif !== 'none');
+  const hasLayout = (c) => !!(c.layout && (c.layout.collage || c.layout.paper));
   /* выбранный клип должен быть на просмотре, иначе двигали бы невидимое */
   function showSel() {
     const hit = Timeline.at(p, peek ?? at);
@@ -834,6 +839,9 @@ window.Vlog = (function () {
     stickers: '<path d="M16.5 11.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v10A1.5 1.5 0 0 0 5 16.5h6.5z"/><path d="M11.5 16.5v-3.5a1.5 1.5 0 0 1 1.5-1.5h3.5"/><circle cx="7.5" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/>',
     style: '<circle cx="10" cy="10" r="7"/><circle cx="7" cy="8" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="13" cy="11.5" r="1.2"/>',
     anim: '<path d="M3 15c3 0 4-10 7-10s4 10 7 10"/>',
+    layout: '<rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/>',
+    scan: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><rect x="7" y="7" width="6" height="6"/>',
+    shape: '<path d="M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.8l5-.7z"/>',
     trans: '<rect x="2.5" y="5" width="7" height="10" rx="1"/><rect x="10.5" y="5" width="7" height="10" rx="1" opacity=".5"/><path d="M8 10h4"/>',
   };
   function toolBtn(id, label, on) {
@@ -867,7 +875,7 @@ window.Vlog = (function () {
       );
       return;
     }
-    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('card', 'Карточка', sheet === 'card'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'));
+    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('card', 'Карточка', sheet === 'card'), toolBtn('layout', 'Макет', sheet === 'layout'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'), toolBtn('scan', 'Сканер', sheet === 'scan'), toolBtn('shape', 'Фигура', sheet === 'shape'));
     if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
@@ -928,7 +936,7 @@ window.Vlog = (function () {
 
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
-    music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', look: 'Цвет', fx: 'Эффект', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
+    music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
     text: 'Текст', stickers: 'Стикеры', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
@@ -1019,6 +1027,9 @@ window.Vlog = (function () {
     if (id === 'card') sheetCard(body, c);
     if (id === 'look') sheetLook(body, c);
     if (id === 'fx') sheetFx(body, c);
+    if (id === 'scan') sheetScan(body, c);
+    if (id === 'layout') sheetLayout(body, c);
+    if (id === 'shape') sheetShape(body, c);
     if (id === 'speed') {
       body.append(group('Скорость', chips(SPEEDS.map((v) => [v, `${v}×`]), c.speed, (v) => commit(() => { c.speed = v; }))));
       body.append(el('p', 'hint', t('Звук ускоряется вместе с видео. Замедленный клип становится длиннее.')));
@@ -1488,6 +1499,167 @@ window.Vlog = (function () {
   }
   let fxCat = 'all';
 
+  /* ---------- макет: коллаж и бумага из редактора; клип стоит во всех ячейках ---------- */
+  function sheetLayout(body, c) {
+    const C = window.Collages;
+    if (!C) return;
+    const lay = c.layout || {};
+    const setLay = (patch) => commit(() => {
+      const next = { ...(c.layout || {}), ...patch };
+      if (!next.collage && !next.paper) delete c.layout;
+      else c.layout = next;
+    });
+    const grid = el('div', 'thumbs vlog-looks');
+    [{ id: '', name: 'Без коллажа' }, ...C.COLLAGES].forEach((tpl) => {
+      const b = el('button', `thumb${(lay.collage || '') === tpl.id ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = t(tpl.name);
+      const cv = Render.canvas(72, 90);
+      /* превью те же, что в редакторе; рисуются после открытия шторки */
+      setTimeout(() => {
+        try { if (window.CollageThumb) cv.getContext('2d').drawImage(window.CollageThumb(tpl.id), 0, 0, 72, 90); } catch { /* шаблон без превью */ }
+      }, 0);
+      b.append(cv, el('span', '', t(tpl.name)));
+      b.onclick = () => setLay({ collage: tpl.id });
+      grid.append(b);
+    });
+    body.append(group('Коллаж', grid));
+    const tpl = lay.collage ? C.byId(lay.collage) : null;
+    /* подпись есть у шаблонов с текстом и у обычной карточки с подписью */
+    if (tpl && (tpl.sample || !tpl.noNote)) {
+      const input = el('input', 'vlog-input');
+      input.type = 'text';
+      input.value = lay.title || '';
+      input.placeholder = tpl.sample || t('Подпись');
+      const typing = liveEdit((v) => { c.layout = { ...c.layout, title: v }; });
+      input.addEventListener('input', () => typing(input.value));
+      input.addEventListener('change', () => changed());
+      body.append(group('Подпись', input));
+      if (tpl.sample && tpl.sample.includes('()')) body.append(el('p', 'hint', t('Скобки () в тексте — место для кадра.')));
+    }
+    body.append(group('Бумага', chips([['', t('Как в карточке')], ...Render.PAPERS.filter((x) => x.id !== 'own').map((x) => [x.id, t(x.name)])], lay.paper || '', (v) => setLay({ paper: v }))));
+    const papers = el('div', 'vlog-swatches');
+    (window.PaperColors || COLORS).forEach((col) => {
+      const b = el('button', col === lay.paperColor ? 'on' : '');
+      b.type = 'button';
+      b.style.background = col;
+      b.setAttribute('aria-label', col);
+      b.onclick = () => setLay({ paperColor: col, paper: lay.paper || 'smooth' });
+      papers.append(b);
+    });
+    body.append(group('Цвет бумаги', papers));
+    body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { if (c.layout) x.layout = { ...c.layout }; else delete x.layout; })));
+    body.append(el('p', 'hint', t('Макеты из карточки: клип играет во всех ячейках коллажа. Размер ролика меняется в «Формат».')));
+  }
+
+  /* ---------- сканер: готовые наборы и свои сохранённые из редактора ---------- */
+  let scanPresets = [];
+  function sheetScan(body, c) {
+    const S = window.Scanner;
+    if (!S) return;
+    const sc = c.scan && c.scan.on ? c.scan : null;
+    const list = [['', t('Выключен')], ...scanPresets.map((x) => [x.id, x.name]), ...S.PRESETS.map((x) => [x.id, t(x.name)])];
+    body.append(group('', chips(list, sc ? sc.preset : '', (v) => commit(() => {
+      if (!v) { delete c.scan; return; }
+      const pr = scanPresets.find((x) => x.id === v) || S.presetById(v);
+      /* копия набора: правки не должны менять сам набор */
+      c.scan = { ...S.defaults(), ...JSON.parse(JSON.stringify(pr.set)), seed: (sc && sc.seed) || 5, on: true, preset: v };
+    }))));
+    if (sc) {
+      const setScan = (patch) => commit(() => { c.scan = { ...c.scan, ...patch }; });
+      body.append(group('Цвет', swatches(sc.color, (v) => setScan({ color: v }))));
+      body.append(slider('Сколько рамок', 20, 250, 5, Math.round((sc.amount ?? 1) * 100), (v) => `${v}%`, (v) => { c.scan = { ...c.scan, amount: v / 100 }; }));
+      const live = el('label', 'check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = sc.anim !== false;
+      box.onchange = () => setScan({ anim: box.checked });
+      live.append(box, document.createTextNode(t('Живое сканирование: рамки появляются по одной, подписи печатаются')));
+      body.append(live);
+      const row = el('div', 'row');
+      const again = el('button', 'btn small', t('Перемешать'));
+      again.type = 'button';
+      again.onclick = () => setScan({ seed: Math.floor(Math.random() * 1e6) });
+      row.append(again);
+      body.append(row);
+    }
+    body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { if (c.scan) x.scan = JSON.parse(JSON.stringify(c.scan)); else delete x.scan; })));
+    body.append(el('p', 'hint', t('Сканер из раздела «Эффекты» карточки: рамки сами находят, что в кадре. Свои наборы сохраняются в редакторе.')));
+  }
+
+  /* ---------- фигура: вырез поверх кадра, как в карточке ---------- */
+  let shapeCat = 'stars';
+  const shapeThumbs = new Map();
+  function shapeThumb(m) {
+    const out = Render.canvas(56, 70);
+    const draw = () => {
+      let src = shapeThumbs.get(m.id);
+      if (!src) {
+        const M = window.Motifs;
+        src = Render.canvas(112, 140);
+        const x = src.getContext('2d');
+        x.fillStyle = '#fff';
+        try {
+          m.draw(x, 112, 140, M.makeRng(7), { size: 1, density: 1, text: '', font: M.WORD_FONTS[0].id, pieces: [], orbit: { x: 0.5, y: 0.46, size: 1, rot: -24 } });
+        } catch { /* фигуре нужны свои данные: превью остаётся пустым */ }
+        shapeThumbs.set(m.id, src);
+      }
+      out.getContext('2d').drawImage(src, 0, 0, 56, 70);
+    };
+    /* новые превью рисуются после открытия шторки, чтобы она не подвисала */
+    if (shapeThumbs.has(m.id)) draw();
+    else setTimeout(draw, 0);
+    return out;
+  }
+  function sheetShape(body, c) {
+    const M = window.Motifs;
+    if (!M) return;
+    const ok = (m) => m.cat !== 'none' && m.cat !== 'mine' && !m.usesPieces && m.id !== 'own-mask';
+    const cats = M.CATEGORIES.filter((k) => k.id === 'all' || M.MOTIFS.some((m) => ok(m) && m.cat === k.id));
+    if (!cats.some((k) => k.id === shapeCat)) shapeCat = 'all';
+    body.append(chips(cats.map((k) => [k.id, t(k.name)]), shapeCat, (v) => { shapeCat = v; syncSheet(); }));
+    const cur = hasShape(c) ? c.shape.motif : '';
+    const grid = el('div', 'thumbs vlog-shapes');
+    const item = (id, name, thumb) => {
+      const b = el('button', `thumb${cur === id ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = name;
+      b.append(thumb, el('span', '', name));
+      b.onclick = () => commit(() => {
+        if (!id) { delete c.shape; return; }
+        c.shape = { size: 1, density: 1, seed: 7, paper: 'crumple', paperColor: (window.PaperColors || ['#f0ede5'])[0], ...(c.shape || {}), motif: id };
+      });
+      grid.append(b);
+    };
+    item('', t('Без фигуры'), el('i', 'vlog-card-none', '∅'));
+    M.MOTIFS.filter((m) => ok(m) && (shapeCat === 'all' || m.cat === shapeCat)).forEach((m) => item(m.id, t(m.name), shapeThumb(m)));
+    body.append(grid);
+    if (cur) {
+      const sh = c.shape;
+      body.append(slider('Размер', 40, 180, 5, Math.round((sh.size ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, size: v / 100 }; }));
+      body.append(slider('Плотность', 30, 200, 5, Math.round((sh.density ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, density: v / 100 }; }));
+      const papers = el('div', 'vlog-swatches');
+      (window.PaperColors || COLORS).forEach((col) => {
+        const b = el('button', col === sh.paperColor ? 'on' : '');
+        b.type = 'button';
+        b.style.background = col;
+        b.setAttribute('aria-label', col);
+        b.onclick = () => commit(() => { c.shape = { ...c.shape, paperColor: col }; });
+        papers.append(b);
+      });
+      body.append(group('Цвет бумаги', papers));
+      const row = el('div', 'row');
+      const again = el('button', 'btn small', t('Перемешать'));
+      again.type = 'button';
+      again.onclick = () => commit(() => { c.shape = { ...c.shape, seed: Math.floor(Math.random() * 1e6) }; });
+      row.append(again);
+      body.append(row);
+    }
+    body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { if (hasShape(c)) x.shape = { ...c.shape }; else delete x.shape; })));
+    body.append(el('p', 'hint', t('Фигуры из карточки: вырезы в кадре, сквозь них видно бумагу. У клипа в карточке фигура заменяет её фигуру.')));
+  }
+
+
   /* ---------- синхронизация экрана ---------- */
   function syncTime() {
     const now = peek ?? at;
@@ -1739,6 +1911,7 @@ window.Vlog = (function () {
     onClose = opts.onClose || null;
     editorCard = opts.card || null;
     myStyles = (await Store.get('styles')) || [];
+    scanPresets = (await Store.get('scanPresets').catch(() => null)) || [];
     bind();
     if (!loaded) await load();
     open = true;

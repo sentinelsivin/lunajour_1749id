@@ -1176,6 +1176,12 @@ details.fine > .slider { margin-top: 12px; }
 .vlog-looks .thumb.on img, .vlog-looks .thumb.on .vlog-card-none { border-color: var(--accent-light); }
 .vlog-card-none { display: grid; place-items: center; background: var(--surface2); color: var(--muted); font-style: normal; font-size: 22px; }
 .vlog-looks .thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* фигуры: белый силуэт на тёмном, подпись под ним */
+.vlog-shapes { grid-template-columns: repeat(auto-fill, minmax(64px, 1fr)); }
+.vlog-shapes .thumb { display: flex; flex-direction: column; gap: 4px; color: var(--silver); font-size: 11px; }
+.vlog-shapes .thumb canvas, .vlog-shapes .vlog-card-none { width: 100%; height: auto; aspect-ratio: 4 / 5; border-radius: 4px; background: var(--surface2); border: 2px solid transparent; }
+.vlog-shapes .thumb.on canvas, .vlog-shapes .thumb.on .vlog-card-none { border-color: var(--accent-light); }
+.vlog-shapes .thumb span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #vlogProgress { width: 100%; accent-color: var(--accent); margin-bottom: 8px; }
 
 @media (min-width: 900px) {

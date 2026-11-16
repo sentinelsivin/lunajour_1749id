@@ -317,18 +317,49 @@ window.VlogEngine = (function () {
      Своё фото-фон и свою фигуру-вырез стиль с собой не несёт, вместо них обычная бумага и без выреза. */
   const cardAssets = { stickers: {} };
   const cardCache = new WeakMap();
+  /* фигура клипа (clip.shape: мотив, размер, плотность, бумага): вырез поверх кадра, как фигура в карточке.
+     Без карточки клип кладётся в пустую карточку редактора; с карточкой фигура заменяет её фигуру. */
+  const shapeOf = (clip) => (clip.shape && clip.shape.motif && clip.shape.motif !== 'none' ? clip.shape : null);
+  /* макет клипа (clip.layout: коллаж, бумага, подпись): клип стоит во всех ячейках коллажа */
+  const layoutOf = (clip) => (clip.layout && (clip.layout.collage || clip.layout.paper) ? clip.layout : null);
+  const dressed = (clip) => !!(clip.card || shapeOf(clip) || layoutOf(clip));
   function cardOf(clip) {
-    let s = cardCache.get(clip.card);
-    if (s) return s;
-    s = { ...clip.card };
+    const shape = shapeOf(clip);
+    const lay = layoutOf(clip);
+    const hit = cardCache.get(clip);
+    if (hit && hit.card === clip.card && hit.shape === shape && hit.lay === lay) return hit.s;
+    let s = clip.card ? { ...clip.card } : { ...(window.CardDefaults ? window.CardDefaults() : {}), paperPos: 'photo' };
+    if (shape) s = { ...s, ...shape };
+    if (lay) {
+      s = { ...s, collage: lay.collage || '', paper: lay.paper || s.paper, paperColor: lay.paperColor || s.paperColor };
+      if (lay.title != null) s.note = { ...(s.note || {}), title: lay.title };
+    }
     if (s.motif === 'own-mask') s.motif = 'none';
     if (s.paper === 'own') s.paper = 'crumple';
     s.note = { ...(s.note || {}), date: (s.note && s.note.date) || new Date().toLocaleDateString('sv-SE') };
     /* шторка «до / после» и надписи по времени живут в длине ролика карточки, во влоге их нет */
     s.motion = { ...(s.motion || {}), wipe: false, txt: '' };
     s.layers = (s.layers || []).filter((l) => !l.img);
-    cardCache.set(clip.card, s);
+    cardCache.set(clip, { card: clip.card, shape, lay, s });
     return s;
+  }
+
+  /* сканер клипа (clip.scan): поверх кадра, по времени ролика */
+  function paintScan(x, clip, t, W, H) {
+    const S = window.Scanner;
+    if (!S || !clip.scan || !clip.scan.on) return;
+    const st = { scan: clip.scan, note: { title: '', place: '', date: new Date().toLocaleDateString('sv-SE'), mood: '' } };
+    const T = t / 1000;
+    S.clock = T;
+    if (S.animates(st)) S.time = T;
+    if (window.Effects) window.Effects.clock = T;
+    try {
+      S.draw(x, st, W, H);
+    } finally {
+      S.clock = null;
+      S.time = null;
+      if (window.Effects) window.Effects.clock = null;
+    }
   }
   function paintCard(x, src, clip, t) {
     const s = cardOf(clip);
@@ -358,7 +389,7 @@ window.VlogEngine = (function () {
     x.fillRect(0, 0, W, H);
     /* фото движется за время показа (по умолчанию чуть наезжает), чтобы кадр не стоял */
     const into01 = Math.max(0, Math.min(1, into / Math.max(1, Timeline.len(clip))));
-    if (clip.card) paintCard(x, src, clip, t);
+    if (dressed(clip)) paintCard(x, src, clip, t);
     else place(x, src.el, src.w, src.h, W, H, clip, into01);
     const look = lookOf(clip.look);
     if (look) Render.applyAdjust(x, W, H, look.adjust);
@@ -368,6 +399,7 @@ window.VlogEngine = (function () {
       window.Effects.draw(x, { fx: { ...FX_BASE, seed: 3, ...(clip.fxs || {}), id: clip.fx } }, W, H);
       window.Effects.clock = null;
     }
+    paintScan(x, clip, t, W, H);
     return c;
   }
 
@@ -503,7 +535,7 @@ window.VlogEngine = (function () {
       if (l && l.adjust.lut) Render.loadLut(l.adjust.lut).then(changed);
       /* у карточки свой цвет, тоже может быть по таблице; и украшения коллажей грузятся картинками */
       if (c.card && c.card.adjust && c.card.adjust.lut) Render.loadLut(c.card.adjust.lut).then(changed);
-      if (c.card && c.card.collage && window.Collages) window.Collages.ready.then(changed);
+      if (((c.card && c.card.collage) || (c.layout && c.layout.collage)) && window.Collages) window.Collages.ready.then(changed);
     });
   }
 
@@ -702,7 +734,7 @@ window.VlogEngine = (function () {
     await Promise.all(p.clips.filter((cl) => cl.kind === 'image').map((cl) => image(cl.media)));
     await Promise.all(p.clips.map((cl) => lookOf(cl.look)).filter((l) => l && l.adjust.lut).map((l) => Render.loadLut(l.adjust.lut)));
     await Promise.all(p.clips.filter((cl) => cl.card && cl.card.adjust && cl.card.adjust.lut).map((cl) => Render.loadLut(cl.card.adjust.lut)));
-    if (p.clips.some((cl) => cl.card && cl.card.collage) && window.Collages) await window.Collages.ready;
+    if (p.clips.some((cl) => (cl.card && cl.card.collage) || (cl.layout && cl.layout.collage)) && window.Collages) await window.Collages.ready;
     await musicBuffer(p).catch(() => null);
     await Promise.all((p.overlays || []).filter((o) => o.layer.img).map((o) => image(o.layer.img).then((img) => { if (img) stickers[o.layer.img] = img; })));
     if (document.fonts && document.fonts.ready) await document.fonts.ready;
