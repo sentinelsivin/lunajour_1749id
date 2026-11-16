@@ -4438,8 +4438,9 @@
     });
   }
 
-  function showStickerPack(grid, set, name) {
-    const load = stickerPackLoad;
+  /* Кнопки набора стикеров в grid. pick(id, makeBlob) решает, куда положить стикер: makeBlob вырезает его
+     с листа в полном размере. Набором пользуются и карточка, и влог. Возвращает обещание: true, если что-то не загрузилось. */
+  function fillStickerPack(grid, set, name, pick) {
     let number = 0;
     const previews = [];
     for (const [category, file, tolerance, boxes, screen] of window.StickerPacks) {
@@ -4469,19 +4470,15 @@
         });
         previews.push(preview);
         preview.catch((error) => { button.remove(); console.warn('sticker pack preview', file, error); });
+        const makeBlob = async () => {
+          await loaded;
+          const crop = packCutout(image, rect, tolerance, 640, openings, disc);
+          return new Promise((resolve) => crop.toBlob(resolve));
+        };
         button.onclick = async () => {
           button.disabled = true;
-          const target = state;
           try {
-            if (!assets.stickers[id]) {
-              await loaded;
-              const crop = packCutout(image, rect, tolerance, 640, openings, disc);
-              const blob = await new Promise((resolve) => crop.toBlob(resolve));
-              const { el } = await imageSrc(blob);
-              assets.stickers[id] = el;
-              assets.stickerBlobs[id] = blob;
-            }
-            if (state === target) addLayer({ type: 'sticker', img: id, size: 0.4 });
+            await pick(id, makeBlob, button.title);
           } catch {
             toast(t('Эта картинка не открывается.'));
           } finally {
@@ -4490,16 +4487,31 @@
         };
       });
     }
+    return Promise.allSettled(previews).then((results) => results.some((result) => result.status === 'rejected') || !grid.querySelector('button:not([hidden])'));
+  }
+
+  function showStickerPack(grid, set, name) {
+    const load = stickerPackLoad;
     const status = $('stickerPackStatus');
     status.hidden = false;
     status.textContent = t('Загружаю стикеры…');
-    Promise.allSettled(previews).then((results) => {
+    fillStickerPack(grid, set, name, async (id, makeBlob) => {
+      const target = state;
+      if (!assets.stickers[id]) {
+        const blob = await makeBlob();
+        const { el } = await imageSrc(blob);
+        assets.stickers[id] = el;
+        assets.stickerBlobs[id] = blob;
+      }
+      if (state === target) addLayer({ type: 'sticker', img: id, size: 0.4 });
+    }).then((failed) => {
       if (stickerPackLoad !== load) return;
-      const failed = results.some((result) => result.status === 'rejected') || !grid.querySelector('button:not([hidden])');
       status.hidden = !failed;
       if (failed) status.textContent = t('Часть стикеров не загрузилась. Открой вкладку ещё раз.');
     });
   }
+  /* наборы стикеров для влога: те же листы и вырезка, что в карточке */
+  window.StickerLib = { PACK_TABS, fill: fillStickerPack };
 
   function syncStickers() {
     stickerPackLoad++;

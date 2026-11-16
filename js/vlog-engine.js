@@ -364,7 +364,8 @@ window.VlogEngine = (function () {
     if (look) Render.applyAdjust(x, W, H, look.adjust);
     if (clip.fx && window.Effects) {
       window.Effects.clock = t / 1000;
-      window.Effects.draw(x, { fx: { ...FX_BASE, id: clip.fx, seed: 3 } }, W, H);
+      /* вид, сила, цвет и слова эффекта: как в карточке (clip.fxs), пустое — «как в эффекте» */
+      window.Effects.draw(x, { fx: { ...FX_BASE, seed: 3, ...(clip.fxs || {}), id: clip.fx } }, W, H);
       window.Effects.clock = null;
     }
     return c;
