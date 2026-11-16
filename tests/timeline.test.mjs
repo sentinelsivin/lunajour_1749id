@@ -107,3 +107,9 @@ test('ненужные файлы: картинка своей фигуры кл
   p.clips[0].shape = { motif: 'own-mask', mask: 'mask1' };
   assert.deepEqual([...Timeline.unused(p)], ['junk']);
 });
+
+test('новое фото добавляется без движения, у видео поля движения нет', () => {
+  const p = project(['image', 3000], ['video', 2000, 5000]);
+  assert.equal(p.clips[0].move, 'none');
+  assert.equal(p.clips[1].move, undefined);
+});

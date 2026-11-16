@@ -25,7 +25,11 @@ window.Timeline = (function () {
   /* клип ссылается на файл и вырезает из него кусок [in, out] */
   function newClip(m) {
     const out = m.kind === 'image' ? IMAGE_MS : Math.max(MIN_MS, Math.round(m.dur || IMAGE_MS));
-    return { id: uid(), media: m.id, kind: m.kind, in: 0, out, speed: 1, vol: 100, look: '', fx: '' };
+    const c = { id: uid(), media: m.id, kind: m.kind, in: 0, out, speed: 1, vol: 100, look: '', fx: '' };
+    /* новое фото стоит на месте; наезд и проезды включаются в «Кадр → Движение фото».
+       У фото из старых влогов поля нет, у них остаётся прежний наезд (moveOf в движке) */
+    if (m.kind === 'image') c.move = 'none';
+    return c;
   }
 
   const len = (c) => (c.out - c.in) / (c.speed || 1);
