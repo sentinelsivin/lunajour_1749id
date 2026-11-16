@@ -837,6 +837,7 @@ window.Vlog = (function () {
   }
 
   function select(i) {
+    if (i !== sel) pieceSel = -1;
     sel = i;
     if (i >= 0) { ov = ''; join = -1; }
     if (OV_SHEETS.includes(sheet) || sheet === 'trans') sheet = '';
@@ -902,6 +903,22 @@ window.Vlog = (function () {
 
   function positionBox() {
     const boxEl = $('vlogBox');
+    if (piecesOn() && !Engine.playing) {
+      const q = clip().shape.pieces[pieceSel];
+      if (!q) { boxEl.hidden = true; return; }
+      const cv = canvasEl();
+      const cr = cv.getBoundingClientRect();
+      const sr = $('vlogStage').getBoundingClientRect();
+      const k = cr.width / cv.width;
+      const b = pieceBox(q);
+      boxEl.hidden = false;
+      boxEl.style.left = `${cr.left - sr.left + b.cx * k}px`;
+      boxEl.style.top = `${cr.top - sr.top + b.cy * k}px`;
+      boxEl.style.width = `${b.w * k + 12}px`;
+      boxEl.style.height = `${b.h * k + 12}px`;
+      boxEl.style.transform = `translate(-50%, -50%) rotate(${b.rot}rad)`;
+      return;
+    }
     const o = layerOv();
     const now = peek ?? at;
     if (!o || Engine.playing || now < o.start || now >= o.end || !p.clips.length) { boxEl.hidden = true; return; }
@@ -963,6 +980,25 @@ window.Vlog = (function () {
       pts.set(e.pointerId, pt);
       try { stage.setPointerCapture(e.pointerId); } catch { /* палец уже отпущен */ }
       if (pts.size === 2) { startPinch(); return; }
+      if (piecesOn() && !Engine.playing) {
+        const c = clip();
+        showSel();
+        if (e.target.id === 'vlogBoxH' && c.shape.pieces[pieceSel]) {
+          const b = pieceBox(c.shape.pieces[pieceSel]);
+          const center = { x: b.cx, y: b.cy };
+          g = { kind: 'pieceTurn', i: pieceSel, center, d0: dist(center, pt), a0: angle(center, pt), size: c.shape.pieces[pieceSel].size, rot: c.shape.pieces[pieceSel].rot || 0 };
+          e.preventDefault();
+          return;
+        }
+        const i = hitPiece(c, pt);
+        if (i >= 0) {
+          if (i !== pieceSel) { pieceSel = i; syncSheet(); }
+          const q = c.shape.pieces[i];
+          g = { kind: 'piece', i, pt, x: q.x, y: q.y };
+          e.preventDefault();
+          return;
+        }
+      }
       if (e.target.id === 'vlogBoxH') {
         const o = layerOv();
         const b = boxOf(o);
@@ -993,6 +1029,29 @@ window.Vlog = (function () {
       const c = canvasEl();
       if (g.kind === 'tap') return;
       if (g.kind === 'pan' || g.kind === 'zoom') { frameMove(pt); return; }
+      if (g.kind === 'piece' || g.kind === 'pieceTurn') {
+        const cl = clip();
+        if (!cl || !cl.shape || !cl.shape.pieces) return;
+        if (g.kind === 'piece' && !g.pushed && dist(pt, g.pt) < 3) return;
+        if (!g.pushed) { hist.push(p); g.pushed = true; }
+        if (g.kind === 'piece') {
+          setPieces(cl, (list) => {
+            list[g.i].x = Math.max(0, Math.min(1, g.x + (pt.x - g.pt.x) / c.width));
+            list[g.i].y = Math.max(0, Math.min(1, g.y + (pt.y - g.pt.y) / c.height));
+            return list;
+          });
+        } else {
+          setPieces(cl, (list) => {
+            list[g.i].size = Math.max(0.04, Math.min(1.2, g.size * (dist(g.center, pt) / Math.max(4, g.d0))));
+            let rot = g.rot + angle(g.center, pt) - g.a0;
+            if (Math.abs(rot) < 0.05) rot = 0;
+            list[g.i].rot = rot;
+            return list;
+          });
+        }
+        positionBox();
+        return;
+      }
       if (!o) return;
       if (g.kind === 'move' && !g.pushed && dist(pt, g.pt) < 4) return;
       if (!g.pushed) { hist.push(p); g.pushed = true; }
@@ -2538,7 +2597,7 @@ window.Vlog = (function () {
         const x = src.getContext('2d');
         x.fillStyle = '#fff';
         try {
-          m.draw(x, 112, 140, M.makeRng(7), { size: 1, density: 1, text: '', font: M.WORD_FONTS[0].id, pieces: [], orbit: { x: 0.5, y: 0.46, size: 1, rot: -24 } });
+          m.draw(x, 112, 140, M.makeRng(7), { size: 1, density: 1, text: '', font: M.WORD_FONTS[0].id, pieces: M.DEMO_PIECES, orbit: { x: 0.5, y: 0.46, size: 1, rot: -24 } });
         } catch { /* фигуре нужны свои данные: превью остаётся пустым */ }
         shapeThumbs.set(m.id, src);
       }
@@ -2549,11 +2608,59 @@ window.Vlog = (function () {
     else setTimeout(draw, 0);
     return out;
   }
+  /* ---------- своя раскладка: фигурки по местам на кадре ----------
+     shape.pieces: [{ shape, x, y, size, rot }], x и y — доли кадра, size — доля короткой стороны.
+     Фигурки тянутся по просмотру, уголок рамки меняет размер и поворот выбранной. */
+  let pieceSel = -1;
+  const piecesOn = () => { const c = clip(); return !!(c && c.shape && c.shape.motif === 'hand-place' && sheet === 'shape' && Array.isArray(c.shape.pieces)); };
+  function setPieces(c, fn) {
+    c.shape = { ...c.shape, pieces: fn(c.shape.pieces.map((q) => ({ ...q }))) };
+    dirty = true;
+  }
+  function pieceBox(q) {
+    const cv = canvasEl();
+    const m = Math.min(cv.width, cv.height);
+    return { cx: q.x * cv.width, cy: q.y * cv.height, w: q.size * m, h: q.size * m, rot: q.rot || 0 };
+  }
+  function hitPiece(c, pt) {
+    const list = c.shape.pieces;
+    for (let i = list.length - 1; i >= 0; i--) {
+      const b = pieceBox(list[i]);
+      if (Math.hypot(pt.x - b.cx, pt.y - b.cy) <= b.w * 0.55 + canvasEl().width * 0.02) return i;
+    }
+    return -1;
+  }
+  function sheetPieces(body, c) {
+    const M = window.Motifs;
+    const add = el('div', 'chips');
+    Object.entries(M.SYMBOLS).forEach(([id, sym]) => {
+      const b = el('button', '', `+ ${t(sym.name)}`);
+      b.type = 'button';
+      b.onclick = () => {
+        commit(() => setPieces(c, (list) => [...list, { shape: id, x: 0.5, y: 0.5, size: 0.3, rot: 0 }]));
+        pieceSel = c.shape.pieces.length - 1;
+        syncSheet();
+      };
+      add.append(b);
+    });
+    body.append(group('Добавить фигурку', add));
+    const q = c.shape.pieces[pieceSel];
+    if (q) {
+      body.append(slider('Размер фигурки', 5, 90, 1, Math.round(q.size * 100), (v) => `${v}%`, (v) => setPieces(c, (list) => { list[pieceSel].size = v / 100; return list; })));
+      body.append(slider('Поворот', -180, 180, 1, Math.round(((q.rot || 0) * 180) / Math.PI), (v) => `${v}°`, (v) => setPieces(c, (list) => { list[pieceSel].rot = (v * Math.PI) / 180; return list; })));
+      const del = el('button', 'btn small', t('Удалить фигурку'));
+      del.type = 'button';
+      del.onclick = () => { commit(() => setPieces(c, (list) => list.filter((_, k) => k !== pieceSel))); pieceSel = -1; syncSheet(); };
+      body.append(del);
+    }
+    body.append(el('p', 'hint', t('Тяни фигурки прямо на кадре. Нажми на фигурку, чтобы выбрать её: уголок рамки меняет размер и поворот.')));
+  }
+
   function sheetShape(body, c) {
     const M = window.Motifs;
     if (!M) return;
     /* «Своя раскладка» расставляется руками на карточке, во влоге её нет; «Своя фигура» — по своей картинке */
-    const ok = (m) => m.cat !== 'none' && !m.usesPieces;
+    const ok = (m) => m.cat !== 'none';
     const cats = M.CATEGORIES.filter((k) => k.id === 'all' || M.MOTIFS.some((m) => ok(m) && m.cat === k.id));
     if (!cats.some((k) => k.id === shapeCat)) shapeCat = 'all';
     body.append(chips(cats.map((k) => [k.id, t(k.name)]), shapeCat, (v) => { shapeCat = v; syncSheet(); }));
@@ -2567,6 +2674,9 @@ window.Vlog = (function () {
       b.onclick = () => commit(() => {
         if (!id) { delete c.shape; return; }
         c.shape = { size: 1, density: 1, seed: 7, paper: 'crumple', paperColor: (window.PaperColors || ['#f0ede5'])[0], ...(c.shape || {}), motif: id };
+        /* своя раскладка начинается с пяти фигурок, дальше их тянут на кадре */
+        if (id === 'hand-place' && !(c.shape.pieces && c.shape.pieces.length)) c.shape.pieces = JSON.parse(JSON.stringify(M.DEMO_PIECES));
+        pieceSel = -1;
       });
       grid.append(b);
     };
@@ -2585,10 +2695,11 @@ window.Vlog = (function () {
     }
     body.append(grid);
     if (shapeCat === 'mine') body.append(el('p', 'hint', t('Своя фигура: PNG с прозрачным фоном режется по контуру, обычная картинка — по тёмному. Чёрный силуэт на белом подходит лучше всего.')));
+    if (cur === 'hand-place') sheetPieces(body, c);
     if (cur) {
       const sh = c.shape;
-      body.append(slider('Размер', 40, 180, 5, Math.round((sh.size ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, size: v / 100 }; }));
-      body.append(slider('Плотность', 30, 200, 5, Math.round((sh.density ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, density: v / 100 }; }));
+      if (cur !== 'hand-place') body.append(slider('Размер', 40, 180, 5, Math.round((sh.size ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, size: v / 100 }; }));
+      if (cur !== 'hand-place') body.append(slider('Плотность', 30, 200, 5, Math.round((sh.density ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, density: v / 100 }; }));
       const papers = el('div', 'vlog-swatches');
       (window.PaperColors || COLORS).forEach((col) => {
         const b = el('button', col === sh.paperColor ? 'on' : '');
