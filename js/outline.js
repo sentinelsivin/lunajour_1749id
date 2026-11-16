@@ -26,7 +26,14 @@ window.Outline = (function () {
         const { ImageSegmenter } = await import(`${BASE}vision_bundle.mjs`);
         return ImageSegmenter.createFromOptions(
           { wasmLoaderPath: `${BASE}wasm/vision_wasm_internal.js`, wasmBinaryPath: `${BASE}wasm/vision_wasm_internal.wasm` },
-          { baseOptions: { modelAssetPath: `${BASE}selfie_segmenter.tflite`, delegate: 'CPU' }, runningMode: 'IMAGE', outputConfidenceMasks: true, outputCategoryMask: false },
+          {
+            // Некоторые WebView предоставляют OffscreenCanvas, но не WebGL на нём.
+            canvas: document.createElement('canvas'),
+            baseOptions: { modelAssetPath: `${BASE}selfie_segmenter.tflite`, delegate: 'CPU' },
+            runningMode: 'IMAGE',
+            outputConfidenceMasks: true,
+            outputCategoryMask: false,
+          },
         );
       })().catch((err) => { ready = null; throw err; });
     }
@@ -37,14 +44,17 @@ window.Outline = (function () {
   async function mask(canvas) {
     const seg = await load();
     const res = seg.segment(canvas);
-    const m = res.confidenceMasks[0];
-    const w = m.width;
-    const h = m.height;
-    const f = m.getAsFloat32Array();
-    const bin = new Uint8Array(w * h);
-    for (let i = 0; i < f.length; i++) bin[i] = f[i] > 0.5 ? 1 : 0;
-    res.close();
-    return { bin, w, h };
+    try {
+      const m = res.confidenceMasks?.[0];
+      if (!m) return null;
+      const { width: w, height: h } = m;
+      const f = m.getAsFloat32Array();
+      const bin = new Uint8Array(w * h);
+      for (let i = 0; i < f.length; i++) bin[i] = f[i] > 0.5 ? 1 : 0;
+      return { bin, w, h };
+    } finally {
+      res.close();
+    }
   }
 
   /* остаётся только самое большое пятно: случайные кусочки фона не обводим */
@@ -199,7 +209,9 @@ window.Outline = (function () {
      Где человек уходит за край кадра, линия обрывается, как на рисунках от руки: возвращается незамкнутая линия.
      null — человека не нашли. */
   async function find(canvas, offset) {
-    const { bin: raw, w, h } = await mask(canvas);
+    const result = await mask(canvas);
+    if (!result) return null;
+    const { bin: raw, w, h } = result;
     const { bin, area } = largest(raw, w, h);
     if (area < w * h * 0.01) return null;
     const grown = dilate(bin, w, h, offset);

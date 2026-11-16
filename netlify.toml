@@ -14,3 +14,13 @@
   for = "/js/vendor/*.mjs"
   [headers.values]
     Content-Type = "text/javascript; charset=utf-8"
+
+[[headers]]
+  for = "/js/vendor/mediapipe/vision_bundle.mjs"
+  [headers.values]
+    Content-Type = "text/javascript; charset=utf-8"
+
+[[headers]]
+  for = "/js/vendor/mediapipe/wasm/vision_wasm_internal.wasm"
+  [headers.values]
+    Content-Type = "application/wasm"

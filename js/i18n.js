@@ -1348,7 +1348,7 @@ window.I18n = (function () {
     'Загружаю распознавание: один раз, около 15 МБ…': 'Loading recognition: once, about 15 MB…',
     'Человека на фото не нашла. Лучше всего выходит, когда человек виден целиком или по пояс.': 'No person found in the photo. It works best when the person is visible in full or from the waist up.',
     'Обвела. Линию можно сдвинуть во вкладке «Стикеры и надписи» или стереть ластиком.': 'Outlined. Move the line in “Stickers and captions” or erase it with the eraser.',
-    'Распознавание не запустилось в этом браузере. Попробуй Chrome или Safari поновее.': 'Recognition didn’t start in this browser. Try a newer Chrome or Safari.',
+    'Не удалось запустить автообводку. Проверь подключение и попробуй ещё раз. Если сайт открыт внутри приложения, открой его в Chrome.': 'Couldn’t start auto-outline. Check your connection and try again. If the site is open inside an app, open it in Chrome.',
     'Дымка': 'Haze',
     'Без стрелки': 'No arrow',
     'Со стрелкой': 'With arrow',
