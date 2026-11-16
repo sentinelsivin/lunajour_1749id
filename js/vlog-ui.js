@@ -248,12 +248,8 @@ window.Vlog = (function () {
   const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
   /* время рядом со стыком клипов (в пределах near мс) становится самим стыком */
   function snapMs(ms, near) {
-    let best = ms;
-    let d = near;
-    Timeline.starts(p).forEach((s) => {
-      if (Math.abs(s - ms) < d) { d = Math.abs(s - ms); best = s; }
-    });
-    return best;
+    const s = Timeline.nearest(Timeline.starts(p), ms, near);
+    return s == null ? ms : s;
   }
 
   /* отметки начала клипов на полоске перемотки */
@@ -340,10 +336,7 @@ window.Vlog = (function () {
   }
   /* ближайший такт к ms не дальше near мс, или null */
   function nearBeat(ms, near) {
-    let best = null;
-    let d = near;
-    beatsNow().forEach((b) => { if (Math.abs(b - ms) < d) { d = Math.abs(b - ms); best = b; } });
-    return best;
+    return Timeline.nearest(beatsNow(), ms, near);
   }
   function drawWave() {
     const key = musicKey();
@@ -395,25 +388,7 @@ window.Vlog = (function () {
     if (!beats.length) return;
     pauseNow();
     let moved = 0;
-    commit(() => {
-      p.clips.forEach((c, i) => {
-        const start = Timeline.starts(p)[i];
-        const end = start + Timeline.len(c);
-        const m = p.media[c.media];
-        const maxLen = c.kind === 'image' ? 60000 : (((m && m.dur) || c.out) - c.in) / (c.speed || 1);
-        let best = null;
-        beats.forEach((b) => {
-          const L = b - start;
-          if (L < Timeline.MIN_MS || L > maxLen) return;
-          if (best == null || Math.abs(b - end) < Math.abs(best - end)) best = b;
-        });
-        if (best == null || Math.abs(best - end) < 1) return;
-        const L = best - start;
-        if (c.kind === 'image') Timeline.trim(p, i, 'out', L);
-        else Timeline.trim(p, i, 'out', c.in + L * (c.speed || 1));
-        moved++;
-      });
-    });
+    commit(() => { moved = Timeline.fitToBeats(p, beats); });
     toast(moved ? `${t('Стыки встали на такт')}: ${moved}.` : t('Стыки уже стоят на такте.'));
   }
 

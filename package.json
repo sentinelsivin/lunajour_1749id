@@ -1,0 +1,10 @@
+{
+  "name": "lunajour",
+  "private": true,
+  "description": "Lunajour: карточки и влог в браузере. Зависимостей нет, тесты на встроенном node --test.",
+  "scripts": {
+    "test": "node --test tests/",
+    "build": "node build.mjs",
+    "start": "node serve.mjs"
+  }
+}

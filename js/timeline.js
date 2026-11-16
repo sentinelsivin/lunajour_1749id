@@ -163,6 +163,37 @@ window.Timeline = (function () {
     return { rows: rows.length, of: out };
   }
 
+  /* ближайшее к ms значение из list не дальше near, или null */
+  function nearest(list, ms, near) {
+    let best = null;
+    let d = near;
+    list.forEach((v) => { if (Math.abs(v - ms) < d) { d = Math.abs(v - ms); best = v; } });
+    return best;
+  }
+  /* Стыки под такт: конец каждого клипа встаёт на ближайший такт (мс ролика), до которого клип достаёт по длине.
+     Фото тянется до 60 с, видео не длиннее своего файла. Возвращает, сколько клипов поменялось. */
+  function fitToBeats(p, beats) {
+    let moved = 0;
+    p.clips.forEach((c, i) => {
+      const start = starts(p)[i];
+      const end = start + len(c);
+      const m = p.media[c.media];
+      const maxLen = c.kind === 'image' ? 60000 : (((m && m.dur) || c.out) - c.in) / (c.speed || 1);
+      let best = null;
+      beats.forEach((b) => {
+        const L = b - start;
+        if (L < MIN_MS || L > maxLen) return;
+        if (best == null || Math.abs(b - end) < Math.abs(best - end)) best = b;
+      });
+      if (best == null || Math.abs(best - end) < 1) return;
+      const L = best - start;
+      if (c.kind === 'image') trim(p, i, 'out', L);
+      else trim(p, i, 'out', c.in + L * (c.speed || 1));
+      moved++;
+    });
+    return moved;
+  }
+
   /* файлы, на которые больше не ссылается ни один клип, стикер и не музыка */
   function unused(p) {
     const used = new Set(p.clips.map((c) => c.media));
@@ -198,7 +229,7 @@ window.Timeline = (function () {
   }
 
   return {
-    MIN_MS, IMAGE_MS, TR_MS, uid, newProject, newClip, len, duration, starts, at, add, canSplit, split, trim, move, remove, dup, unused, history,
+    MIN_MS, IMAGE_MS, TR_MS, uid, newProject, newClip, len, duration, starts, at, add, canSplit, split, trim, move, remove, dup, unused, history, nearest, fitToBeats,
     trDur, transitionAt, addOverlay, fitOverlays, overlayRows,
   };
 })();
