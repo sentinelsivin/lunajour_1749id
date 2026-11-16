@@ -12,10 +12,11 @@
     } catch { /* без звука тоже работает */ }
   }
 
+  /* bpm: темп мелодии, по нему влог ставит засечки тактов и подгоняет стыки */
   const TRACKS = [
-    { id: 'lofi', name: 'Лоу-фай' },
-    { id: 'dream', name: 'Мечта' },
-    { id: 'neon', name: 'Неон' },
+    { id: 'lofi', name: 'Лоу-фай', bpm: 78 },
+    { id: 'dream', name: 'Мечта', bpm: 70 },
+    { id: 'neon', name: 'Неон', bpm: 108 },
   ];
   const cache = new Map();
   let file = null;
@@ -27,11 +28,7 @@
      переносится в начало, чтобы при повторе не было щелчка и обрыва. */
   async function synth(id) {
     const sr = 44100;
-    const spec = {
-      lofi: { bpm: 78, bars: 4 },
-      dream: { bpm: 70, bars: 4 },
-      neon: { bpm: 108, bars: 4 },
-    }[id];
+    const spec = { bpm: TRACKS.find((x) => x.id === id).bpm, bars: 4 };
     const beat = 60 / spec.bpm;
     const loop = spec.bars * 4 * beat;
     const tail = 3;

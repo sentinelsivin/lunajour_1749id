@@ -4511,11 +4511,17 @@
     });
   }
   /* наборы стикеров для влога: те же листы и вырезка, что в карточке */
-  window.StickerLib = { PACK_TABS, fill: fillStickerPack };
+  /* недавние стикеры общие с влогом: эмодзи (e:) и значки с дудлами (v:) */
+  window.StickerLib = {
+    PACK_TABS, fill: fillStickerPack, vecDef,
+    recent: () => recentOf('sticker').filter((k) => k.startsWith('e:') || !!vecDef(k.slice(2))),
+    remember: (key) => remember('sticker', key),
+  };
   /* пустая карточка редактора: влог кладёт в неё клип, когда у клипа есть фигура */
   window.CardDefaults = defaults;
   window.PaperColors = PAPER_COLORS;
   window.CollageThumb = collageThumb;
+  window.TintColors = TINT_COLORS;
 
   function syncStickers() {
     stickerPackLoad++;

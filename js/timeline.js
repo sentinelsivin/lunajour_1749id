@@ -136,7 +136,9 @@ window.Timeline = (function () {
   function addOverlay(p, layer, t) {
     const total = duration(p);
     const start = Math.max(0, Math.min(t, total - MIN_MS));
-    const o = { id: uid(), start: Math.round(start), end: Math.round(Math.min(total, start + OV_MS)), anim: 'pop', fadeOut: true, layer };
+    /* у эффекта на время нет появления и затухания: он просто идёт от начала до конца полоски */
+    const fx = layer.type === 'effect';
+    const o = { id: uid(), start: Math.round(start), end: Math.round(Math.min(total, start + OV_MS)), anim: fx ? '' : 'pop', fadeOut: !fx, layer };
     p.overlays.push(o);
     return o;
   }

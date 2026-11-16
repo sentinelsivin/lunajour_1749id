@@ -34,6 +34,9 @@ window.Vlog = (function () {
   const total = () => Timeline.duration(p);
   const clip = () => p.clips[sel] || null;
   const overlay = () => (ov && p.overlays.find((o) => o.id === ov)) || null;
+  /* эффект на время — тоже полоска на ленте, но на кадре его нельзя тянуть: для просмотра нужны только надписи и стикеры */
+  const isFxOv = (o) => !!(o && o.layer.type === 'effect');
+  const layerOv = () => { const o = overlay(); return isFxOv(o) ? null : o; };
   const desktop = () => window.matchMedia('(min-width: 900px)').matches;
 
   function fmt(ms) {
@@ -233,14 +236,42 @@ window.Vlog = (function () {
     const name = musicName();
     lane.style.width = `${Math.max(120, (total() * pps) / 1000)}px`;
     lane.classList.toggle('empty', !name);
-    lane.textContent = name ? `♪ ${name}` : `+ ${t('Добавить музыку')}`;
+    lane.textContent = '';
+    if (name) lane.append(el('canvas', 'vlog-wave'));
+    lane.append(el('span', 'vlog-music-name', name ? `♪ ${name}` : `+ ${t('Добавить музыку')}`));
     lane.hidden = !p.clips.length;
+    drawWave();
     $('vlogTl').style.setProperty('--head-h', `${$('vlogTrack').offsetHeight - 8}px`);
   }
 
   /* линейка времени: подписи не теснее ~56 px, между ними мелкие засечки */
   const RULER_STEPS = [0.5, 1, 2, 5, 10, 15, 30, 60, 120, 300];
+  /* время рядом со стыком клипов (в пределах near мс) становится самим стыком */
+  function snapMs(ms, near) {
+    let best = ms;
+    let d = near;
+    Timeline.starts(p).forEach((s) => {
+      if (Math.abs(s - ms) < d) { d = Math.abs(s - ms); best = s; }
+    });
+    return best;
+  }
+
+  /* отметки начала клипов на полоске перемотки */
+  function renderScrubMarks() {
+    const bar = $('vlogScrub');
+    bar.querySelectorAll('s').forEach((m) => m.remove());
+    const T = total();
+    if (!T) return;
+    Timeline.starts(p).forEach((s, i) => {
+      if (!i) return;
+      const m = document.createElement('s');
+      m.style.left = `${((s / T) * 100).toFixed(2)}%`;
+      bar.insertBefore(m, bar.firstChild);
+    });
+  }
+
   function renderRuler() {
+    renderScrubMarks();
     const r = $('vlogRuler');
     r.textContent = '';
     r.hidden = !p.clips.length;
@@ -261,6 +292,14 @@ window.Vlog = (function () {
   function ovLabel(o) {
     const l = o.layer;
     if (l.type === 'text') return `T  ${String(l.text || '').replace(/\s+/g, ' ').slice(0, 24)}`;
+    if (l.type === 'effect') {
+      const E = window.Effects;
+      const S = window.Scanner;
+      const fx = l.fx && E && E.byId(l.fx);
+      const sc = l.scan && l.scan.on && S && (scanPresets.find((x) => x.id === l.scan.preset) || S.presetById(l.scan.preset));
+      const names = [fx && t(fx.name), sc && (sc.mine ? sc.name : t(sc.name))].filter(Boolean);
+      return `✦ ${names.join(' + ') || t('Эффект')}`;
+    }
     if (l.emoji) return l.emoji;
     return '★';
   }
@@ -272,7 +311,7 @@ window.Vlog = (function () {
     box.hidden = !p.overlays.length;
     p.overlays.forEach((o) => {
       const el = document.createElement('div');
-      el.className = `vlog-ov${o.id === ov ? ' sel' : ''}${o.layer.type === 'text' ? ' text' : ''}`;
+      el.className = `vlog-ov${o.id === ov ? ' sel' : ''}${o.layer.type === 'text' ? ' text' : ''}${o.layer.type === 'effect' ? ' fx' : ''}`;
       el.dataset.id = o.id;
       el.style.left = `${(o.start * pps) / 1000}px`;
       el.style.width = `${Math.max(6, ((o.end - o.start) * pps) / 1000)}px`;
@@ -290,6 +329,92 @@ window.Vlog = (function () {
       }
       box.append(el);
     });
+  }
+
+  /* ---------- волна и такты на дорожке музыки ---------- */
+  let wave = null;
+  let waveKey = '';
+  const musicKey = () => (p.music.fileId ? `f:${p.music.fileId}` : p.music.track ? `t:${p.music.track}` : '');
+  function beatsNow() {
+    return wave && wave.key === musicKey() ? Engine.beatTimes(wave, p) : [];
+  }
+  /* ближайший такт к ms не дальше near мс, или null */
+  function nearBeat(ms, near) {
+    let best = null;
+    let d = near;
+    beatsNow().forEach((b) => { if (Math.abs(b - ms) < d) { d = Math.abs(b - ms); best = b; } });
+    return best;
+  }
+  function drawWave() {
+    const key = musicKey();
+    if (key !== waveKey) {
+      waveKey = key;
+      wave = null;
+      if (key) Engine.musicInfo(p).then((w) => { if (w && w.key === waveKey) { wave = w; drawWave(); } });
+    }
+    const cv = $('vlogMusicLane').querySelector('canvas');
+    if (!cv) return;
+    const lane = $('vlogMusicLane');
+    const W = Math.max(1, Math.round(lane.offsetWidth));
+    const H = 26;
+    /* очень длинная лента: холст не шире 8000 px, дальше растягивается */
+    const cw = Math.min(W, 8000);
+    cv.width = cw;
+    cv.height = H * 2;
+    const x = cv.getContext('2d');
+    x.clearRect(0, 0, cw, H * 2);
+    if (!wave || wave.key !== key) return;
+    const T = total();
+    const rate = Engine.WAVE_RATE;
+    const s0 = wave.loop ? 0 : Number(p.music.start) || 0;
+    const n = wave.peaks.length;
+    x.fillStyle = 'rgba(255, 255, 255, .38)';
+    for (let px = 0; px < cw; px++) {
+      const a = ((px / cw) * T) / 1000 + s0;
+      const b = (((px + 1) / cw) * T) / 1000 + s0;
+      let v = 0;
+      for (let k = Math.floor(a * rate); k <= Math.floor(b * rate); k++) {
+        const i = wave.loop ? ((k % n) + n) % n : k;
+        if (i >= 0 && i < n && wave.peaks[i] > v) v = wave.peaks[i];
+      }
+      const h = Math.max(1, v * (H * 2 - 6));
+      x.fillRect(px, H - h / 2, 1, h);
+    }
+    /* засечки тактов: каждая четвёртая (сильная доля) ярче */
+    const beats = Engine.beatTimes(wave, p);
+    beats.forEach((ms, i) => {
+      const px = Math.round((ms / Math.max(1, T)) * cw);
+      x.fillStyle = i % 4 === 0 ? 'rgba(255, 226, 122, .95)' : 'rgba(255, 226, 122, .45)';
+      x.fillRect(px, 0, i % 4 === 0 ? 2 : 1, i % 4 === 0 ? H * 2 : 10);
+    });
+  }
+
+  /* стыки клипов под такт: каждый стык встаёт на ближайший такт, который клип может достать по длине */
+  function fitToBeats() {
+    const beats = beatsNow();
+    if (!beats.length) return;
+    pauseNow();
+    let moved = 0;
+    commit(() => {
+      p.clips.forEach((c, i) => {
+        const start = Timeline.starts(p)[i];
+        const end = start + Timeline.len(c);
+        const m = p.media[c.media];
+        const maxLen = c.kind === 'image' ? 60000 : (((m && m.dur) || c.out) - c.in) / (c.speed || 1);
+        let best = null;
+        beats.forEach((b) => {
+          const L = b - start;
+          if (L < Timeline.MIN_MS || L > maxLen) return;
+          if (best == null || Math.abs(b - end) < Math.abs(best - end)) best = b;
+        });
+        if (best == null || Math.abs(best - end) < 1) return;
+        const L = best - start;
+        if (c.kind === 'image') Timeline.trim(p, i, 'out', L);
+        else Timeline.trim(p, i, 'out', c.in + L * (c.speed || 1));
+        moved++;
+      });
+    });
+    toast(moved ? `${t('Стыки встали на такт')}: ${moved}.` : t('Стыки уже стоят на такте.'));
   }
 
   function musicName() {
@@ -373,7 +498,7 @@ window.Vlog = (function () {
     function rulerSeek(e) {
       const r = $('vlogRuler').getBoundingClientRect();
       pauseNow();
-      seekTo(((e.clientX - r.left) * 1000) / pps);
+      seekTo(snapMs(((e.clientX - r.left) * 1000) / pps, (8 * 1000) / pps));
     }
 
     bindScrub();
@@ -395,7 +520,9 @@ window.Vlog = (function () {
     let wasPlaying = false;
     const toMs = (e) => {
       const r = bar.getBoundingClientRect();
-      return (Math.max(0, Math.min(1, (e.clientX - r.left) / Math.max(1, r.width)))) * total();
+      const w = Math.max(1, r.width);
+      /* у стыка линия прилипает: ~8 px полоски */
+      return snapMs((Math.max(0, Math.min(1, (e.clientX - r.left) / w))) * total(), (8 / w) * total());
     };
     bar.addEventListener('pointerdown', (e) => {
       if (e.button > 0 || !p.clips.length) return;
@@ -477,6 +604,15 @@ window.Vlog = (function () {
       if (c.kind === 'image') Timeline.trim(p, g.i, 'out', g.out + (g.edge === 'in' ? -ms : ms));
       else if (g.edge === 'in') Timeline.trim(p, g.i, 'in', g.in + ms);
       else Timeline.trim(p, g.i, 'out', g.out + ms);
+      /* стык после клипа прилипает к такту музыки (~8 px ленты) */
+      const end = Timeline.starts(p)[g.i] + Timeline.len(c);
+      const b = nearBeat(end, (8 * 1000) / pps);
+      if (b != null && b !== end) {
+        const d = (b - end) * c.speed;
+        if (c.kind === 'image') Timeline.trim(p, g.i, 'out', c.out + d);
+        else if (g.edge === 'in') Timeline.trim(p, g.i, 'in', c.in - d);
+        else Timeline.trim(p, g.i, 'out', c.out + d);
+      }
       /* в просмотре видно кадр на краю, который двигаешь */
       const start = Timeline.starts(p)[g.i];
       peek = g.edge === 'in' ? start : start + Timeline.len(c) - 1;
@@ -578,13 +714,16 @@ window.Vlog = (function () {
   }
 
   const CLIP_SHEETS = ['frame', 'card', 'layout', 'look', 'fx', 'scan', 'shape', 'speed', 'vol', 'dur'];
-  const OV_SHEETS = ['text', 'style', 'anim'];
+  const OV_SHEETS = ['text', 'style', 'anim', 'ovfx', 'ovscan'];
+  /* у эффекта на время свои шторки, у надписи и стикера свои */
+  const ovSheetOk = (o, s) => (isFxOv(o) ? ['ovfx', 'ovscan'] : ['text', 'style', 'anim']).includes(s);
   function selectOv(id, jump = true) {
     ov = id;
     sel = -1;
     join = -1;
     if (CLIP_SHEETS.includes(sheet) || sheet === 'trans' || (!id && OV_SHEETS.includes(sheet))) sheet = '';
     const o = overlay();
+    if (o && OV_SHEETS.includes(sheet) && !ovSheetOk(o, sheet)) sheet = isFxOv(o) ? 'ovfx' : '';
     if (o && jump && (at < o.start || at >= o.end)) at = o.start;
     syncAll();
   }
@@ -636,9 +775,9 @@ window.Vlog = (function () {
   }
   function hitOverlay(pt) {
     const now = peek ?? at;
-    const sel0 = overlay();
+    const sel0 = layerOv();
     if (sel0 && now >= sel0.start && now < sel0.end && inside(sel0, pt)) return sel0;
-    return Engine.visible(p, now).reverse().find((o) => inside(o, pt)) || null;
+    return Engine.visible(p, now).filter((o) => o.layer.type !== 'effect').reverse().find((o) => inside(o, pt)) || null;
   }
 
   /* ---------- кадр клипа на просмотре: тянуть — сдвиг, щипок или колесо — масштаб ---------- */
@@ -665,7 +804,7 @@ window.Vlog = (function () {
 
   function positionBox() {
     const boxEl = $('vlogBox');
-    const o = overlay();
+    const o = layerOv();
     const now = peek ?? at;
     if (!o || Engine.playing || now < o.start || now >= o.end || !p.clips.length) { boxEl.hidden = true; return; }
     const c = canvasEl();
@@ -688,7 +827,7 @@ window.Vlog = (function () {
     const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
     const angle = (a, b) => Math.atan2(b.y - a.y, b.x - a.x);
     const startPinch = () => {
-      const o = overlay();
+      const o = layerOv();
       const c = clip();
       if ((!o && !c) || pts.size < 2 || Engine.playing) return;
       const [a, b] = [...pts.values()];
@@ -720,7 +859,7 @@ window.Vlog = (function () {
       try { stage.setPointerCapture(e.pointerId); } catch { /* палец уже отпущен */ }
       if (pts.size === 2) { startPinch(); return; }
       if (e.target.id === 'vlogBoxH') {
-        const o = overlay();
+        const o = layerOv();
         const b = boxOf(o);
         const center = { x: b.cx, y: b.cy };
         g = { kind: 'turn', center, d0: dist(center, pt), a0: angle(center, pt), size: o.layer.size, rot: o.layer.rot || 0 };
@@ -744,7 +883,7 @@ window.Vlog = (function () {
       if (!pts.has(e.pointerId) || !g) return;
       const pt = canvasPoint(e);
       pts.set(e.pointerId, pt);
-      const o = overlay();
+      const o = layerOv();
       const c = canvasEl();
       if (g.kind === 'tap') return;
       if (g.kind === 'pan' || g.kind === 'zoom') { frameMove(pt); return; }
@@ -788,7 +927,7 @@ window.Vlog = (function () {
     stage.addEventListener('pointercancel', end);
     /* колесо мыши над выбранной надписью: размер, с Shift поворот */
     stage.addEventListener('wheel', (e) => {
-      const o = overlay();
+      const o = layerOv();
       const c = clip();
       /* колесо над выбранным клипом: масштаб кадра */
       if (!o && c && !Engine.playing) {
@@ -837,6 +976,9 @@ window.Vlog = (function () {
     newText: '<path d="M4 4h12M10 4v13"/>',
     text: '<path d="M4 4h12M10 4v13"/>',
     'g-dress': '<rect x="3.5" y="2.5" width="13" height="15" rx="1"/><rect x="6" y="5" width="8" height="7"/><path d="M6 14.5h5"/>',
+    newFx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
+    ovfx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
+    ovscan: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><rect x="7" y="7" width="6" height="6"/>',
     'g-fx': '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     stickers: '<path d="M16.5 11.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v10A1.5 1.5 0 0 0 5 16.5h6.5z"/><path d="M11.5 16.5v-3.5a1.5 1.5 0 0 1 1.5-1.5h3.5"/><circle cx="7.5" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/>',
     style: '<circle cx="10" cy="10" r="7"/><circle cx="7" cy="8" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="13" cy="11.5" r="1.2"/>',
@@ -863,6 +1005,11 @@ window.Vlog = (function () {
     const o = overlay();
     nav.classList.toggle('clip-mode', !!(c || o));
     $('vlogStage').classList.toggle('pan', !!c && !o);
+    if (isFxOv(o)) {
+      nav.append(toolBtn('back', 'Все клипы'), toolBtn('ovfx', 'Эффект', sheet === 'ovfx'), toolBtn('ovscan', 'Сканер', sheet === 'ovscan'), toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
+      requestAnimationFrame(fadeTools);
+      return;
+    }
     if (o) {
       nav.append(toolBtn('back', 'Все клипы'));
       if (o.layer.type === 'text') nav.append(toolBtn('text', 'Текст', sheet === 'text'));
@@ -872,7 +1019,7 @@ window.Vlog = (function () {
     }
     if (!c) {
       nav.append(
-        toolBtn('add', 'Добавить'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'),
+        toolBtn('add', 'Добавить'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'),
         toolBtn('trans', 'Переход', sheet === 'trans'), toolBtn('music', 'Музыка', sheet === 'music'), toolBtn('format', 'Формат', sheet === 'format'),
       );
       return;
@@ -892,6 +1039,36 @@ window.Vlog = (function () {
   const GROUP_NAMES = { 'g-dress': 'Оформление', 'g-fx': 'Эффекты' };
   const groupOf = (id) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(id)) || '';
 
+  /* Оформление клипа можно скопировать и вставить на другой клип: цвет, эффект, сканер, карточка, макет, фигура.
+     Кадр, обрезка, скорость и звук остаются у клипа свои. */
+  const STYLE_KEYS = ['look', 'fx', 'fxs', 'scan', 'card', 'cardId', 'layout', 'shape'];
+  let styleCopy = null;
+  function styleRow() {
+    const c = clip();
+    const row = el('div', 'row vlog-style-row');
+    const copy = el('button', 'btn small', t('Скопировать оформление'));
+    copy.type = 'button';
+    copy.onclick = () => {
+      styleCopy = JSON.parse(JSON.stringify(Object.fromEntries(STYLE_KEYS.map((k) => [k, c[k]]))));
+      toast(t('Оформление скопировано: выбери другой клип и нажми «Вставить».'));
+      syncSheet();
+    };
+    const paste = el('button', 'btn small', t('Вставить'));
+    paste.type = 'button';
+    paste.disabled = !styleCopy;
+    paste.onclick = () => {
+      if (!styleCopy) return;
+      const from = JSON.parse(JSON.stringify(styleCopy));
+      commit(() => STYLE_KEYS.forEach((k) => {
+        if (from[k] === undefined || from[k] === '') { if (k === 'look' || k === 'fx') c[k] = ''; else delete c[k]; }
+        else c[k] = from[k];
+      }));
+      toast(t('Оформление вставлено.'));
+    };
+    row.append(copy, paste);
+    return row;
+  }
+
   /* у панели инструментов, которая не влезает, край тает: видно, что её можно листать */
   function fadeTools() {
     const nav = $('vlogTools');
@@ -904,6 +1081,7 @@ window.Vlog = (function () {
     if (id === 'back') { select(-1); return selectOv(''); }
     if (id === 'split') return split();
     if (id === 'newText') return addText();
+    if (id === 'newFx') return addEffect();
     if (id === 'trans') {
       /* стык ближе всего к указателю */
       if (p.clips.length < 2) { toast(t('Переход ставится между клипами: добавь хотя бы два.')); return; }
@@ -960,7 +1138,7 @@ window.Vlog = (function () {
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
     music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
-    text: 'Текст', stickers: 'Стикеры', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
+    text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
     sheet = id;
@@ -1024,7 +1202,7 @@ window.Vlog = (function () {
     const side = $('vlogSide');
     const body = $('vlogSheetBody');
     const o = overlay();
-    const id = sheet || (desktop() ? (o ? (o.layer.type === 'text' ? 'text' : 'style') : clip() ? 'look' : join >= 0 ? 'trans' : 'project') : '');
+    const id = sheet || (desktop() ? (o ? (isFxOv(o) ? 'ovfx' : o.layer.type === 'text' ? 'text' : 'style') : clip() ? 'look' : join >= 0 ? 'trans' : 'project') : '');
     $('vlog').classList.toggle('sheet-open', !!sheet);
     $('vlog').style.setProperty('--vlog-tools-h', `${$('vlogTools').offsetHeight}px`);
     body.textContent = '';
@@ -1044,10 +1222,11 @@ window.Vlog = (function () {
         tabs.append(b);
       });
       body.append(tabs);
+      body.append(styleRow());
     }
     const c = clip();
     if (id === 'project') {
-      body.append(el('p', 'hint', t('Нажми на клип в ленте, чтобы настроить его. Пустое место ленты листает время.')));
+      body.append(el('p', 'hint', t('Нажми на клип в ленте, чтобы настроить его. Перематывай полоской под просмотром или нажми на линейку времени над клипами.')));
       sheetFormat(body);
       sheetMusic(body);
     }
@@ -1058,6 +1237,8 @@ window.Vlog = (function () {
     if (o && id === 'text') sheetText(body, o);
     if (o && id === 'style') sheetStyle(body, o);
     if (o && id === 'anim') sheetAnim(body, o);
+    if (isFxOv(o) && id === 'ovfx') { sheetFx(body, o.layer, shotOf(o)); sheetSpan(body, o); }
+    if (isFxOv(o) && id === 'ovscan') { sheetScan(body, o.layer, shotOf(o)); sheetSpan(body, o); }
     if (!c) return;
     if (id === 'frame') sheetFrame(body, c);
     if (id === 'card') sheetCard(body, c);
@@ -1113,6 +1294,47 @@ window.Vlog = (function () {
     if (!o) return;
     const area = $('vlogSheetBody').querySelector('textarea');
     if (area) { area.focus(); area.select(); }
+  }
+  /* эффект на время: полоска с указателя на 3 секунды, сразу открыта шторка эффекта */
+  function addEffect() {
+    addOverlay({ type: 'effect', fx: 'glitch', x: 0.5, y: 0.5, size: 1, rot: 0 }, 'ovfx');
+  }
+  /* кадр для превью эффекта на время: клип под указателем, если он внутри полоски, иначе под её началом */
+  function shotOf(o) {
+    const now = peek ?? at;
+    const t0 = now >= o.start && now < o.end ? now : o.start;
+    const hit = Timeline.at(p, Math.min(t0, Math.max(0, total() - 1)));
+    return (hit && hit.clip) || p.clips[0];
+  }
+  /* когда идёт эффект на время: подсказка и быстрые кнопки «весь ролик» и «только этот клип» */
+  function sheetSpan(body, o) {
+    body.append(el('p', 'hint', `${t('Видно')} ${fmt(o.start)} – ${fmt(o.end)}. ${t('Края полоски на ленте меняют начало и конец.')}`));
+    const row = el('div', 'row');
+    const whole = el('button', 'btn small', t('Весь ролик'));
+    whole.type = 'button';
+    whole.onclick = () => commit(() => { o.start = 0; o.end = Math.round(total()); });
+    const thisClip = el('button', 'btn small', t('Только этот клип'));
+    thisClip.type = 'button';
+    thisClip.onclick = () => {
+      const hit = Timeline.at(p, Math.min(at, total() - 1));
+      if (hit) commit(() => { o.start = Math.round(hit.start); o.end = Math.round(hit.start + Timeline.len(hit.clip)); });
+    };
+    const look = el('button', 'btn small', t('Посмотреть'));
+    look.type = 'button';
+    look.onclick = () => previewFrom(o.start, o.end);
+    row.append(look, whole, thisClip);
+    body.append(row);
+    const check = (label, on, set) => {
+      const box = el('label', 'check');
+      const input = el('input');
+      input.type = 'checkbox';
+      input.checked = on;
+      input.onchange = () => commit(() => set(input.checked));
+      box.append(input, document.createTextNode(t(label)));
+      body.append(box);
+    };
+    check('Плавно появляться', o.anim === 'fade', (v) => { o.anim = v ? 'fade' : ''; });
+    check('Плавно исчезать в конце', !!o.fadeOut, (v) => { o.fadeOut = v; });
   }
   function addSticker(layer) {
     const o = addOverlay({ x: 0.5, y: 0.45, rot: (Math.random() - 0.5) * 0.3, ...layer }, desktop() ? 'style' : '');
@@ -1181,7 +1403,9 @@ window.Vlog = (function () {
   function sheetStickers(body) {
     const Lib = window.StickerLib;
     const packs = (Lib && Lib.PACK_TABS) || [];
-    const tabs = [['emoji', t('Эмодзи')], ['doodles', t('Дудлы')], ['ready', t('Готовые')], ['cards', t('Карточки')], ...packs.map(([id, name]) => [id, t(name)]), ['mine', t('Мои картинки')]];
+    const recent = Lib && Lib.recent ? Lib.recent() : [];
+    if (stickerTab === 'recent' && !recent.length) stickerTab = 'emoji';
+    const tabs = [...(recent.length ? [['recent', t('Недавние')]] : []), ['emoji', t('Эмодзи')], ['doodles', t('Дудлы')], ['ready', t('Готовые')], ['cards', t('Карточки')], ...packs.map(([id, name]) => [id, t(name)]), ['mine', t('Мои картинки')]];
     body.append(chips(tabs, stickerTab, (v) => { stickerTab = v; syncSheet(); }));
     const grid = el('div', 'vlog-stickers');
     const pack = packs.find(([id]) => id === stickerTab);
@@ -1216,9 +1440,25 @@ window.Vlog = (function () {
       b.setAttribute('aria-label', label);
       if (typeof content === 'string') b.textContent = content;
       else b.append(content);
-      b.onclick = () => addSticker(layer);
+      b.onclick = () => {
+        /* недавние общие с редактором карточек */
+        const key = layer.emoji ? `e:${layer.emoji}` : layer.vec ? `v:${layer.vec}` : '';
+        if (key && Lib && Lib.remember) Lib.remember(key);
+        addSticker(layer);
+      };
       grid.append(b);
     };
+    const vecBtn = (v) => {
+      const cv = Render.canvas(64, 64);
+      Render.drawVector(cv.getContext('2d'), v.id, 32, 32, 52, v.color);
+      btn(t(v.name), cv, { type: 'sticker', vec: v.id, color: v.color, size: v.size || 0.35 });
+    };
+    if (stickerTab === 'recent') {
+      recent.forEach((k) => {
+        if (k.startsWith('e:')) btn(k.slice(2), k.slice(2), { type: 'sticker', emoji: k.slice(2), size: 0.2 });
+        else { const v = Lib.vecDef(k.slice(2)); if (v) vecBtn(v); }
+      });
+    }
     if (stickerTab === 'emoji') EMOJIS.forEach((e) => btn(e, e, { type: 'sticker', emoji: e, size: 0.2 }));
     /* дудлы белые, как маркером по кадру */
     if (stickerTab === 'doodles') {
@@ -1391,7 +1631,8 @@ window.Vlog = (function () {
 
   /* кадр клипа: как вписать, масштаб, движение фото; сдвиг — пальцем по просмотру */
   function sheetFrame(body, c) {
-    if (c.card) body.append(el('p', 'hint', t('Клип в карточке: место кадра задаёт карточка, здесь работает только масштаб.')));
+    const fixed = c.card || hasShape(c) || hasLayout(c);
+    if (fixed) body.append(el('p', 'hint', t('У клипа есть карточка, макет или фигура: место кадра задают они, здесь работает только масштаб.')));
     body.append(group('Как вписать', chips(Engine.FITS.map((f) => [f.id, t(f.name)]), c.fit || '', (v) => commit(() => { c.fit = v; }))));
     body.append(slider('Масштаб', 100, Engine.ZOOM_MAX * 100, 5, Math.round((c.zoom || 1) * 100), (v) => `${v}%`, (v) => { c.zoom = v / 100; }));
     if (c.kind === 'image') {
@@ -1409,7 +1650,7 @@ window.Vlog = (function () {
     row.append(reset, toAll('Вписать так все клипы', () => p.clips.forEach((x) => { x.fit = c.fit || ''; })));
     if (c.kind === 'image') row.append(toAll('Движение ко всем фото', () => p.clips.forEach((x) => { if (x.kind === 'image') x.move = c.move || 'in'; })));
     body.append(row);
-    body.append(el('p', 'hint', t('Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
+    body.append(el('p', 'hint', t(fixed ? 'Масштаб меняй щипком на просмотре или колесом мыши.' : 'Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
   }
 
   function sheetMusic(body) {
@@ -1440,6 +1681,25 @@ window.Vlog = (function () {
       duckBox.append(box, document.createTextNode(t('Тише, когда в клипе звучит голос')));
       body.append(duckBox);
     }
+    if (p.music.track || p.music.fileId) {
+      const beat = el('div', 'group');
+      beat.append(el('span', 'label', t('Такт')));
+      const info = el('p', 'hint', t('Ищу такты…'));
+      const row = el('div', 'row');
+      const fit = el('button', 'btn small', t('Подогнать стыки под такт'));
+      fit.type = 'button';
+      fit.disabled = true;
+      fit.onclick = fitToBeats;
+      row.append(fit);
+      beat.append(info, row);
+      body.append(beat);
+      Engine.musicInfo(p).then((w) => {
+        if (!info.isConnected) return;
+        if (!w || !w.beats.length) { info.textContent = t('В этом треке не получилось найти такты.'); return; }
+        info.textContent = `${t('Темп')} ≈ ${w.bpm} ${t('уд/мин')}. ${t('Засечки тактов видно на дорожке музыки, к ним прилипают стыки, когда тянешь край клипа.')}`;
+        fit.disabled = p.clips.length < 1;
+      });
+    }
     body.append(el('p', 'hint', t('Музыка играет под всем роликом. Пока в клипе говорят, она сама становится тише. Звук самих клипов настраивается у каждого клипа.')));
   }
 
@@ -1468,6 +1728,64 @@ window.Vlog = (function () {
     return cv;
   }
 
+  /* Превью на кадре самого клипа: кадр 90×120, поверх рисует paint(x, w, h).
+     Готовые превью хранятся по ключу, новые рисуются по одной, чтобы шторка открывалась сразу. */
+  const frameThumbs = new Map();
+  let thumbQueue = 0;
+  function frameThumb(c, key, paint) {
+    const W = 90;
+    const H = 120;
+    const cv = Render.canvas(W, H);
+    const m = p.media[c.media];
+    if (!m || !m.thumb) return cv;
+    const full = `${m.id}|${key}`;
+    const show = (src) => cv.getContext('2d').drawImage(src, 0, 0);
+    if (frameThumbs.has(full)) { show(frameThumbs.get(full)); return cv; }
+    const draw = (img) => {
+      const out = Render.canvas(W, H);
+      const x = out.getContext('2d', { willReadFrequently: true });
+      const k = Math.max(W / img.width, H / img.height);
+      x.drawImage(img, (W - img.width * k) / 2, (H - img.height * k) / 2, img.width * k, img.height * k);
+      try { paint(x, W, H); } catch { /* превью не вышло: остаётся сам кадр */ }
+      if (frameThumbs.size > 300) frameThumbs.clear();
+      frameThumbs.set(full, out);
+      show(out);
+    };
+    const go = () => {
+      if (lookThumbs.has(m.id)) { draw(lookThumbs.get(m.id)); return; }
+      const img = new Image();
+      img.onload = () => { lookThumbs.set(m.id, img); draw(img); };
+      img.src = m.thumb;
+    };
+    const wait = 16 * thumbQueue++;
+    setTimeout(() => { thumbQueue = Math.max(0, thumbQueue - 1); go(); }, wait);
+    return cv;
+  }
+  /* сетка превью: выбор одной кнопкой, как у «Цвета» */
+  function thumbGrid(items, current, pick) {
+    const grid = el('div', 'thumbs vlog-looks vlog-fx-thumbs');
+    items.forEach(([id, name, thumb]) => {
+      const b = el('button', `thumb${id === current ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = name;
+      b.append(thumb, el('span', '', name));
+      b.onclick = () => pick(id);
+      grid.append(b);
+    });
+    keepOnInView(grid);
+    return grid;
+  }
+  /* в ряду превью выбранное видно сразу, даже если оно далеко в списке */
+  function keepOnInView(grid) {
+    requestAnimationFrame(() => {
+      const on = grid.querySelector('.on');
+      if (!on || grid.scrollWidth <= grid.clientWidth) return;
+      const g = grid.getBoundingClientRect();
+      const r = on.getBoundingClientRect();
+      grid.scrollLeft += r.left - g.left - (g.width - r.width) / 2;
+    });
+  }
+
   function sheetLook(body, c) {
     const grid = el('div', 'thumbs vlog-looks');
     [null, ...Engine.looks()].forEach((look) => {
@@ -1481,7 +1799,7 @@ window.Vlog = (function () {
     body.append(grid, toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.look = c.look; })));
   }
 
-  function sheetFx(body, c) {
+  function sheetFx(body, c, shot = c) {
     const E = window.Effects;
     if (!E) return;
     const def = c.fx ? E.byId(c.fx) : null;
@@ -1490,8 +1808,13 @@ window.Vlog = (function () {
     if (!cats.some((x) => x.id === fxCat)) fxCat = 'all';
     body.append(chips(cats.map((x) => [x.id, t(x.name)]), fxCat, (v) => { fxCat = v; syncSheet(); }));
     const shown = E.EFFECTS.filter((x) => fxCat === 'all' || x.cat === fxCat);
-    const list = [['', t('Без эффекта')], ...shown.map((x) => [x.id, t(x.name)])];
-    body.append(group('', chips(list, c.fx, (v) => commit(() => { c.fx = v; delete c.fxs; }))));
+    const fxThumb = (id) => frameThumb(shot, `fx:${id}`, (x, w, h) => {
+      if (!id) return;
+      E.clock = null;
+      E.draw(x, { fx: { id, color: '', text: '', font: '', style: '', amount: 0.8, seed: 3, boxes: [], mask: 'all' } }, w, h);
+    });
+    const list = [['', t('Без эффекта'), fxThumb('')], ...shown.map((x) => [x.id, t(x.name), fxThumb(x.id)])];
+    body.append(thumbGrid(list, c.fx || '', (v) => commit(() => { c.fx = v; delete c.fxs; })));
     if (def) {
       const o = c.fxs || {};
       const setOpt = (patch) => commit(() => { c.fxs = { ...(c.fxs || {}), ...patch }; });
@@ -1530,8 +1853,9 @@ window.Vlog = (function () {
       row.append(again);
       body.append(row);
     }
+    if (shot !== c) return;
     body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.fx = c.fx; if (c.fxs) x.fxs = { ...c.fxs }; else delete x.fxs; })));
-    body.append(el('p', 'hint', t('Эффекты из раздела «Эффекты» карточки, поверх всего кадра. Глитчи в ролике живые.')));
+    body.append(el('p', 'hint', t('Эффекты из раздела «Эффекты» карточки, поверх всего кадра. Глитчи в ролике живые. Эффект только на кусок ролика: кнопка «Эффект» в общей панели.')));
   }
   let fxCat = 'all';
 
@@ -1556,7 +1880,7 @@ window.Vlog = (function () {
         try { if (window.CollageThumb) cv.getContext('2d').drawImage(window.CollageThumb(tpl.id), 0, 0, 72, 90); } catch { /* шаблон без превью */ }
       }, 0);
       b.append(cv, el('span', '', t(tpl.name)));
-      b.onclick = () => setLay({ collage: tpl.id });
+      b.onclick = () => setLay(tpl.id === (lay.collage || '') ? {} : { collage: tpl.id, tints: {} });
       grid.append(b);
     });
     body.append(group('Коллаж', grid));
@@ -1572,6 +1896,30 @@ window.Vlog = (function () {
       input.addEventListener('change', () => changed());
       body.append(group('Подпись', input));
       if (tpl.sample && tpl.sample.includes('()')) body.append(el('p', 'hint', t('Скобки () в тексте — место для кадра.')));
+    }
+    if (tpl) {
+      /* цвета элементов шаблона и его варианты, как в редакторе; выбор помнится у клипа */
+      const tints = lay.tints || {};
+      const setTint = (key, v) => setLay({ tints: { ...tints, [key]: v } });
+      C.paletteOf(lay.collage).forEach((item) => {
+        const row = el('div', 'vlog-swatches');
+        const same = el('button', `vlog-same${!tints[item.key] || tints[item.key] === 'auto' ? ' on' : ''}`, t('Как в шаблоне'));
+        same.type = 'button';
+        same.onclick = () => setTint(item.key, 'auto');
+        row.append(same);
+        (window.TintColors || COLORS).forEach((col) => {
+          const b = el('button', tints[item.key] === col ? 'on' : '');
+          b.type = 'button';
+          b.style.background = col;
+          b.setAttribute('aria-label', col);
+          b.onclick = () => setTint(item.key, col);
+          row.append(b);
+        });
+        body.append(group(item.name, row));
+      });
+      (tpl.choices || []).forEach((item) => {
+        body.append(group(item.name, chips(item.options.map(([v, name]) => [v, t(name)]), tints[item.key] || item.def, (v) => setTint(item.key, v))));
+      });
     }
     body.append(group('Бумага', chips([['', t('Как в карточке')], ...Render.PAPERS.filter((x) => x.id !== 'own').map((x) => [x.id, t(x.name)])], lay.paper || '', (v) => setLay({ paper: v }))));
     const papers = el('div', 'vlog-swatches');
@@ -1590,17 +1938,21 @@ window.Vlog = (function () {
 
   /* ---------- сканер: готовые наборы и свои сохранённые из редактора ---------- */
   let scanPresets = [];
-  function sheetScan(body, c) {
+  function sheetScan(body, c, shot = c) {
     const S = window.Scanner;
     if (!S) return;
     const sc = c.scan && c.scan.on ? c.scan : null;
-    const list = [['', t('Выключен')], ...scanPresets.map((x) => [x.id, x.name]), ...S.PRESETS.map((x) => [x.id, t(x.name)])];
-    body.append(group('', chips(list, sc ? sc.preset : '', (v) => commit(() => {
+    const scanThumb = (pr) => frameThumb(shot, `scan:${pr ? pr.id : ''}`, (x, w, h) => {
+      if (!pr) return;
+      S.draw(x, { scan: { ...S.defaults(), ...pr.set, on: true, seed: 4, anim: false }, note: { title: '', date: '', mood: '' } }, w, h);
+    });
+    const list = [['', t('Выключен'), scanThumb(null)], ...scanPresets.map((x) => [x.id, x.name, scanThumb(x)]), ...S.PRESETS.map((x) => [x.id, t(x.name), scanThumb(x)])];
+    body.append(thumbGrid(list, sc ? sc.preset : '', (v) => commit(() => {
       if (!v) { delete c.scan; return; }
       const pr = scanPresets.find((x) => x.id === v) || S.presetById(v);
       /* копия набора: правки не должны менять сам набор */
       c.scan = { ...S.defaults(), ...JSON.parse(JSON.stringify(pr.set)), seed: (sc && sc.seed) || 5, on: true, preset: v };
-    }))));
+    })));
     if (sc) {
       const setScan = (patch) => commit(() => { c.scan = { ...c.scan, ...patch }; });
       body.append(group('Цвет', swatches(sc.color, (v) => setScan({ color: v }))));
@@ -1619,6 +1971,7 @@ window.Vlog = (function () {
       row.append(again);
       body.append(row);
     }
+    if (shot !== c) return;
     body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { if (c.scan) x.scan = JSON.parse(JSON.stringify(c.scan)); else delete x.scan; })));
     body.append(el('p', 'hint', t('Сканер из раздела «Эффекты» карточки: рамки сами находят, что в кадре. Свои наборы сохраняются в редакторе.')));
   }

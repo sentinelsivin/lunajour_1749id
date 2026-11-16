@@ -1046,6 +1046,11 @@ details.fine > .slider { margin-top: 12px; }
   pointer-events: none; transition: transform .1s;
 }
 .vlog-scrub:hover b, .vlog-scrub.on b, .vlog-scrub:focus-visible b { transform: scale(1.3); }
+/* начала клипов на полоске: короткие засечки, к ним прилипает линия */
+.vlog-scrub s {
+  position: absolute; top: 50%; width: 2px; height: 12px; margin: -6px 0 0 -1px;
+  border-radius: 1px; background: var(--silver); opacity: .7; pointer-events: none;
+}
 .vlog-scrub:focus-visible::before { box-shadow: 0 0 0 2px var(--accent-light); }
 .vlog-scrub[aria-disabled="true"] { opacity: .4; pointer-events: none; }
 /* линейка времени над клипами: нажал — перешёл к этому месту, мышью можно тянуть ленту */
@@ -1119,6 +1124,11 @@ details.fine > .slider { margin-top: 12px; }
   font: 500 12px var(--body); text-align: left; white-space: nowrap; overflow: hidden;
 }
 .vlog-music.empty { background: none; border: 1px dashed var(--hairline); color: var(--muted); }
+/* волна трека под названием, жёлтые засечки тактов */
+.vlog-music { position: relative; }
+.vlog-wave { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.vlog-music-name { position: relative; padding: 1px 4px; border-radius: 3px; background: rgba(0, 0, 0, .35); }
+.vlog-music.empty .vlog-music-name { background: none; }
 .vlog-head { position: sticky; left: 50%; top: 0; width: 0; height: 0; }
 .vlog-head::before {
   content: ""; position: absolute; left: -1px; bottom: 0; width: 2px; height: 104px;
@@ -1243,6 +1253,8 @@ details.fine > .slider { margin-top: 12px; }
   cursor: pointer; user-select: none; -webkit-user-select: none;
 }
 .vlog-ov.text { background: rgba(108, 159, 224, .35); }
+/* эффект на время: фиолетовая полоска, видно, что это не надпись и не стикер */
+.vlog-ov.fx { background: rgba(167, 139, 250, .38); }
 .vlog-ov span { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .vlog-ov.sel { z-index: 1; overflow: visible; outline: 2px solid var(--bone); outline-offset: -2px; touch-action: none; padding: 0 20px; }
 .vlog-ov .vlog-handle { width: 14px; }
