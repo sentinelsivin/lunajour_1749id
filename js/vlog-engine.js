@@ -649,9 +649,10 @@ window.VlogEngine = (function () {
     return waveCache.get(key);
   }
   /* такты на времени ролика (мс): у своего трека от выбранного начала, встроенная мелодия идёт по кругу */
-  function beatTimes(info, p) {
+  /* until: до какого времени нужны такты (по умолчанию длина ролика; при подгонке берут с запасом) */
+  function beatTimes(info, p, until) {
     if (!info || !info.beats.length) return [];
-    const T = Timeline.duration(p);
+    const T = until != null ? until : Timeline.duration(p);
     const out = [];
     if (info.loop) {
       for (let rep = 0; rep * info.dur * 1000 < T; rep++) {

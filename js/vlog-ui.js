@@ -1042,6 +1042,7 @@ window.Vlog = (function () {
     newText: '<path d="M4 4h12M10 4v13"/>',
     text: '<path d="M4 4h12M10 4v13"/>',
     'g-dress': '<rect x="3.5" y="2.5" width="13" height="15" rx="1"/><rect x="6" y="5" width="8" height="7"/><path d="M6 14.5h5"/>',
+    auto: '<path d="M4 16L13 7M11.5 5.5l3 3"/><path d="M15 2.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6zM6 3l.5 1 1 .5-1 .5L6 6l-.5-1-1-.5 1-.5zM16 12l.5 1 1 .5-1 .5-.5 1-.5-1-1-.5 1-.5z"/>',
     newFx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     ovfx: '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     ovscan: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><rect x="7" y="7" width="6" height="6"/>',
@@ -1085,7 +1086,7 @@ window.Vlog = (function () {
     }
     if (!c) {
       nav.append(
-        toolBtn('add', 'Добавить'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'),
+        toolBtn('add', 'Добавить'), toolBtn('auto', 'Собрать', sheet === 'auto'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'),
         toolBtn('trans', 'Переход', sheet === 'trans'), toolBtn('music', 'Музыка', sheet === 'music'), toolBtn('format', 'Формат', sheet === 'format'),
       );
       return;
@@ -1204,7 +1205,7 @@ window.Vlog = (function () {
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
     music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
-    projects: 'Мои влоги', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
+    projects: 'Мои влоги', auto: 'Собрать за меня', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
     sheet = id;
@@ -1298,6 +1299,7 @@ window.Vlog = (function () {
     }
     if (id === 'format') sheetFormat(body);
     if (id === 'projects') sheetProjects(body);
+    if (id === 'auto') sheetAuto(body);
     if (id === 'music') sheetMusic(body);
     if (id === 'stickers') sheetStickers(body);
     if (id === 'trans') sheetTrans(body);
@@ -1655,6 +1657,116 @@ window.Vlog = (function () {
     const b = Timeline.starts(p)[join + 1];
     const d = Timeline.trDur(p, join);
     previewFrom(b - d / 2 - 500, b + d / 2 + 500);
+  }
+
+  /* ---------- «Собрать за меня»: готовый черновик одним нажатием ----------
+     Стиль задаёт музыку, длину фото, движение, переходы, цвет и подпись в начале. Всё ставится одним шагом отмены.
+     photo: секунд на фото; video: самое длинное видео, с; стыки потом встают на ближайший такт музыки. */
+  const AUTO_STYLES = [
+    { id: 'calm', name: 'Спокойный', track: 'dream', photo: 3.5, video: 6, look: 'dream', tr: ['fade'], trMs: 900, moves: ['in', 'out', 'left', 'right'],
+      title: { font: 'yeseva', color: '#ffffff', style: 'none', shadow: 'soft', anim: 'fade' } },
+    { id: 'energy', name: 'Бодрый', track: 'neon', photo: 1.7, video: 3, look: 'flash', tr: ['zoom', 'slide', 'flash'], trMs: 350, moves: ['in', 'left', 'right', 'out'],
+      title: { font: 'unbounded', color: '#ffffff', style: 'outline', bg: '#111111', shadow: 'none', anim: 'pop' } },
+    { id: 'film', name: 'Плёнка', track: 'lofi', photo: 3, video: 5, look: 'film', tr: ['black'], trMs: 700, moves: ['in', 'none', 'out', 'none'],
+      title: { font: 'mono', color: '#111111', style: 'plaque', bg: '#ffe27a', shadow: 'none', anim: 'type' } },
+    { id: 'diary', name: 'Дневник', track: 'lofi', photo: 3, video: 5, look: 'warm', tr: ['fade', 'slide'], trMs: 600, moves: ['in', 'right', 'out', 'left'],
+      title: { font: 'caveat', color: '#ffffff', style: 'none', shadow: 'soft', anim: 'rise' } },
+  ];
+  let autoStyle = 'calm';
+  let autoTitle = null;
+  let autoOwn = true;
+  let autoBusy = false;
+  function sheetAuto(body) {
+    if (!p.clips.length) {
+      body.append(el('p', 'hint', t('Сначала добавь клипы и фото: из них соберётся ролик.')));
+      return;
+    }
+    const grid = el('div', 'thumbs vlog-looks vlog-auto-styles');
+    const shot = p.clips[0];
+    AUTO_STYLES.forEach((st) => {
+      const look = Engine.looks().find((l) => l.id === st.look);
+      const b = el('button', `thumb${st.id === autoStyle ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = t(st.name);
+      b.append(lookThumb(shot, look || null), el('span', '', t(st.name)));
+      b.onclick = () => { autoStyle = st.id; syncSheet(); };
+      grid.append(b);
+    });
+    body.append(group('Стиль', grid));
+    const title = el('input', 'vlog-input');
+    title.type = 'text';
+    title.placeholder = t('Без подписи');
+    title.value = autoTitle != null ? autoTitle : ((entry() && entry().name) || '');
+    title.addEventListener('input', () => { autoTitle = title.value; });
+    body.append(group('Подпись в начале', title));
+    if (p.music.fileId) {
+      const own = el('label', 'check');
+      const box = el('input');
+      box.type = 'checkbox';
+      box.checked = autoOwn;
+      box.onchange = () => { autoOwn = box.checked; };
+      own.append(box, document.createTextNode(`${t('Оставить мою музыку')}: ${p.music.name || t('Свой трек')}`));
+      body.append(own);
+    }
+    const go = el('button', 'btn primary', autoBusy ? t('Собираю…') : t('Собрать'));
+    go.type = 'button';
+    go.disabled = autoBusy;
+    go.onclick = autoAssemble;
+    body.append(go);
+    body.append(el('p', 'hint', t('Ставит музыку, длину фото, движение, переходы, цвет и подпись, а стыки — на такт. Твои эффекты, надписи и стикеры остаются. Не понравилось — «Отменить» вернёт как было.')));
+  }
+  async function autoAssemble() {
+    if (autoBusy || !p.clips.length) return;
+    const st = AUTO_STYLES.find((x) => x.id === autoStyle) || AUTO_STYLES[0];
+    autoBusy = true;
+    syncSheet();
+    pauseNow();
+    hist.push(p);
+    try {
+      if (!(autoOwn && p.music.fileId)) {
+        p.music = { ...p.music, track: st.track, fileId: '', name: '', start: 0 };
+        Engine.resetMusic();
+      }
+      p.music.fadeIn = p.music.fadeIn || 0.5;
+      p.music.fadeOut = p.music.fadeOut ?? 1.5;
+      p.clips.forEach((c, i) => {
+        c.look = st.look;
+        if (c.kind === 'image') {
+          c.in = 0;
+          c.out = Math.round(st.photo * 1000);
+          c.move = st.moves[i % st.moves.length];
+        } else {
+          const max = c.in + st.video * 1000 * (c.speed || 1);
+          if (c.out > max) c.out = Math.round(Math.max(c.in + Timeline.MIN_MS, max));
+        }
+      });
+      const info = await Engine.musicInfo(p);
+      /* такты с запасом: после подгонки ролик может стать чуть длиннее */
+      const beats = Engine.beatTimes(info, p, total() + 10000);
+      if (beats.length) Timeline.fitToBeats(p, beats);
+      p.clips.forEach((c, i) => {
+        if (i < p.clips.length - 1) c.tr = { id: st.tr[i % st.tr.length], dur: st.trMs };
+        else delete c.tr;
+      });
+      /* подпись в начале: прошлую собранную заменяем, свои надписи не трогаем */
+      p.overlays = p.overlays.filter((o) => !o.layer.auto);
+      const text = (autoTitle != null ? autoTitle : (entry() && entry().name) || '').trim();
+      if (text) {
+        const { anim, ...look } = st.title;
+        const o = Timeline.addOverlay(p, { type: 'text', text, size: 0.09, x: 0.5, y: 0.22, rot: 0, auto: true, ...look }, 0);
+        o.end = Math.round(Math.min(total(), 3200));
+        o.anim = anim;
+        o.fadeOut = true;
+        const f = Render.FONTS.find((x) => x.id === look.font);
+        if (f && document.fonts) document.fonts.load(`${f.weight} 40px ${f.css}`).then(() => { dirty = true; kick(); }).catch(() => {});
+      }
+      at = 0;
+      changed();
+      toast(`${t('Готово')}: ${t(st.name).toLowerCase()} ${t('стиль')}, ${fmt(total())}. ${beats.length ? t('Стыки на такте.') : ''}`);
+    } finally {
+      autoBusy = false;
+      syncSheet();
+    }
   }
 
   /* «3 клипа», «5 клипов», «1 clip» */

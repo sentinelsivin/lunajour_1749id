@@ -1020,6 +1020,7 @@ button.vlog-title {
 button.vlog-title:hover { background: rgb(var(--tint) / .06); }
 button.vlog-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.vlog-title svg { flex: none; opacity: .6; }
+.vlog-auto-styles { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
 .vlog-projects { display: flex; flex-direction: column; gap: 6px; }
 .vlog-project { display: flex; align-items: center; gap: 10px; padding: 6px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface2); }
 .vlog-project.on { border-color: var(--accent-light); }
