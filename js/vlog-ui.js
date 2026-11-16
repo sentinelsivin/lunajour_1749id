@@ -1720,7 +1720,54 @@ window.Vlog = (function () {
       title: { font: 'mono', color: '#111111', style: 'plaque', bg: '#ffe27a', shadow: 'none', anim: 'type' } },
     { id: 'diary', name: 'Дневник', track: 'lofi', photo: 3, video: 5, look: 'warm', tr: ['fade', 'slide'], trMs: 600, moves: ['in', 'right', 'out', 'left'],
       title: { font: 'caveat', color: '#ffffff', style: 'none', shadow: 'soft', anim: 'rise' } },
+    { id: 'retro', name: 'Ретро', track: 'lofi', photo: 2.5, video: 4, look: 'p1994', tr: ['flash', 'black'], trMs: 400, moves: ['in', 'none'],
+      title: { font: 'retrogression', color: '#ffe27a', style: 'none', shadow: 'soft', anim: 'type' } },
+    { id: 'night', name: 'Ночь', track: 'dream', photo: 3, video: 5, look: 'pNightDriving', tr: ['black', 'fade'], trMs: 800, moves: ['out', 'in'],
+      title: { font: 'dreamer', color: '#ffffff', style: 'haze', bg: '#1f3a8a', shadow: 'none', anim: 'fade' } },
+    { id: 'tender', name: 'Нежный', track: 'dream', photo: 3.5, video: 5, look: 'pink', tr: ['fade'], trMs: 1000, moves: ['in', 'out'],
+      title: { font: 'sexsmith', color: '#f9a8d4', style: 'outline', bg: '#ffffff', shadow: 'soft', anim: 'rise' } },
+    { id: 'mono', name: 'Ч/б', track: 'lofi', photo: 2.5, video: 4, look: 'bw', tr: ['black', 'slide'], trMs: 500, moves: ['none', 'in'],
+      title: { font: 'mono', color: '#ffffff', style: 'plaque', bg: '#111111', shadow: 'none', anim: 'type' } },
   ];
+  /* свои стили: сохраняются из оформления влога, общие для всех влогов (Store 'vlogStyles') */
+  let ownStyles = [];
+  const allStyles = () => [...AUTO_STYLES, ...ownStyles];
+  /* стиль из того, как оформлен влог сейчас: музыка, длина фото, движения, переходы, цвет, подпись */
+  function styleFromVlog() {
+    const imgs = p.clips.filter((c) => c.kind === 'image');
+    const vids = p.clips.filter((c) => c.kind === 'video');
+    const joins = p.clips.slice(0, -1).filter((c) => c.tr && c.tr.id);
+    const titleOv = p.overlays.find((o) => o.layer.auto) || p.overlays.find((o) => o.layer.type === 'text' && !o.layer.card);
+    const tl = titleOv && titleOv.layer;
+    const avg = (list) => list.reduce((s, x) => s + x, 0) / Math.max(1, list.length);
+    return {
+      track: p.music.fileId ? '' : p.music.track || '',
+      photo: imgs.length ? Math.round(avg(imgs.map((c) => Timeline.len(c))) / 100) / 10 : 3,
+      video: vids.length ? Math.round(Math.max(...vids.map((c) => Timeline.len(c))) / 100) / 10 : 5,
+      look: (p.clips.find((c) => c.look) || {}).look || '',
+      tr: joins.length ? [...new Set(joins.map((c) => c.tr.id))] : [''],
+      trMs: joins.length ? joins[0].tr.dur || Timeline.TR_MS : Timeline.TR_MS,
+      moves: imgs.length ? imgs.map((c) => c.move || 'none').slice(0, 6) : ['none'],
+      title: tl ? { font: tl.font, color: tl.color, style: tl.style || 'none', bg: tl.bg, shadow: tl.shadow || 'none', anim: titleOv.anim || 'fade' }
+        : { font: 'golos', color: '#ffffff', style: 'none', shadow: 'soft', anim: 'fade' },
+    };
+  }
+  async function saveOwnStyle() {
+    if (!p.clips.length) return;
+    const n = ownStyles.length + 1;
+    const st = { id: `own-${Timeline.uid()}`, own: true, name: `${t('Мой стиль')} ${n}`, ...styleFromVlog() };
+    ownStyles = [...ownStyles, st];
+    await Store.set('vlogStyles', ownStyles);
+    autoStyle = st.id;
+    toast(t('Стиль сохранён: его можно применить к любому влогу.'));
+    syncSheet();
+  }
+  async function deleteOwnStyle(id) {
+    ownStyles = ownStyles.filter((x) => x.id !== id);
+    await Store.set('vlogStyles', ownStyles);
+    autoStyle = 'calm';
+    syncSheet();
+  }
   let autoStyle = 'calm';
   let autoTitle = null;
   let autoOwn = true;
@@ -1732,16 +1779,35 @@ window.Vlog = (function () {
     }
     const grid = el('div', 'thumbs vlog-looks vlog-auto-styles');
     const shot = p.clips[0];
-    AUTO_STYLES.forEach((st) => {
+    if (!allStyles().some((x) => x.id === autoStyle)) autoStyle = 'calm';
+    allStyles().forEach((st) => {
       const look = Engine.looks().find((l) => l.id === st.look);
       const b = el('button', `thumb${st.id === autoStyle ? ' on' : ''}`);
       b.type = 'button';
-      b.title = t(st.name);
-      b.append(lookThumb(shot, look || null), el('span', '', t(st.name)));
+      b.title = st.own ? st.name : t(st.name);
+      b.append(lookThumb(shot, look || null), el('span', '', st.own ? st.name : t(st.name)));
       b.onclick = () => { autoStyle = st.id; syncSheet(); };
       grid.append(b);
     });
     body.append(group('Стиль', grid));
+    /* свой стиль: сохранить оформление этого влога или удалить выбранный свой */
+    const mine = el('div', 'row');
+    const keep = el('button', 'btn small', t('Сохранить оформление как свой стиль'));
+    keep.type = 'button';
+    keep.onclick = saveOwnStyle;
+    mine.append(keep);
+    const cur = ownStyles.find((x) => x.id === autoStyle);
+    if (cur) {
+      const del = el('button', 'btn small', t('Удалить этот стиль'));
+      del.type = 'button';
+      let armed = false;
+      del.onclick = () => {
+        if (!armed) { armed = true; del.textContent = t('Точно?'); del.classList.add('danger'); return; }
+        deleteOwnStyle(cur.id);
+      };
+      mine.append(del);
+    }
+    body.append(mine);
     const title = el('input', 'vlog-input');
     title.type = 'text';
     title.placeholder = t('Без подписи');
@@ -1766,13 +1832,14 @@ window.Vlog = (function () {
   }
   async function autoAssemble() {
     if (autoBusy || !p.clips.length) return;
-    const st = AUTO_STYLES.find((x) => x.id === autoStyle) || AUTO_STYLES[0];
+    const st = allStyles().find((x) => x.id === autoStyle) || AUTO_STYLES[0];
     autoBusy = true;
     syncSheet();
     pauseNow();
     hist.push(p);
     try {
-      if (!(autoOwn && p.music.fileId)) {
+      /* у своего стиля со своей музыкой трека нет: музыка влога остаётся */
+      if (st.track && !(autoOwn && p.music.fileId)) {
         p.music = { ...p.music, track: st.track, fileId: '', name: '', start: 0 };
         Engine.resetMusic();
       }
@@ -2855,6 +2922,7 @@ window.Vlog = (function () {
     editorCard = opts.card || null;
     myStyles = (await Store.get('styles')) || [];
     scanPresets = (await Store.get('scanPresets').catch(() => null)) || [];
+    ownStyles = (await Store.get('vlogStyles').catch(() => null)) || [];
     bind();
     if (!loaded) await load();
     open = true;

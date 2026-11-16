@@ -1020,7 +1020,7 @@ button.vlog-title {
 button.vlog-title:hover { background: rgb(var(--tint) / .06); }
 button.vlog-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 button.vlog-title svg { flex: none; opacity: .6; }
-.vlog-auto-styles { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; }
+.vlog-auto-styles { grid-template-columns: repeat(4, minmax(0, 1fr)); overflow: visible; grid-auto-flow: row; }
 /* обложка в окне сохранения: кадр слева, кнопки справа */
 .vlog-cover { display: flex; gap: 12px; align-items: flex-start; }
 .vlog-cover canvas { flex: none; width: 90px; height: auto; border-radius: 6px; background: #000; }
