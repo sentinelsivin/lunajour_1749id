@@ -389,11 +389,15 @@ window.VlogEngine = (function () {
     if (!src) return null;
     /* при проигрывании в просмотре эффекты и сканер берут разбор кадра из недавнего (см. Effects.reuse) */
     const E = window.Effects;
-    if (E) E.reuse = quick ? `${clip.id}|${k}` : null;
+    if (E) {
+      E.reuse = quick ? `${clip.id}|${k}` : null;
+      /* рамки сканера и эффектов запоминаются у каждого клипа свои (и при записи ролика тоже) */
+      E.track = `${clip.id}|${k}`;
+    }
     try {
       return paintClipBody(k, W, H, clip, src, into, t);
     } finally {
-      if (E) E.reuse = null;
+      if (E) { E.reuse = null; E.track = null; }
     }
   }
   function paintClipBody(k, W, H, clip, src, into, t) {
@@ -521,7 +525,12 @@ window.VlogEngine = (function () {
       b.clearRect(0, 0, W, H);
       b.drawImage(ctx.canvas, 0, 0);
     }
-    if (E) E.reuse = quick ? `ov:${o.id}` : null;
+    if (E) {
+      E.reuse = quick ? `ov:${o.id}` : null;
+      /* полоска идёт через стыки: после стыка рамки ищутся заново по новому клипу */
+      const under = Timeline.at(drawing, Math.min(t, Math.max(0, Timeline.duration(drawing) - 1)));
+      E.track = `ov:${o.id}|${under ? under.clip.id : ''}`;
+    }
     try {
       if (l.fx && E) {
         E.clock = t / 1000;
@@ -531,7 +540,7 @@ window.VlogEngine = (function () {
       /* живое сканирование начинается с начала полоски: рамки появляются по одной от её старта */
       paintScan(ctx, l, Math.max(0, t - o.start), W, H);
     } finally {
-      if (E) { E.reuse = null; E.clock = null; }
+      if (E) { E.reuse = null; E.clock = null; E.track = null; }
     }
     if (k < 1) {
       ctx.save();
@@ -540,7 +549,9 @@ window.VlogEngine = (function () {
       ctx.restore();
     }
   }
+  let drawing = null;
   function drawOverlays(ctx, p, t, W, H, calm) {
+    drawing = p;
     const now = visible(p, t);
     now.filter((o) => o.layer.type === 'effect').forEach((o) => drawEffect(ctx, o, t, W, H));
     now.forEach((o) => {

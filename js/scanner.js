@@ -996,7 +996,17 @@ window.Scanner = (function () {
 
   /* Следят: рамка запоминает, что у неё внутри, и на каждом кадре ищет этот кусок рядом.
      Сравниваем яркость на сетке 10 × 10 точек, без среднего, чтобы свет и тень меньше мешали. */
-  const trackers = new WeakMap();
+  /* Следящие рамки и найденные рамки запоминаются по месту: холст карточки или, во влоге, ключ клипа
+     (Effects.track). Холст во влоге общий у всех клипов, без ключа рамки клипа A остались бы на клипе B. */
+  const byKey = (weak, strong) => ({
+    get: (k) => (typeof k === 'string' ? strong.get(k) : weak.get(k)),
+    set: (k, v) => {
+      if (typeof k !== 'string') return weak.set(k, v);
+      if (strong.size > 64) strong.clear();
+      return strong.set(k, v);
+    },
+  });
+  const trackers = byKey(new WeakMap(), new Map());
   const G = 10;
   function patch(A, cx, cy, tw, th) {
     const p = new Float32Array(G * G);
@@ -1059,13 +1069,15 @@ window.Scanner = (function () {
   }
 
   /* рамки «сами» в видео не прыгают каждый кадр: считаем один раз и держим */
-  const autoCache = new WeakMap();
+  const autoCache = byKey(new WeakMap(), new Map());
 
   /* ---------- сборка ---------- */
   const api = { fromEffect, PRESETS, SHAPES, LABELS, LENSES, LOOKS, ZOOM_LINES, LINKS, HUD, VARS, ICONS, PACKS, moodPack, drawIcon, defaults, presetById, time: null, lastBoxes: [], lastInsets: [], lastIcons: [], lastDossier: null };
   /* анимация нужна, только если сканер включён и живое сканирование не выключено */
   api.animates = (s) => !!(s && s.scan && s.scan.on && (s.scan.anim !== false || ['flash', 'swarm'].includes(s.scan.motion)));
   api.MOTIONS = MOTIONS;
+  /* слежение для эффектов с рамками: те же рамки ведутся за объектом от кадра к кадру */
+  api.follow = (place, A, boxes, clock) => track(place, A, boxes, clock);
   api.clock = null;
   api.DURATION = 5;
 
@@ -1099,14 +1111,15 @@ window.Scanner = (function () {
       boxes = own;
       if (!boxes) {
         const key = `${seed}|${sc.amount}|${sc.label}|${W}x${H}`;
-        const kept = clock != null && autoCache.get(ctx.canvas);
+        const place = (E && E.track) || ctx.canvas;
+        const kept = clock != null && autoCache.get(place);
         if (kept && kept.key === key && clock >= kept.at) boxes = kept.boxes;
         else {
           boxes = E.autoBoxes(look(), Math.max(1, Math.round(6 * (sc.amount || 1))), E.makeRng(seed), W, H, sc.label === 'below' || sc.label === 'meters' ? 0.05 : 0.02);
-          autoCache.set(ctx.canvas, { key, boxes, at: clock == null ? Infinity : clock });
+          autoCache.set(place, { key, boxes, at: clock == null ? Infinity : clock });
         }
       }
-      if (motion === 'track') boxes = track(ctx.canvas, look(), boxes, clock);
+      if (motion === 'track') boxes = track((E && E.track) || ctx.canvas, look(), boxes, clock);
     }
     api.lastBoxes = boxes;
     api.lastMotion = motion;

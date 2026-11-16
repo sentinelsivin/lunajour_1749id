@@ -2193,10 +2193,13 @@ window.Vlog = (function () {
       const pr = scanPresets.find((x) => x.id === v) || S.presetById(v);
       /* копия набора: правки не должны менять сам набор */
       c.scan = { ...S.defaults(), ...JSON.parse(JSON.stringify(pr.set)), seed: (sc && sc.seed) || 5, on: true, preset: v };
+      /* на видео рамки по умолчанию следят за объектом; «вспышки» и «рой» у наборов свои */
+      if ((!c.scan.motion || c.scan.motion === 'still') && (shot.kind === 'video' || shot !== c)) c.scan.motion = 'track';
     })));
     if (sc) {
       const setScan = (patch) => commit(() => { c.scan = { ...c.scan, ...patch }; });
       body.append(group('Цвет', swatches(sc.color, (v) => setScan({ color: v }))));
+      if (S.MOTIONS) body.append(group('Рамки', chips(S.MOTIONS.map(([v, name]) => [v, t(name)]), sc.motion || 'still', (v) => setScan({ motion: v }))));
       body.append(slider('Сколько рамок', 20, 250, 5, Math.round((sc.amount ?? 1) * 100), (v) => `${v}%`, (v) => { c.scan = { ...c.scan, amount: v / 100 }; }));
       const live = el('label', 'check');
       const box = el('input');

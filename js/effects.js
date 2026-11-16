@@ -103,6 +103,8 @@ window.Effects = (function () {
      во влоге разбор кадра берётся из недавнего: api.reuse — ключ клипа, обновление раз в REUSE_S по часам ролика.
      Без ключа (карточка, пауза, запись ролика) кадр разбирается заново каждый раз. */
   const REUSE_S = 0.12;
+  /* найденные рамки эффекта во влоге: по ключу клипа, см. box() в draw */
+  const found = new Map();
   const reused = new Map();
   function look(ctx, W, H, r) {
     const key = api.reuse;
@@ -2192,7 +2194,7 @@ window.Effects = (function () {
   let maskOff = null;
 
   /* analyze для сканера тоже идёт через look: без api.reuse это обычный разбор */
-  const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze: look, autoBoxes, makeRng, lastBoxes: {}, reuse: null };
+  const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze: look, autoBoxes, makeRng, lastBoxes: {}, reuse: null, track: null };
 
   /* часы ролика в секундах: глитчи в видео живут, null у фото */
   api.clock = null;
@@ -2241,8 +2243,22 @@ window.Effects = (function () {
       rr = { x: 0, y: 0, w: W, h: H };
     }
     const A = look(c, W, H, rr);
+    const find = () => autoBoxes(A, Math.round((def.id === 'tags' ? 6 : fx.style === 'arcs' ? 16 : 10) * (fx.amount || 1)), makeRng(fx.seed || 1), W, H, def.id === 'tags' ? 0.05 : def.id === 'objects' ? -0.02 : 0.01);
     const box = () => {
-      const list = fx.boxes && fx.boxes.length ? fx.boxes : autoBoxes(A, Math.round((def.id === 'tags' ? 6 : fx.style === 'arcs' ? 16 : 10) * (fx.amount || 1)), makeRng(fx.seed || 1), W, H, def.id === 'tags' ? 0.05 : def.id === 'objects' ? -0.02 : 0.01);
+      let list = fx.boxes && fx.boxes.length ? fx.boxes : null;
+      /* во влоге (api.track) рамки ищутся один раз на клип и дальше следят за объектом, а не прыгают каждый кадр */
+      if (!list && api.track && api.clock != null && window.Scanner && window.Scanner.follow) {
+        const place = `fx:${api.track}|${def.id}|${fx.style}|${fx.amount}|${fx.seed}|${W}x${H}`;
+        const kept = found.get(place);
+        list = kept && api.clock >= kept.at ? kept.boxes : null;
+        if (!list) {
+          list = find();
+          if (found.size > 64) found.clear();
+          found.set(place, { boxes: list, at: api.clock });
+        }
+        list = window.Scanner.follow(place, A, list, api.clock);
+      }
+      if (!list) list = find();
       api.lastBoxes[key] = list;
       return list;
     };
