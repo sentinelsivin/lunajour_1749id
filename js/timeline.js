@@ -151,10 +151,11 @@ window.Timeline = (function () {
     });
   }
   /* ряды дорожки: надписи, которые идут одновременно, ложатся друг под друга */
-  function overlayRows(p) {
+  /* which: какие наложения раскладывать (по умолчанию все); у эффектов на время своя дорожка */
+  function overlayRows(p, which = () => true) {
     const rows = [];
     const out = new Map();
-    [...p.overlays].sort((a, b) => a.start - b.start).forEach((o) => {
+    p.overlays.filter(which).sort((a, b) => a.start - b.start).forEach((o) => {
       let r = rows.findIndex((end) => end <= o.start);
       if (r < 0) { r = rows.length; rows.push(0); }
       rows[r] = o.end;

@@ -1272,6 +1272,8 @@ button.vlog-title svg { flex: none; opacity: .6; }
 .vlog-ov.text { background: rgba(108, 159, 224, .35); }
 /* эффект на время: фиолетовая полоска, видно, что это не надпись и не стикер */
 .vlog-ov.fx { background: rgba(167, 139, 250, .38); }
+/* дорожка эффектов: тонкая линия отделяет её от надписей */
+.vlog-fxs { padding-bottom: 4px; border-bottom: 1px dashed rgb(167 139 250 / .35); }
 .vlog-ov span { overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
 .vlog-ov.sel { z-index: 1; overflow: visible; outline: 2px solid var(--bone); outline-offset: -2px; touch-action: none; padding: 0 20px; }
 .vlog-ov .vlog-handle { width: 14px; }

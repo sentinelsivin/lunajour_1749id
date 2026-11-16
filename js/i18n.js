@@ -1433,6 +1433,7 @@ window.I18n = (function () {
     'Фигура': 'Shape',
     'Без коллажа': 'No collage',
     'Оформление': 'Design',
+    'Эффекты на время': 'Timed effects',
     'Собрать': 'Assemble',
     'Собрать за меня': 'Assemble for me',
     'Собираю…': 'Assembling…',

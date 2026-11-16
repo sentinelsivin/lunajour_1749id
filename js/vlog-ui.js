@@ -390,13 +390,18 @@ window.Vlog = (function () {
     if (l.emoji) return l.emoji;
     return '★';
   }
+  /* две дорожки: эффекты на время сразу под клипами, ниже надписи и стикеры */
   function renderOverlays() {
-    const box = $('vlogOvs');
+    renderLane($('vlogFxs'), (o) => isFxOv(o));
+    renderLane($('vlogOvs'), (o) => !isFxOv(o));
+  }
+  function renderLane(box, which) {
     box.textContent = '';
-    const { rows, of } = Timeline.overlayRows(p);
+    const list = p.overlays.filter(which);
+    const { rows, of } = Timeline.overlayRows(p, which);
     box.style.height = `${rows * 26}px`;
-    box.hidden = !p.overlays.length;
-    p.overlays.forEach((o) => {
+    box.hidden = !list.length;
+    list.forEach((o) => {
       const el = document.createElement('div');
       el.className = `vlog-ov${o.id === ov ? ' sel' : ''}${o.layer.type === 'text' ? ' text' : ''}${o.layer.type === 'effect' ? ' fx' : ''}`;
       el.dataset.id = o.id;
@@ -569,7 +574,8 @@ window.Vlog = (function () {
 
     bindScrub();
     bindClipGestures();
-    bindOverlayGestures();
+    bindOverlayGestures($('vlogOvs'));
+    bindOverlayGestures($('vlogFxs'));
     $('vlogClips').addEventListener('click', (e) => {
       const j = e.target.closest('.vlog-join');
       if (j) selectJoin(Number(j.dataset.join));
@@ -713,8 +719,7 @@ window.Vlog = (function () {
   }
 
   /* Полоска надписи: нажал — выбрана; выбранную тянешь целиком (сдвиг по времени) или за края (начало и конец). */
-  function bindOverlayGestures() {
-    const box = $('vlogOvs');
+  function bindOverlayGestures(box) {
     let g = null;
     box.addEventListener('pointerdown', (e) => {
       const el = e.target.closest('.vlog-ov');

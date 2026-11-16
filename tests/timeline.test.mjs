@@ -88,3 +88,14 @@ test('стыки под такт: если такты уже совпадают,
   const p = project(['image', 1000], ['image', 1000]);
   assert.equal(Timeline.fitToBeats(p, [0, 1000, 2000, 3000]), 0);
 });
+
+test('ряды наложений: эффекты раскладываются отдельно от надписей', () => {
+  const p = project(['image', 9000]);
+  Timeline.addOverlay(p, { type: 'text', text: 'а' }, 0);
+  Timeline.addOverlay(p, { type: 'text', text: 'б' }, 1000);
+  Timeline.addOverlay(p, { type: 'effect', fx: 'glitch' }, 500);
+  const isFx = (o) => o.layer.type === 'effect';
+  assert.equal(Timeline.overlayRows(p, isFx).rows, 1);
+  assert.equal(Timeline.overlayRows(p, (o) => !isFx(o)).rows, 2);
+  assert.equal(Timeline.overlayRows(p).rows, 3);
+});
