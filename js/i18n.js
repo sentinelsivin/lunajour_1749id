@@ -1432,6 +1432,7 @@ window.I18n = (function () {
     'Край наклейки': 'Sticker edge',
     'Фигура': 'Shape',
     'Без коллажа': 'No collage',
+    'Оформление': 'Design',
     'Скобки () в тексте — место для кадра.': 'Brackets () in the text mark where a frame goes.',
     'Как в карточке': 'As in the card',
     'Макеты из карточки: клип играет во всех ячейках коллажа. Размер ролика меняется в «Формат».': 'Layouts from the card: the clip plays in every collage cell. Change the video size in Format.',

@@ -1135,6 +1135,13 @@ details.fine > .slider { margin-top: 12px; }
   scrollbar-width: none;
 }
 .vlog-tools::-webkit-scrollbar { display: none; }
+/* панель шире экрана: тающий край подсказывает, что там есть ещё кнопки */
+.vlog-tools.more-r { -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, #000 calc(100% - 44px), transparent); }
+.vlog-tools.more-l { -webkit-mask-image: linear-gradient(90deg, transparent, #000 44px); mask-image: linear-gradient(90deg, transparent, #000 44px); }
+.vlog-tools.more-l.more-r { -webkit-mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(90deg, transparent, #000 44px, #000 calc(100% - 44px), transparent); }
+/* вкладки группы над настройками: Карточка / Макет / Фигура, Цвет / Эффект / Сканер */
+.vlog-group-tabs { margin-bottom: 4px; }
+.vlog-group-tabs button { flex: 1; }
 .vlog-tools button {
   flex: 1 0 64px;
   display: flex; flex-direction: column; align-items: center; gap: 3px;

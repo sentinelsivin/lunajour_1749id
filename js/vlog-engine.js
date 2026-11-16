@@ -316,6 +316,7 @@ window.VlogEngine = (function () {
      Клип становится фото этой карточки и играет внутри неё; в коллаже он стоит во всех ячейках.
      Своё фото-фон и свою фигуру-вырез стиль с собой не несёт, вместо них обычная бумага и без выреза. */
   const cardAssets = { stickers: {} };
+  let quick = false;
   const cardCache = new WeakMap();
   /* фигура клипа (clip.shape: мотив, размер, плотность, бумага): вырез поверх кадра, как фигура в карточке.
      Без карточки клип кладётся в пустую карточку редактора; с карточкой фигура заменяет её фигуру. */
@@ -384,6 +385,16 @@ window.VlogEngine = (function () {
   function paintClip(k, W, H, clip, local, into, t, seek) {
     const src = source(clip, local, seek);
     if (!src) return null;
+    /* при проигрывании в просмотре эффекты и сканер берут разбор кадра из недавнего (см. Effects.reuse) */
+    const E = window.Effects;
+    if (E) E.reuse = quick ? `${clip.id}|${k}` : null;
+    try {
+      return paintClipBody(k, W, H, clip, src, into, t);
+    } finally {
+      if (E) E.reuse = null;
+    }
+  }
+  function paintClipBody(k, W, H, clip, src, into, t) {
     const { c, x } = buf(k, W, H);
     x.fillStyle = '#0a0a0a';
     x.fillRect(0, 0, W, H);
@@ -510,6 +521,8 @@ window.VlogEngine = (function () {
     const hit = Timeline.at(p, t);
     if (!hit) return true;
     const seek = opts.seek !== false;
+    /* quick: кадр просмотра во время проигрывания, точность разбора кадра можно чуть уступить ради плавности */
+    quick = !!opts.quick && !exporting;
     const tr = Timeline.transitionAt(p, hit);
     let ok = true;
     /* один и тот же файл не может стоять на двух местах сразу: такой стык показываем склейкой */

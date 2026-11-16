@@ -135,7 +135,7 @@ window.Vlog = (function () {
         at = total();
         syncPlay();
       } else Engine.steer(p, at);
-      Engine.drawFrame(x, p, Math.min(at, total() - 1), { seek: false });
+      Engine.drawFrame(x, p, Math.min(at, total() - 1), { seek: false, quick: true });
       follow();
       syncTime();
     } else if (dirty) {
@@ -836,6 +836,8 @@ window.Vlog = (function () {
     back: '<path d="M12 4l-6 6 6 6"/>',
     newText: '<path d="M4 4h12M10 4v13"/>',
     text: '<path d="M4 4h12M10 4v13"/>',
+    'g-dress': '<rect x="3.5" y="2.5" width="13" height="15" rx="1"/><rect x="6" y="5" width="8" height="7"/><path d="M6 14.5h5"/>',
+    'g-fx': '<path d="M10 2v4M10 14v4M2 10h4M14 10h4M4.5 4.5L7 7M13 13l2.5 2.5M15.5 4.5L13 7M7 13l-2.5 2.5"/>',
     stickers: '<path d="M16.5 11.5V5a1.5 1.5 0 0 0-1.5-1.5H5A1.5 1.5 0 0 0 3.5 5v10A1.5 1.5 0 0 0 5 16.5h6.5z"/><path d="M11.5 16.5v-3.5a1.5 1.5 0 0 1 1.5-1.5h3.5"/><circle cx="7.5" cy="8" r="1"/><circle cx="12.5" cy="8" r="1"/>',
     style: '<circle cx="10" cy="10" r="7"/><circle cx="7" cy="8" r="1.2"/><circle cx="12" cy="7" r="1.2"/><circle cx="13" cy="11.5" r="1.2"/>',
     anim: '<path d="M3 15c3 0 4-10 7-10s4 10 7 10"/>',
@@ -875,10 +877,26 @@ window.Vlog = (function () {
       );
       return;
     }
-    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('card', 'Карточка', sheet === 'card'), toolBtn('layout', 'Макет', sheet === 'layout'), toolBtn('look', 'Цвет', sheet === 'look'), toolBtn('fx', 'Эффект', sheet === 'fx'), toolBtn('scan', 'Сканер', sheet === 'scan'), toolBtn('shape', 'Фигура', sheet === 'shape'));
+    /* похожие настройки собраны в группы: одна кнопка, внутри шторки вкладки */
+    const open = (g) => GROUPS[g].includes(sheet) || (desktop() && !sheet && g === 'g-fx');
+    nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('g-dress', 'Оформление', open('g-dress')), toolBtn('g-fx', 'Эффекты', open('g-fx')));
     if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
+    requestAnimationFrame(fadeTools);
+  }
+
+  /* группы инструментов клипа: какие шторки внутри и какая открывалась последней */
+  const GROUPS = { 'g-dress': ['card', 'layout', 'shape'], 'g-fx': ['look', 'fx', 'scan'] };
+  const groupLast = { 'g-dress': 'card', 'g-fx': 'look' };
+  const GROUP_NAMES = { 'g-dress': 'Оформление', 'g-fx': 'Эффекты' };
+  const groupOf = (id) => Object.keys(GROUPS).find((g) => GROUPS[g].includes(id)) || '';
+
+  /* у панели инструментов, которая не влезает, край тает: видно, что её можно листать */
+  function fadeTools() {
+    const nav = $('vlogTools');
+    nav.classList.toggle('more-r', nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 2);
+    nav.classList.toggle('more-l', nav.scrollLeft > 2);
   }
 
   function runTool(id) {
@@ -911,6 +929,11 @@ window.Vlog = (function () {
       return syncAll();
     }
     if (id === 'del') return removeSel();
+    if (GROUPS[id]) {
+      /* группа открывается на той вкладке, что была последней; повторное нажатие на телефоне закрывает */
+      if (GROUPS[id].includes(sheet) && !desktop()) return openSheet('');
+      return openSheet(groupLast[id]);
+    }
     openSheet(sheet === id && !desktop() ? '' : id);
   }
 
@@ -1007,8 +1030,21 @@ window.Vlog = (function () {
     body.textContent = '';
     side.hidden = !id;
     if (!id) return;
-    $('vlogSheetTitle').textContent = t(SHEETS[id] || '');
+    const g = clip() ? groupOf(id) : '';
+    $('vlogSheetTitle').textContent = t(g ? GROUP_NAMES[g] : SHEETS[id] || '');
     $('vlogSheetClose').hidden = desktop() && !sheet;
+    if (g) {
+      /* вкладки группы: переключаются без закрытия шторки */
+      groupLast[g] = id;
+      const tabs = el('div', 'seg vlog-group-tabs');
+      GROUPS[g].forEach((v) => {
+        const b = el('button', v === id ? 'on' : '', t(SHEETS[v]));
+        b.type = 'button';
+        b.onclick = () => openSheet(v);
+        tabs.append(b);
+      });
+      body.append(tabs);
+    }
     const c = clip();
     if (id === 'project') {
       body.append(el('p', 'hint', t('Нажми на клип в ленте, чтобы настроить его. Пустое место ленты листает время.')));
@@ -1886,6 +1922,7 @@ window.Vlog = (function () {
     $('vlogFiles').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
     $('vlogMusicFile').onchange = (e) => { setMusicFile(e.target.files[0]); e.target.value = ''; };
     $('vlogStickerFile').onchange = (e) => { addStickerFile(e.target.files[0]); e.target.value = ''; };
+    $('vlogTools').addEventListener('scroll', fadeTools, { passive: true });
     $('vlogTools').onclick = (e) => { const b = e.target.closest('button'); if (b) runTool(b.dataset.tool); };
     $('vlogSheetClose').onclick = () => openSheet('');
     $('vlogQuality').onclick = (e) => { const b = e.target.closest('button'); if (b) { quality = Number(b.dataset.v); markQuality(); } };
@@ -1900,7 +1937,7 @@ window.Vlog = (function () {
     };
     bindStage();
     window.addEventListener('keydown', onKey, true);
-    window.addEventListener('resize', () => { if (open) { sizeCanvas(); syncSheet(); } });
+    window.addEventListener('resize', () => { if (open) { sizeCanvas(); syncSheet(); fadeTools(); } });
     document.addEventListener('visibilitychange', () => {
       if (document.hidden && open && Engine.playing && !abort) { Engine.pause(); syncPlay(); }
     });

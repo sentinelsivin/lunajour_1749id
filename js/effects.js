@@ -99,6 +99,23 @@ window.Effects = (function () {
   }
 
   /* ---------- взгляд на картинку: яркость и края на маленькой копии ---------- */
+  /* Чтение копии с видеокарты дорогое (несколько мс на кадр, на телефоне больше), поэтому при проигрывании
+     во влоге разбор кадра берётся из недавнего: api.reuse — ключ клипа, обновление раз в REUSE_S по часам ролика.
+     Без ключа (карточка, пауза, запись ролика) кадр разбирается заново каждый раз. */
+  const REUSE_S = 0.12;
+  const reused = new Map();
+  function look(ctx, W, H, r) {
+    const key = api.reuse;
+    const now = api.clock;
+    if (key == null || now == null) return analyze(ctx, W, H, r);
+    const k = `${key}|${W}x${H}|${r ? `${Math.round(r.x)},${Math.round(r.y)},${Math.round(r.w)},${Math.round(r.h)}` : ''}`;
+    const hit = reused.get(k);
+    if (hit && now >= hit.t && now - hit.t < REUSE_S) return hit.A;
+    const A = analyze(ctx, W, H, r);
+    if (reused.size > 16) reused.clear();
+    reused.set(k, { t: now, A });
+    return A;
+  }
   const probe = document.createElement('canvas');
   function analyze(ctx, W, H, r) {
     const gw = 160;
@@ -2174,7 +2191,8 @@ window.Effects = (function () {
   }
   let maskOff = null;
 
-  const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze, autoBoxes, makeRng, lastBoxes: {} };
+  /* analyze для сканера тоже идёт через look: без api.reuse это обычный разбор */
+  const api = { EFFECTS, CATS, byId, usesBoxes, fonts, styleOf, analyze: look, autoBoxes, makeRng, lastBoxes: {}, reuse: null };
 
   /* часы ролика в секундах: глитчи в видео живут, null у фото */
   api.clock = null;
@@ -2222,7 +2240,7 @@ window.Effects = (function () {
       c.drawImage(ctx.canvas, r.x, r.y, W, H, 0, 0, W, H);
       rr = { x: 0, y: 0, w: W, h: H };
     }
-    const A = analyze(c, W, H, rr);
+    const A = look(c, W, H, rr);
     const box = () => {
       const list = fx.boxes && fx.boxes.length ? fx.boxes : autoBoxes(A, Math.round((def.id === 'tags' ? 6 : fx.style === 'arcs' ? 16 : 10) * (fx.amount || 1)), makeRng(fx.seed || 1), W, H, def.id === 'tags' ? 0.05 : def.id === 'objects' ? -0.02 : 0.01);
       api.lastBoxes[key] = list;
