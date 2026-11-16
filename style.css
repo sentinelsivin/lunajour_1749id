@@ -1012,6 +1012,22 @@ details.fine > .slider { margin-top: 12px; }
   border-bottom: 1px solid var(--hairline);
 }
 .vlog-title { flex: 1; font: 400 22px/1 var(--display); }
+/* название влога в шапке: нажатие открывает список влогов */
+button.vlog-title {
+  display: inline-flex; align-items: center; gap: 6px; min-width: 0; padding: 4px 6px; margin-left: -6px;
+  border: 0; border-radius: 6px; background: none; color: inherit; text-align: left; cursor: pointer;
+}
+button.vlog-title:hover { background: rgb(var(--tint) / .06); }
+button.vlog-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.vlog-title svg { flex: none; opacity: .6; }
+.vlog-projects { display: flex; flex-direction: column; gap: 6px; }
+.vlog-project { display: flex; align-items: center; gap: 10px; padding: 6px; border: 1px solid var(--hairline); border-radius: 8px; background: var(--surface2); }
+.vlog-project.on { border-color: var(--accent-light); }
+.vlog-project-open { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; color: inherit; text-align: left; cursor: pointer; }
+.vlog-project-open img, .vlog-project-open i { flex: none; width: 40px; height: 52px; border-radius: 4px; object-fit: cover; background: var(--surface1); }
+.vlog-project-open b { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.vlog-project-open small { color: var(--muted); font-size: 12px; }
+.vlog-project-open span { min-width: 0; }
 .vlog-history { display: flex; gap: 4px; }
 .vlog-stage { grid-area: stage; position: relative; display: grid; place-items: center; min-height: 0; overflow: hidden; }
 #vlogCanvas { display: block; border-radius: 6px; background: #000; cursor: pointer; }

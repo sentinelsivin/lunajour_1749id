@@ -25,7 +25,7 @@ window.Memory = (function () {
 
   /* разделы: какие ключи базы к чему относятся */
   const GROUPS = [
-    { id: 'vlog', name: 'Влог', test: (k) => k === 'vlog' || k.startsWith('vlog-m-') },
+    { id: 'vlog', name: 'Влоги', test: (k) => k === 'vlog' || k === 'vlogs' || k.startsWith('vlog-m-') || k.startsWith('vlog-p-') },
     { id: 'draft', name: 'Черновик карточки', test: (k) => k === 'draft', note: 'Обновляется сам, пока правишь карточку. «Новый снимок» с нуля его удаляет.' },
     { id: 'styles', name: 'Мои стили', test: (k) => k === 'styles', note: 'Отдельный стиль удаляется в меню ⋯ → Мои стили.' },
     { id: 'feed', name: 'План ленты', test: (k) => k === 'feed', note: 'Посты удаляются в меню ⋯ → План ленты.' },
@@ -42,8 +42,11 @@ window.Memory = (function () {
       g.bytes += sizeOf(await Store.get(key));
     }
     const vlog = out.find((g) => g.id === 'vlog');
-    const project = await Store.get('vlog');
-    vlog.clips = project && Array.isArray(project.clips) ? project.clips.length : 0;
+    /* влогов несколько: клипы считаем по списку, старый одиночный влог тоже учитываем */
+    const list = await Store.get('vlogs');
+    const old = await Store.get('vlog');
+    vlog.count = list && Array.isArray(list.list) ? list.list.length : old ? 1 : 0;
+    vlog.clips = list && Array.isArray(list.list) ? list.list.reduce((n, x) => n + (x.clips || 0), 0) : old && Array.isArray(old.clips) ? old.clips.length : 0;
     return out;
   }
 
@@ -89,8 +92,8 @@ window.Memory = (function () {
       if (g.id === 'vlog') {
         const p = document.createElement('p');
         p.className = 'hint';
-        p.textContent = `${t('Клипов в ролике')}: ${g.clips}. ${t('Сохрани ролик файлом, прежде чем очищать.')}`;
-        row.append(p, confirmButton('Очистить влог', 'Точно удалить все клипы? Нажми ещё раз', async () => {
+        p.textContent = `${t('Влогов')}: ${g.count}, ${t('клипов')}: ${g.clips}. ${t('Отдельный влог удаляется в самом влоге: нажми на его название. Сохрани ролики файлами, прежде чем очищать всё.')}`;
+        row.append(p, confirmButton('Очистить все влоги', 'Точно удалить все влоги и клипы? Нажми ещё раз', async () => {
           for (const k of g.keys) await Store.del(k);
           if (window.Vlog && window.Vlog.reset) await window.Vlog.reset();
           render();

@@ -58,22 +58,113 @@ window.Vlog = (function () {
     toastTimer = setTimeout(() => { el.hidden = true; }, ms);
   }
 
-  /* ---------- сохранение черновика ---------- */
+  /* ---------- влоги: список и сохранение ----------
+     Каждый влог хранится отдельно (vlog-p-<id>), список с названиями в 'vlogs'. Файлы клипов у влогов свои (vlog-m-<id>).
+     Раньше влог был один под ключом 'vlog': при первом открытии он переезжает в список как «Мой влог». */
   let saveTimer = 0;
+  let projId = '';
+  let index = { current: '', list: [] };
+  const projKey = (id) => `vlog-p-${id}`;
+  const entry = () => index.list.find((x) => x.id === projId);
   function save() {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(() => Store.set('vlog', p), 500);
+    saveTimer = setTimeout(flush, 500);
+  }
+  /* сохранить сейчас: сам влог и строку в списке (сколько клипов, длина, обложка) */
+  async function flush() {
+    clearTimeout(saveTimer);
+    if (!projId) return;
+    const e = entry();
+    if (e) {
+      const first = p.clips[0] && p.media[p.clips[0].media];
+      Object.assign(e, { updated: Date.now(), clips: p.clips.length, dur: Math.round(total()), thumb: (first && first.thumb) || '' });
+    }
+    await Store.set(projKey(projId), p);
+    await Store.set('vlogs', index);
+  }
+  function freshName() {
+    const base = t('Влог');
+    let n = index.list.length + 1;
+    while (index.list.some((x) => x.name === `${base} ${n}`)) n++;
+    return `${base} ${n}`;
   }
 
   async function load() {
-    const saved = await Store.get('vlog');
-    if (saved && saved.v === 1 && Array.isArray(saved.clips)) p = { ...Timeline.newProject(), ...saved };
-    /* файлы, которые ни к чему не привязаны, больше не нужны */
-    for (const id of Timeline.unused(p)) {
-      delete p.media[id];
-      Engine.forget(id);
+    const saved = await Store.get('vlogs');
+    if (saved && Array.isArray(saved.list) && saved.list.length) index = saved;
+    else {
+      /* переезд со старого одиночного влога */
+      const old = await Store.get('vlog');
+      const id = Timeline.uid();
+      index = { current: id, list: [{ id, name: t('Мой влог'), updated: Date.now(), clips: 0, dur: 0, thumb: '' }] };
+      if (old && old.v === 1 && Array.isArray(old.clips)) await Store.set(projKey(id), old);
+      await Store.set('vlogs', index);
+      await Store.del('vlog');
     }
+    if (!index.list.some((x) => x.id === index.current)) index.current = index.list[0].id;
+    await openProject(index.current, false);
+    /* строка в списке сразу с числом клипов и обложкой */
+    await flush();
     loaded = true;
+  }
+  /* открыть влог из списка: всё, что держали для прошлого, отпускаем */
+  async function openProject(id, sync = true) {
+    if (projId && projId !== id) await flush();
+    Engine.pause();
+    Engine.release();
+    Engine.resetMusic();
+    const saved = await Store.get(projKey(id));
+    p = saved && saved.v === 1 && Array.isArray(saved.clips) ? { ...Timeline.newProject(), ...saved } : Timeline.newProject();
+    projId = id;
+    index.current = id;
+    /* файлы, которые ни к чему не привязаны, больше не нужны */
+    for (const mid of Timeline.unused(p)) {
+      delete p.media[mid];
+      Engine.forget(mid);
+    }
+    hist.clear();
+    sel = -1;
+    ov = '';
+    join = -1;
+    at = 0;
+    peek = null;
+    Engine.preloadLooks(p);
+    await Store.set('vlogs', index);
+    syncName();
+    if (sync && open) {
+      sizeCanvas();
+      const w = $('vlogTl').clientWidth;
+      if (total()) pps = Math.max(PPS_MIN, Math.min(PPS_MAX, (w * 0.8 * 1000) / total()));
+      syncAll();
+      kick();
+    }
+  }
+  async function newProject() {
+    await flush();
+    const id = Timeline.uid();
+    index.list.unshift({ id, name: freshName(), updated: Date.now(), clips: 0, dur: 0, thumb: '' });
+    await openProject(id);
+    await flush();
+  }
+  /* удалить влог вместе с его файлами; если он открыт, открываем соседний или новый */
+  async function deleteProject(id) {
+    const saved = id === projId ? p : await Store.get(projKey(id));
+    if (saved && saved.media) for (const mid of Object.keys(saved.media)) await Engine.forget(mid);
+    await Store.del(projKey(id));
+    index.list = index.list.filter((x) => x.id !== id);
+    if (id === projId) {
+      projId = '';
+      if (index.list.length) await openProject(index.list[0].id);
+      else { await newProject(); return; }
+    }
+    await Store.set('vlogs', index);
+    syncSheet();
+  }
+  function syncName() {
+    const e = entry();
+    const name = (e && e.name) || t('Влог');
+    $('vlogNameText').textContent = name;
+    $('vlogName').title = `${name}: ${t('мои влоги, новый, переименовать')}`;
   }
 
   /* любое изменение проекта: сначала копия для отмены, потом действие */
@@ -1113,7 +1204,7 @@ window.Vlog = (function () {
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
     music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
-    text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
+    projects: 'Мои влоги', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
     sheet = id;
@@ -1206,6 +1297,7 @@ window.Vlog = (function () {
       sheetMusic(body);
     }
     if (id === 'format') sheetFormat(body);
+    if (id === 'projects') sheetProjects(body);
     if (id === 'music') sheetMusic(body);
     if (id === 'stickers') sheetStickers(body);
     if (id === 'trans') sheetTrans(body);
@@ -1563,6 +1655,63 @@ window.Vlog = (function () {
     const b = Timeline.starts(p)[join + 1];
     const d = Timeline.trDur(p, join);
     previewFrom(b - d / 2 - 500, b + d / 2 + 500);
+  }
+
+  /* «3 клипа», «5 клипов», «1 clip» */
+  function clipsText(n) {
+    if (I18n.lang === 'en') return `${n} ${n === 1 ? 'clip' : 'clips'}`;
+    const d = n % 10;
+    const dd = n % 100;
+    const word = d === 1 && dd !== 11 ? 'клип' : d >= 2 && d <= 4 && (dd < 12 || dd > 14) ? 'клипа' : 'клипов';
+    return `${n} ${word}`;
+  }
+
+  /* ---------- мои влоги ---------- */
+  function sheetProjects(body) {
+    const e = entry();
+    const name = el('input', 'vlog-input');
+    name.type = 'text';
+    name.value = (e && e.name) || '';
+    name.placeholder = t('Название влога');
+    name.maxLength = 60;
+    name.addEventListener('input', () => {
+      const cur = entry();
+      if (!cur) return;
+      cur.name = name.value.trim() || t('Без названия');
+      syncName();
+      save();
+    });
+    name.addEventListener('change', () => syncSheet());
+    body.append(group('Название', name));
+    const add = el('button', 'btn small primary', `+ ${t('Новый влог')}`);
+    add.type = 'button';
+    add.onclick = () => newProject();
+    body.append(add);
+    const list = el('div', 'vlog-projects');
+    [...index.list].sort((a, b) => (b.updated || 0) - (a.updated || 0)).forEach((x) => {
+      const row = el('div', `vlog-project${x.id === projId ? ' on' : ''}`);
+      const openBtn = el('button', 'vlog-project-open');
+      openBtn.type = 'button';
+      if (x.thumb) { const img = el('img'); img.src = x.thumb; img.alt = ''; openBtn.append(img); } else openBtn.append(el('i'));
+      const text = el('span');
+      const when = x.updated ? new Date(x.updated).toLocaleDateString(I18n.lang === 'en' ? 'en-GB' : 'ru-RU', { day: 'numeric', month: 'short' }) : '';
+      text.append(el('b', '', x.name), el('small', '', [clipsText(x.clips || 0), x.dur ? fmt(x.dur) : '', when].filter(Boolean).join(' · ')));
+      openBtn.append(text);
+      openBtn.onclick = () => { if (x.id !== projId) openProject(x.id); };
+      row.append(openBtn);
+      /* удаление в два нажатия: первое спрашивает */
+      const del = el('button', 'btn small', t('Удалить'));
+      del.type = 'button';
+      let armed = false;
+      del.onclick = () => {
+        if (!armed) { armed = true; del.textContent = t('Точно?'); del.classList.add('danger'); return; }
+        deleteProject(x.id);
+      };
+      row.append(del);
+      list.append(row);
+    });
+    body.append(list);
+    body.append(el('p', 'hint', t('Каждый влог хранится на этом устройстве со своими клипами. Удалённый влог не вернуть: сначала сохрани ролик файлом.')));
   }
 
   function sheetFormat(body) {
@@ -2205,7 +2354,9 @@ window.Vlog = (function () {
   }
   function fileName(blob) {
     const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
-    return `lunajour-vlog-${new Date().toLocaleDateString('sv-SE')}.${ext}`;
+    const e = entry();
+    const name = ((e && e.name) || 'vlog').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, 40) || 'vlog';
+    return `lunajour-${name}-${new Date().toLocaleDateString('sv-SE')}.${ext}`;
   }
 
   /* ---------- клавиши: пока влог открыт, клавиши карточки не срабатывают ---------- */
@@ -2242,6 +2393,7 @@ window.Vlog = (function () {
     bound = true;
     bindTimeline();
     $('vlogBack').onclick = close;
+    $('vlogName').onclick = () => { pauseNow(); select(-1); selectOv(''); openSheet(sheet === 'projects' && !desktop() ? '' : 'projects'); };
     $('vlogPlay').onclick = togglePlay;
     $('vlogUndo').onclick = () => undo(false);
     $('vlogRedo').onclick = () => undo(true);
@@ -2301,26 +2453,21 @@ window.Vlog = (function () {
     Engine.release();
     open = false;
     $('vlog').hidden = true;
-    clearTimeout(saveTimer);
-    Store.set('vlog', p);
+    flush();
     if (onClose) onClose();
   }
 
-  /* «Память → Очистить влог»: файлы уже удалены из базы, здесь забываем проект и всё, что держали в памяти */
+  /* «Память → Очистить влоги»: все влоги и их файлы уже удалены из базы, здесь забываем их и начинаем один пустой */
   async function reset() {
     Engine.pause();
     for (const id of Object.keys(p.media)) await Engine.forget(id);
-    Engine.release();
-    Engine.resetMusic();
     clearTimeout(saveTimer);
-    p = Timeline.newProject();
-    hist.clear();
-    sel = -1;
-    ov = '';
-    join = -1;
-    at = 0;
+    projId = '';
+    const id = Timeline.uid();
+    index = { current: id, list: [{ id, name: t('Мой влог'), updated: Date.now(), clips: 0, dur: 0, thumb: '' }] };
+    await openProject(id, false);
+    await flush();
     loaded = true;
-    await Store.del('vlog');
     if (open) syncAll();
   }
 
