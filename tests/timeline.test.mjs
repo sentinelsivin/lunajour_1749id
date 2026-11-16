@@ -99,3 +99,11 @@ test('ряды наложений: эффекты раскладываются �
   assert.equal(Timeline.overlayRows(p, (o) => !isFx(o)).rows, 2);
   assert.equal(Timeline.overlayRows(p).rows, 3);
 });
+
+test('ненужные файлы: картинка своей фигуры клипа не считается лишней', () => {
+  const p = project(['image', 3000]);
+  p.media.mask1 = { id: 'mask1', kind: 'mask' };
+  p.media.junk = { id: 'junk', kind: 'image' };
+  p.clips[0].shape = { motif: 'own-mask', mask: 'mask1' };
+  assert.deepEqual([...Timeline.unused(p)], ['junk']);
+});

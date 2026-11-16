@@ -105,7 +105,23 @@ window.Vlog = (function () {
     await openProject(index.current, false);
     /* строка в списке сразу с числом клипов и обложкой */
     await flush();
+    await sweepFiles();
     loaded = true;
+  }
+  /* Файлы, на которые не ссылается ни один влог (отменённое добавление клипа, картинки фигуры, вырезанного стикера),
+     иначе копились бы в памяти браузера. Только при открытии: тогда история отмены пустая и вернуть их нечем. */
+  async function sweepFiles() {
+    try {
+      const used = new Set();
+      for (const e of index.list) {
+        const pr = e.id === projId ? p : await Store.get(projKey(e.id));
+        if (pr && pr.media) Object.keys(pr.media).forEach((id) => used.add(id));
+      }
+      for (const k of await Store.keys()) {
+        const key = String(k);
+        if (key.startsWith('vlog-m-') && !used.has(key.slice(7))) await Store.del(key);
+      }
+    } catch { /* уборка не обязательна: в следующий раз */ }
   }
   /* открыть влог из списка: всё, что держали для прошлого, отпускаем */
   async function openProject(id, sync = true) {
@@ -914,8 +930,15 @@ window.Vlog = (function () {
       if (g.kind === 'pan') {
         /* у середины кадр прилипает к центру */
         const snap = (v) => (Math.abs(v) < 0.04 ? 0 : Math.max(-1, Math.min(1, v)));
-        if (g.room.mx) c.x = snap(g.x + (pt.x - g.pt.x) / g.room.mx);
-        if (g.room.my) c.y = snap(g.y + (pt.y - g.pt.y) / g.room.my);
+        if (g.inner) {
+          const cv = canvasEl();
+          const lim = (v) => (Math.abs(v) < 0.02 ? 0 : Math.max(-0.5, Math.min(0.5, v)));
+          c.cx = lim(g.cx + (pt.x - g.pt.x) / cv.width);
+          c.cy = lim(g.cy + (pt.y - g.pt.y) / cv.height);
+        } else {
+          if (g.room.mx) c.x = snap(g.x + (pt.x - g.pt.x) / g.room.mx);
+          if (g.room.my) c.y = snap(g.y + (pt.y - g.pt.y) / g.room.my);
+        }
       } else if (pts.size >= 2) {
         const [a, b] = [...pts.values()];
         const z = ZOOM_OF(g.zoom * (dist(a, b) / Math.max(4, g.d0)));
@@ -946,7 +969,8 @@ window.Vlog = (function () {
       } else if (!Engine.playing && clip()) {
         const c = clip();
         showSel();
-        g = { kind: 'pan', pt, x: c.x || 0, y: c.y || 0, room: clipRoom(c) };
+        /* в карточке, макете или фигуре кадр двигается внутри своего окошка (cx, cy — доли окошка) */
+        g = { kind: 'pan', pt, x: c.x || 0, y: c.y || 0, room: clipRoom(c), inner: !!(c.card || hasShape(c) || hasLayout(c)), cx: c.cx || 0, cy: c.cy || 0 };
         e.preventDefault();
       } else g = { kind: 'tap', pt };
     });
@@ -1873,7 +1897,7 @@ window.Vlog = (function () {
   /* кадр клипа: как вписать, масштаб, движение фото; сдвиг — пальцем по просмотру */
   function sheetFrame(body, c) {
     const fixed = c.card || hasShape(c) || hasLayout(c);
-    if (fixed) body.append(el('p', 'hint', t('У клипа есть карточка, макет или фигура: место кадра задают они, здесь работает только масштаб.')));
+    if (fixed) body.append(el('p', 'hint', t('У клипа есть карточка, макет или фигура: окошко для кадра задают они, а сам кадр внутри окошка двигается пальцем и масштабом.')));
     body.append(group('Как вписать', chips(Engine.FITS.map((f) => [f.id, t(f.name)]), c.fit || '', (v) => commit(() => { c.fit = v; }))));
     body.append(slider('Масштаб', 100, Engine.ZOOM_MAX * 100, 5, Math.round((c.zoom || 1) * 100), (v) => `${v}%`, (v) => { c.zoom = v / 100; }));
     if (c.kind === 'image') {
@@ -1887,11 +1911,11 @@ window.Vlog = (function () {
     const row = el('div', 'row');
     const reset = el('button', 'btn small', t('Сбросить кадр'));
     reset.type = 'button';
-    reset.onclick = () => commit(() => { delete c.fit; delete c.zoom; delete c.x; delete c.y; });
+    reset.onclick = () => commit(() => { delete c.fit; delete c.zoom; delete c.x; delete c.y; delete c.cx; delete c.cy; });
     row.append(reset, toAll('Вписать так все клипы', () => p.clips.forEach((x) => { x.fit = c.fit || ''; })));
     if (c.kind === 'image') row.append(toAll('Движение ко всем фото', () => p.clips.forEach((x) => { if (x.kind === 'image') x.move = c.move || 'in'; })));
     body.append(row);
-    body.append(el('p', 'hint', t(fixed ? 'Масштаб меняй щипком на просмотре или колесом мыши.' : 'Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
+    body.append(el('p', 'hint', t(fixed ? 'Двигай кадр в окошке пальцем на просмотре, щипком или колесом меняй масштаб.' : 'Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
   }
 
   function sheetMusic(body) {
@@ -2138,6 +2162,30 @@ window.Vlog = (function () {
       body.append(group('Подпись', input));
       if (tpl.sample && tpl.sample.includes('()')) body.append(el('p', 'hint', t('Скобки () в тексте — место для кадра.')));
     }
+    /* поля шаблона, как в редакторе: заголовки, подписи, ползунки (мудборд, список желаний и др.) */
+    if (tpl && tpl.fields) {
+      const fstate = { tints: { [lay.collage]: lay.tints || {} }, note: { title: lay.title || '' }, collage: lay.collage };
+      let fields = [];
+      try { fields = tpl.fields(fstate) || []; } catch { fields = []; }
+      fields.forEach((item) => {
+        const cur = (lay.tints || {})[item.key];
+        const write = liveEdit((v) => { c.layout = { ...c.layout, tints: { ...((c.layout && c.layout.tints) || {}), [item.key]: v } }; });
+        if (item.range) {
+          const [min, max, def] = item.range;
+          body.append(slider(item.name, min, max, 1, Number(cur ?? def), (v) => `${v}`, (v) => { c.layout = { ...c.layout, tints: { ...((c.layout && c.layout.tints) || {}), [item.key]: String(v) } }; }));
+          return;
+        }
+        const input = el(item.multiline ? 'textarea' : 'input', item.multiline ? 'vlog-textarea' : 'vlog-input');
+        if (item.multiline) input.rows = 3;
+        else input.type = 'text';
+        input.maxLength = item.maxLength || 90;
+        input.placeholder = t(item.placeholder || '');
+        input.value = cur || '';
+        input.addEventListener('input', () => write(input.value));
+        input.addEventListener('change', () => changed());
+        body.append(group(item.name, input));
+      });
+    }
     if (tpl) {
       /* цвета элементов шаблона и его варианты, как в редакторе; выбор помнится у клипа */
       const tints = lay.tints || {};
@@ -2247,7 +2295,8 @@ window.Vlog = (function () {
   function sheetShape(body, c) {
     const M = window.Motifs;
     if (!M) return;
-    const ok = (m) => m.cat !== 'none' && m.cat !== 'mine' && !m.usesPieces && m.id !== 'own-mask';
+    /* «Своя раскладка» расставляется руками на карточке, во влоге её нет; «Своя фигура» — по своей картинке */
+    const ok = (m) => m.cat !== 'none' && !m.usesPieces;
     const cats = M.CATEGORIES.filter((k) => k.id === 'all' || M.MOTIFS.some((m) => ok(m) && m.cat === k.id));
     if (!cats.some((k) => k.id === shapeCat)) shapeCat = 'all';
     body.append(chips(cats.map((k) => [k.id, t(k.name)]), shapeCat, (v) => { shapeCat = v; syncSheet(); }));
@@ -2265,8 +2314,20 @@ window.Vlog = (function () {
       grid.append(b);
     };
     item('', t('Без фигуры'), el('i', 'vlog-card-none', '∅'));
-    M.MOTIFS.filter((m) => ok(m) && (shapeCat === 'all' || m.cat === shapeCat)).forEach((m) => item(m.id, t(m.name), shapeThumb(m)));
+    M.MOTIFS.filter((m) => ok(m) && m.id !== 'own-mask' && (shapeCat === 'all' || m.cat === shapeCat)).forEach((m) => item(m.id, t(m.name), shapeThumb(m)));
+    if (shapeCat === 'mine' || shapeCat === 'all') {
+      /* своя фигура: картинка с компьютера или телефона; выбранная уже — показываем её */
+      const own = c.shape && c.shape.motif === 'own-mask' && c.shape.mask && p.media[c.shape.mask];
+      const b = el('button', `thumb${own ? ' on' : ''}`);
+      b.type = 'button';
+      b.title = t('Своя фигура');
+      if (own && own.thumb) { const img = el('img'); img.src = own.thumb; img.alt = ''; b.append(img); } else b.append(el('i', 'vlog-card-none', '+'));
+      b.append(el('span', '', t(own ? 'Своя фигура' : 'Загрузить фигуру')));
+      b.onclick = () => $('vlogMaskFile').click();
+      grid.append(b);
+    }
     body.append(grid);
+    if (shapeCat === 'mine') body.append(el('p', 'hint', t('Своя фигура: PNG с прозрачным фоном режется по контуру, обычная картинка — по тёмному. Чёрный силуэт на белом подходит лучше всего.')));
     if (cur) {
       const sh = c.shape;
       body.append(slider('Размер', 40, 180, 5, Math.round((sh.size ?? 1) * 100), (v) => `${v}%`, (v) => { c.shape = { ...c.shape, size: v / 100 }; }));
@@ -2367,6 +2428,22 @@ window.Vlog = (function () {
       m.kind = 'sticker';
       p.media[m.id] = m;
       addSticker({ type: 'sticker', img: m.id, size: 0.4 });
+    } catch {
+      toast(t('Эта картинка не открылась. Попробуй PNG или JPG.'));
+    }
+  }
+
+  /* картинка для своей фигуры клипа: хранится как файл влога, клип вырезается по ней */
+  async function addMaskFile(file) {
+    const c = clip();
+    if (!file || !c) return;
+    try {
+      const m = await Engine.importFile(file);
+      m.kind = 'mask';
+      commit(() => {
+        p.media[m.id] = m;
+        c.shape = { size: 1, density: 1, seed: 7, paper: 'crumple', paperColor: (window.PaperColors || ['#f0ede5'])[0], ...(c.shape || {}), motif: 'own-mask', mask: m.id };
+      });
     } catch {
       toast(t('Эта картинка не открылась. Попробуй PNG или JPG.'));
     }
@@ -2522,6 +2599,7 @@ window.Vlog = (function () {
     $('vlogFiles').onchange = (e) => { addFiles(e.target.files); e.target.value = ''; };
     $('vlogMusicFile').onchange = (e) => { setMusicFile(e.target.files[0]); e.target.value = ''; };
     $('vlogStickerFile').onchange = (e) => { addStickerFile(e.target.files[0]); e.target.value = ''; };
+    $('vlogMaskFile').onchange = (e) => { addMaskFile(e.target.files[0]); e.target.value = ''; };
     $('vlogTools').addEventListener('scroll', fadeTools, { passive: true });
     $('vlogTools').onclick = (e) => { const b = e.target.closest('button'); if (b) runTool(b.dataset.tool); };
     $('vlogSheetClose').onclick = () => openSheet('');

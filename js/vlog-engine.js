@@ -337,7 +337,8 @@ window.VlogEngine = (function () {
       if (lay.collage && lay.tints) s.tints = { ...(s.tints || {}), [lay.collage]: { ...lay.tints } };
       if (lay.title != null) s.note = { ...(s.note || {}), title: lay.title };
     }
-    if (s.motif === 'own-mask') s.motif = 'none';
+    /* своя фигура карточки с собой не приходит (картинка осталась в редакторе), своя фигура клипа — приходит */
+    if (s.motif === 'own-mask' && !(shape && shape.mask)) s.motif = 'none';
     if (s.paper === 'own') s.paper = 'crumple';
     s.note = { ...(s.note || {}), date: (s.note && s.note.date) || new Date().toLocaleDateString('sv-SE') };
     /* шторка «до / после» и надписи по времени живут в длине ролика карточки, во влоге их нет */
@@ -345,6 +346,34 @@ window.VlogEngine = (function () {
     s.layers = (s.layers || []).filter((l) => !l.img);
     cardCache.set(clip, { card: clip.card, shape, lay, s });
     return s;
+  }
+
+  /* своя фигура (shape.motif 'own-mask', shape.mask — файл картинки): маска как в редакторе.
+     PNG с прозрачностью режется по прозрачности, обычная картинка — тёмное режет, светлое остаётся. */
+  const masks = new Map();
+  function maskOf(img) {
+    const k = Math.min(1, 1400 / Math.max(img.width, img.height));
+    const c = Render.canvas(Math.max(1, Math.round(img.width * k)), Math.max(1, Math.round(img.height * k)));
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, c.width, c.height);
+    const data = x.getImageData(0, 0, c.width, c.height);
+    const d = data.data;
+    let opaque = true;
+    for (let i = 3; i < d.length; i += 4) if (d[i] < 250) { opaque = false; break; }
+    for (let i = 0; i < d.length; i += 4) {
+      const a = opaque ? 255 - (0.3 * d[i] + 0.59 * d[i + 1] + 0.11 * d[i + 2]) : d[i + 3];
+      d[i] = d[i + 1] = d[i + 2] = 255;
+      d[i + 3] = a;
+    }
+    x.putImageData(data, 0, 0);
+    return c;
+  }
+  function assetsFor(clip) {
+    const id = clip.shape && clip.shape.motif === 'own-mask' ? clip.shape.mask : '';
+    if (!id) return cardAssets;
+    if (masks.has(id)) return masks.get(id);
+    image(id).then((img) => { if (img && !masks.has(id)) { masks.set(id, { stickers: {}, mask: maskOf(img), maskId: id }); changed(); } }).catch(() => {});
+    return cardAssets;
   }
 
   /* сканер клипа (clip.scan): поверх кадра, по времени ролика */
@@ -366,7 +395,7 @@ window.VlogEngine = (function () {
   }
   function paintCard(x, src, clip, t) {
     const s = cardOf(clip);
-    const slot = { src: { kind: clip.kind === 'video' ? 'video' : 'image', el: src.el, sw: src.w, sh: src.h }, x: 0, y: 0, zoom: Math.max(1, clip.zoom || 1), flip: false, turn: 0, tilt: 0 };
+    const slot = { src: { kind: clip.kind === 'video' ? 'video' : 'image', el: src.el, sw: src.w, sh: src.h }, x: clip.cx || 0, y: clip.cy || 0, zoom: Math.max(1, clip.zoom || 1), flip: false, turn: 0, tilt: 0 };
     const n = s.collage && window.Collages && window.Collages.byId(s.collage) ? window.Collages.count(s.collage, s) : 1;
     const T = t / 1000;
     const { Effects, Scanner } = window;
@@ -375,7 +404,7 @@ window.VlogEngine = (function () {
     if (Scanner) { Scanner.clock = T; if (Scanner.animates(s)) Scanner.time = T; }
     Render.setClock(T);
     try {
-      Render.renderCard(x, s, Array.from({ length: n }, () => slot), cardAssets);
+      Render.renderCard(x, s, Array.from({ length: n }, () => slot), assetsFor(clip));
     } finally {
       Render.setClock(null);
       if (Effects) Effects.clock = null;

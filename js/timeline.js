@@ -199,6 +199,8 @@ window.Timeline = (function () {
   function unused(p) {
     const used = new Set(p.clips.map((c) => c.media));
     (p.overlays || []).forEach((o) => { if (o.layer.img) used.add(o.layer.img); });
+    /* своя фигура-вырез у клипа тоже файл */
+    p.clips.forEach((c) => { if (c.shape && c.shape.mask) used.add(c.shape.mask); });
     if (p.music.fileId) used.add(p.music.fileId);
     return Object.keys(p.media).filter((id) => !used.has(id));
   }
