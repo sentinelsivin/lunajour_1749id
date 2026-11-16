@@ -2661,6 +2661,37 @@ window.Vlog = (function () {
   let result = null;
   let abort = null;
   let quality = 720;
+  /* обложка: кадр p.cover.at, по умолчанию начало; first — показать его первыми кадрами ролика */
+  const coverAt = () => Math.max(0, Math.min(total() - 1, (p.cover && p.cover.at) || 0));
+  let coverRun = 0;
+  async function syncCover() {
+    const run = ++coverRun;
+    $('vlogCoverTime').textContent = `${t('Кадр')} ${fmt(coverAt())}`;
+    $('vlogCoverFirst').checked = !!(p.cover && p.cover.first);
+    $('vlogCoverFirst').disabled = !fastOk;
+    const pv = $('vlogCoverPreview');
+    const [RW, RH] = Render.RATIOS[p.ratio];
+    pv.height = Math.round((pv.width * RH) / RW);
+    if (!window.VlogFast) return;
+    try {
+      const c = await window.VlogFast.cover(p, 360, coverAt());
+      if (run !== coverRun) return;
+      pv.getContext('2d').drawImage(c, 0, 0, pv.width, pv.height);
+    } catch { /* превью не вышло: обложка всё равно сохранится */ }
+  }
+  async function saveCover() {
+    if (!window.VlogFast) return;
+    try {
+      const c = await window.VlogFast.cover(p, 1080, coverAt());
+      const blob = await new Promise((q) => c.toBlob(q, 'image/jpeg', 0.92));
+      const e = entry();
+      const name = ((e && e.name) || 'vlog').replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').slice(0, 40) || 'vlog';
+      window.Export.save(blob, `lunajour-${name}-cover.jpg`);
+    } catch {
+      toast(t('Не получилось сохранить обложку.'));
+    }
+  }
+
   function openExport() {
     if (Engine.playing) { Engine.pause(); syncPlay(); }
     const d = $('vlogExport');
@@ -2684,11 +2715,14 @@ window.Vlog = (function () {
     if (window.VlogFast) {
       window.VlogFast.can(p, quality).then((ok) => {
         fastOk = ok;
+        /* «обложка первым кадром» есть только в быстрой записи */
+        syncCover();
         if (!ok || !d.open || result) return;
         $('vlogExportNote').textContent = t('Ролик собирается кадр за кадром, обычно быстрее, чем идёт, и без пропущенных кадров.');
         $('vlogRecord').disabled = false;
       }).catch(() => {});
     }
+    syncCover();
     d.showModal();
   }
   let fastOk = false;
@@ -2796,6 +2830,9 @@ window.Vlog = (function () {
     $('vlogSheetClose').onclick = () => openSheet('');
     $('vlogQuality').onclick = (e) => { const b = e.target.closest('button'); if (b) { quality = Number(b.dataset.v); markQuality(); } };
     $('vlogRecord').onclick = runExport;
+    $('vlogCoverSet').onclick = () => { commit(() => { p.cover = { ...(p.cover || {}), at: Math.round(at) }; }); syncCover(); };
+    $('vlogCoverFirst').onchange = (e) => commit(() => { p.cover = { at: coverAt(), ...(p.cover || {}), first: e.target.checked }; });
+    $('vlogCoverSave').onclick = saveCover;
     $('vlogExportClose').onclick = () => { if (abort) abort.abort(); $('vlogExport').close(); };
     $('vlogExport').addEventListener('cancel', () => { if (abort) abort.abort(); });
     $('vlogDownload').onclick = () => result && window.Export.save(result, fileName(result));

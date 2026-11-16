@@ -239,6 +239,25 @@ window.VlogFast = (function () {
     return true;
   }
 
+  /* ---------- обложка ---------- */
+  /* Кадр ролика в момент t на холсте ширины size: видео ставится на кадр перемоткой.
+     Из него обложка картинкой и, если выбрано, первые кадры ролика (галерея показывает первый кадр). */
+  const COVER_FRAMES = 3;
+  async function cover(p, size, t) {
+    const [W, H] = sizeOf(p, size);
+    const c = Render.canvas(W, H);
+    const x = c.getContext('2d');
+    const total = Timeline.duration(p);
+    const at = Math.max(0, Math.min(total - 1, t || 0));
+    await Engine.preload(p);
+    for (const [clip, local] of Engine.frameNeeds(p, at)) {
+      Engine.setFrame(clip.media, null);
+      await Engine.seekClip(clip, local);
+    }
+    Engine.drawFrame(x, p, at, { seek: false });
+    return c;
+  }
+
   /* ---------- запись ---------- */
   async function record(p, size, onProgress, signal) {
     const MB = await lib();
@@ -250,6 +269,8 @@ window.VlogFast = (function () {
     onProgress(0.01);
     const sound = await mix(p, total, signal);
     if (signal && signal.aborted) return null;
+    /* обложка первым кадром: первые доли секунды показывают выбранный кадр, длина и звук не меняются */
+    const coverPic = p.cover && p.cover.first ? await cover(p, size, p.cover.at) : null;
     onProgress(0.1);
 
     const c = Render.canvas(W, H);
@@ -287,6 +308,7 @@ window.VlogFast = (function () {
           }
         }
         Engine.drawFrame(x, p, t, { seek: false });
+        if (coverPic && i < COVER_FRAMES) x.drawImage(coverPic, 0, 0, W, H);
         await video.add(i / FPS, 1 / FPS);
         onProgress(0.1 + 0.88 * ((i + 1) / frames));
       }
@@ -304,5 +326,5 @@ window.VlogFast = (function () {
     }
   }
 
-  return { can, record };
+  return { can, record, cover };
 })();

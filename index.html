@@ -772,6 +772,16 @@
       <button type="button" data-v="720">720p, быстрее</button>
       <button type="button" data-v="1080">1080p</button>
     </div>
+    <div class="vlog-cover" id="vlogCover">
+      <canvas id="vlogCoverPreview" width="90" height="160" aria-label="Обложка ролика"></canvas>
+      <div class="vlog-cover-side">
+        <b>Обложка</b>
+        <span class="hint" id="vlogCoverTime">Кадр 0:00.0</span>
+        <button class="btn small" id="vlogCoverSet" type="button">Взять кадр с линии воспроизведения</button>
+        <label class="check"><input type="checkbox" id="vlogCoverFirst">Обложка первым кадром ролика</label>
+        <button class="btn small" id="vlogCoverSave" type="button">Сохранить обложку картинкой</button>
+      </div>
+    </div>
     <button class="btn primary" id="vlogRecord" type="button">Записать ролик</button>
     <button class="btn" id="vlogDownload" type="button" hidden>Сохранить файл</button>
     <button class="btn" id="vlogShare" type="button" hidden>Поделиться</button>
