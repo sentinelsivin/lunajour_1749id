@@ -1798,6 +1798,63 @@ window.Vlog = (function () {
     }
   }
 
+  /* ---------- влог файлом ---------- */
+  let fileBusy = '';
+  const sizeText = (b) => (b >= 1048576 ? `${(b / 1048576).toFixed(1)} ${t('МБ')}` : `${Math.max(1, Math.round(b / 1024))} ${t('КБ')}`);
+  async function exportProject() {
+    if (fileBusy || !p.clips.length) return;
+    pauseNow();
+    fileBusy = 'save';
+    syncSheet();
+    try {
+      await flush();
+      const e = entry();
+      const name = (e && e.name) || t('Влог');
+      const blob = await window.VlogFile.pack(p, name, Engine.blobOf);
+      const safe = name.replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 60) || 'vlog';
+      window.Export.save(blob, `${safe}.${window.VlogFile.EXT}`);
+      toast(`${t('Влог сохранён файлом')}: ${sizeText(blob.size)}.`);
+    } catch {
+      toast(t('Не получилось сохранить влог файлом.'));
+    } finally {
+      fileBusy = '';
+      syncSheet();
+    }
+  }
+  /* открыть из файла: новый влог в списке, файлы получают новые номера (см. VlogFile.remap) */
+  async function importProject(file) {
+    if (!file || fileBusy) return;
+    pauseNow();
+    fileBusy = 'open';
+    syncSheet();
+    try {
+      const got = await window.VlogFile.unpack(file);
+      const map = {};
+      for (const f of got.files) {
+        const nid = Timeline.uid();
+        if (!(await Store.set(`vlog-m-${nid}`, f.blob))) throw new Error('storage');
+        map[f.id] = nid;
+      }
+      const proj = window.VlogFile.remap(got.project, map);
+      await flush();
+      const id = Timeline.uid();
+      await Store.set(projKey(id), proj);
+      const base = got.name || String(file.name || '').replace(/\.lunavlog$/i, '') || t('Влог');
+      const name = index.list.some((x) => x.name === base) ? `${base} (${t('копия')})` : base;
+      index.list.unshift({ id, name, updated: Date.now(), clips: proj.clips.length, dur: 0, thumb: '' });
+      await openProject(id);
+      await flush();
+      toast(`${t('Влог открыт')}: ${name}.`);
+    } catch (err) {
+      toast(t(String(err && err.message) === 'storage'
+        ? 'В памяти браузера не хватило места для этого влога.'
+        : 'Это не файл влога Lunajour или он повреждён.'), 6000);
+    } finally {
+      fileBusy = '';
+      syncSheet();
+    }
+  }
+
   /* «3 клипа», «5 клипов», «1 clip» */
   function clipsText(n) {
     if (I18n.lang === 'en') return `${n} ${n === 1 ? 'clip' : 'clips'}`;
@@ -1852,7 +1909,20 @@ window.Vlog = (function () {
       list.append(row);
     });
     body.append(list);
-    body.append(el('p', 'hint', t('Каждый влог хранится на этом устройстве со своими клипами. Удалённый влог не вернуть: сначала сохрани ролик файлом.')));
+    /* резервная копия: влог целиком (с клипами) в один файл и обратно */
+    const backup = el('div', 'row');
+    const saveBtn = el('button', 'btn small', fileBusy === 'save' ? t('Сохраняю…') : t('Сохранить влог файлом'));
+    saveBtn.type = 'button';
+    saveBtn.disabled = !!fileBusy || !p.clips.length;
+    saveBtn.onclick = exportProject;
+    const openBtn2 = el('button', 'btn small', fileBusy === 'open' ? t('Открываю…') : t('Открыть из файла'));
+    openBtn2.type = 'button';
+    openBtn2.disabled = !!fileBusy;
+    openBtn2.onclick = () => $('vlogProjectFile').click();
+    backup.append(saveBtn, openBtn2);
+    body.append(group('Резервная копия', backup));
+    body.append(el('p', 'hint', t('Влоги хранятся только в памяти браузера на этом устройстве. Сохрани влог файлом, чтобы не потерять его при очистке браузера и открыть на другом телефоне или компьютере. В файле все клипы, фото и музыка, поэтому он большой.')));
+    body.append(el('p', 'hint', t('Удалённый влог не вернуть: сначала сохрани его файлом.')));
   }
 
   function sheetFormat(body) {
@@ -2600,6 +2670,7 @@ window.Vlog = (function () {
     $('vlogMusicFile').onchange = (e) => { setMusicFile(e.target.files[0]); e.target.value = ''; };
     $('vlogStickerFile').onchange = (e) => { addStickerFile(e.target.files[0]); e.target.value = ''; };
     $('vlogMaskFile').onchange = (e) => { addMaskFile(e.target.files[0]); e.target.value = ''; };
+    $('vlogProjectFile').onchange = (e) => { importProject(e.target.files[0]); e.target.value = ''; };
     $('vlogTools').addEventListener('scroll', fadeTools, { passive: true });
     $('vlogTools').onclick = (e) => { const b = e.target.closest('button'); if (b) runTool(b.dataset.tool); };
     $('vlogSheetClose').onclick = () => openSheet('');
