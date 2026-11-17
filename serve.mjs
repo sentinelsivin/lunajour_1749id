@@ -16,6 +16,7 @@ const types = {
   '.webmanifest': 'application/manifest+json',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.webp': 'image/webp',
   '.otf': 'font/otf',
   '.ttf': 'font/ttf',
 };

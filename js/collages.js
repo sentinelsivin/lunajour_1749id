@@ -3651,7 +3651,19 @@
   const collageCherries = new Image(), collageBlueberries = new Image();
   const fruitImages = { red: collageApple, green: collageGreenApple, cherry: collageCherries, blueberry: collageBlueberries };
   const fruitInk = (id) => ({ red: '#922318', green: '#3f5a27', cherry: '#8e2037', blueberry: '#385475' }[id] || '#922318');
-  const collageAssetsReady = Promise.all([[collageApple, 'apple.png'], [collageGreenApple, 'apple-green.png'], [collageCherries, 'cherries.png'], [collageBlueberries, 'blueberries.png']].map(([img, file]) => new Promise(resolve => {
+  const drinks = {
+    matcha: { name: 'Айс-матча', bg: '#ebedd5', pattern: 'check', accent: '#72834e', ink: '#424d25' },
+    americano: { name: 'Айс-американо', bg: '#f5efdc', pattern: 'stripe', accent: '#9a6551', ink: '#47281e' },
+    caramel: { name: 'Карамельный латте', bg: '#fff8eb', pattern: 'dot', accent: '#bf8b50', ink: '#92613b' },
+    tea: { name: 'Холодный чай с лимоном', bg: '#fff3c7', pattern: 'diagonal', accent: '#e4b54c', ink: '#936025' },
+    strawberry: { name: 'Клубничное молоко', bg: '#fbe8eb', pattern: 'heart', accent: '#d9869d', ink: '#a33f60' },
+  };
+  const drinkImages = Object.fromEntries(Object.keys(drinks).map(id => [id, new Image()]));
+  const collageAssets = [
+    [collageApple, 'apple.png'], [collageGreenApple, 'apple-green.png'], [collageCherries, 'cherries.png'], [collageBlueberries, 'blueberries.png'],
+    ...Object.entries(drinkImages).map(([id, img]) => [img, `drink-${id}.webp`]),
+  ];
+  const collageAssetsReady = Promise.all(collageAssets.map(([img, file]) => new Promise(resolve => {
     img.onload = resolve; img.onerror = resolve; img.src = `templates/decor/${file}`;
   })));
 
@@ -3749,6 +3761,93 @@
       ctx.restore();
     },
   });
+
+  COLLAGES.push({
+    id: 'drinkBooth', name: 'Фотобудка с напитками', noNote: true,
+    palette: [{ key: 'background', name: 'Фон' }, { key: 'ink', name: 'Рамки и рисунки' }],
+    choices: [
+      { key: 'drink', name: 'Напитки', def: 'matcha', options: Object.entries(drinks).map(([id, drink]) => [id, drink.name]) },
+      { key: 'mono', name: 'Чёрно-белые фото', def: 'off', options: [['on', 'Есть'], ['off', 'Нет']] },
+      { key: 'decor', name: 'Рисунки мелком', def: 'on', options: [['on', 'Есть'], ['off', 'Нет']] },
+    ],
+    layout(W, H, env) {
+      const k = Math.min(W / 720, H / 900), ox = (W - 720 * k) / 2, oy = (H - 900 * k) / 2;
+      const selected = env.pick('drink', 'matcha');
+      const drinkId = Object.hasOwn(drinks, selected) ? selected : 'matcha';
+      const drink = drinks[drinkId];
+      const mono = env.pick('mono', 'off') === 'on';
+      const cells = [34, 378].map(x => ({
+        x: ox + x * k, y: oy + 296 * k, w: 308 * k, h: 308 * k, rot: 0,
+        mono, frame: 'border', tint: 'ink', color: drink.ink, bw: 0.037,
+      }));
+      return { k, ox, oy, drink, image: drinkImages[drinkId], cells };
+    },
+    deco(ctx, box, u, geo, opt) {
+      const { W, H, k, ox, oy, drink, image } = geo;
+      ctx.fillStyle = opt.c('background', drink.bg);
+      ctx.fillRect(0, 0, W, H);
+      ctx.save(); ctx.translate(ox, oy); ctx.scale(k, k);
+      const left = -ox / k, top = -oy / k, width = W / k, height = H / k;
+      drinkPattern(ctx, drink, left, top, width, height);
+      if (image.naturalWidth) {
+        const { naturalWidth: iw, naturalHeight: ih } = image;
+        /* Две части одного стакана по обе стороны от полосы с фото. */
+        ctx.drawImage(image, 0, 0, iw, ih * 0.48, 80, 0, 560, 269);
+        ctx.drawImage(image, 0, ih * 0.52, iw, ih * 0.48, 80, 631, 560, 269);
+      }
+      ctx.restore();
+    },
+    overlay(ctx, geo, u, opt) {
+      if (opt.c('decor', 'on') !== 'on') return;
+      ctx.save(); ctx.translate(geo.ox, geo.oy); ctx.scale(geo.k, geo.k);
+      const ink = opt.c('ink', geo.drink.ink);
+      ctx.fillStyle = ink;
+      for (const [x, y, size] of [[76, 135, 28], [645, 196, 27], [73, 735, 31], [647, 794, 29]]) {
+        ctx.beginPath(); starPath(ctx, x, y, size, x / 240); ctx.fill();
+      }
+      for (const [x, y, angle] of [[158, 45, -0.3], [460, 257, 0.28], [188, 629, -0.28], [567, 758, 0.35]]) {
+        ctx.fillStyle = '#fffbec';
+        ctx.beginPath(); ctx.ellipse(x, y, 30, 27, angle, 0, TAU); ctx.fill();
+        doodle(ctx, 'spiral', x, y, 19, ink, 4);
+      }
+      ctx.restore();
+    },
+  });
+
+  function drinkPattern(ctx, drink, x, y, w, h) {
+    ctx.fillStyle = ctx.strokeStyle = drink.accent;
+    ctx.globalAlpha = 0.26;
+    const right = x + w, bottom = y + h;
+    if (drink.pattern === 'check' || drink.pattern === 'stripe') {
+      const check = drink.pattern === 'check', step = check ? 66 : 61, band = check ? 33 : 5;
+      for (let i = Math.floor(x / step) * step; i < right; i += step) ctx.fillRect(i, y, band, h);
+      if (check) {
+        for (let j = Math.floor(y / step) * step; j < bottom; j += step) ctx.fillRect(x, j, w, band);
+      }
+    } else if (drink.pattern === 'diagonal') {
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      for (let i = Math.floor((x - h) / 42) * 42; i < right; i += 42) {
+        ctx.moveTo(i, y); ctx.lineTo(i + h, bottom);
+      }
+      ctx.stroke();
+    } else {
+      const heart = drink.pattern === 'heart';
+      const hearts = heart ? heartPts(16, 16, 10) : null;
+      ctx.globalAlpha = 0.56;
+      for (let row = Math.floor(y / 51); row * 51 < bottom + 10; row++) {
+        const stagger = row % 2 * 26, cy = row * 51;
+        for (let col = Math.floor((x - stagger) / 52); col * 52 + stagger < right + 10; col++) {
+          const cx = col * 52 + stagger;
+          ctx.save(); ctx.translate(cx, cy); ctx.beginPath();
+          if (heart) tracePts(ctx, hearts);
+          else ctx.arc(0, 0, 6, 0, TAU);
+          ctx.fill(); ctx.restore();
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
 
   COLLAGES.push({
     id: 'musicWidget', name: 'Музыкальный плеер', noNote: true,
