@@ -77,3 +77,36 @@ test('стиль из влога: своя музыка не переносит�
   assert.equal(st.track, '');
   assert.deepEqual([st.title.font, st.title.anim], ['caveat', 'pop']);
 });
+
+test('паузы в речи: тишина дольше порога вырезается с запасом по краям', () => {
+  // 20 мс на кусочек: 1 с речи, 1 с тишины, 1 с речи, короткая пауза 200 мс, 0.5 с речи
+  const lv = [...Array(50).fill(0.5), ...Array(50).fill(0), ...Array(50).fill(0.5), ...Array(10).fill(0), ...Array(25).fill(0.5)];
+  const keep = VlogData.keepRanges(lv, 20, { threshold: 0.05, minGap: 600, pad: 100 });
+  assert.deepEqual(keep, [{ from: 0, to: 1100 }, { from: 1900, to: 3700 }]);
+  // тишина в начале и в конце уходит целиком
+  const edge = VlogData.keepRanges([...Array(40).fill(0), ...Array(50).fill(0.5), ...Array(40).fill(0)], 20, { threshold: 0.05, pad: 100 });
+  assert.deepEqual(edge, [{ from: 700, to: 1900 }]);
+});
+
+test('дата съёмки: EXIF у JPEG и mvhd у MP4', () => {
+  // маленький JPEG: SOI, APP1 Exif, TIFF (II), IFD0 с одним тегом 0x0132 DateTime
+  const date = '2026:11:20 18:04:31\0';
+  const tiff = [0x49, 0x49, 0x2a, 0, 8, 0, 0, 0, 1, 0, 0x32, 0x01, 2, 0, 20, 0, 0, 0, 26, 0, 0, 0, 0, 0, 0, 0, ...[...date].map((ch) => ch.charCodeAt(0))];
+  const app1 = [...'Exif'].map((ch) => ch.charCodeAt(0)).concat([0, 0], tiff);
+  const len = app1.length + 2;
+  const jpg = new Uint8Array([0xff, 0xd8, 0xff, 0xe1, len >> 8, len & 255, ...app1, 0xff, 0xda, 0, 2]);
+  assert.equal(VlogData.takenFromBytes(jpg, 'image'), new Date(2026, 10, 20, 18, 4, 31).getTime());
+  // mvhd версии 0: секунды с 1904 года
+  const secs = Date.UTC(2025, 0, 2) / 1000 + 2082844800;
+  const mp4 = new Uint8Array([0, 0, 0, 108, 0x6d, 0x76, 0x68, 0x64, 0, 0, 0, 0, secs >>> 24, (secs >>> 16) & 255, (secs >>> 8) & 255, secs & 255, ...Array(30).fill(0)]);
+  assert.equal(VlogData.takenFromBytes(mp4, 'video'), Date.UTC(2025, 0, 2));
+  assert.equal(VlogData.takenFromBytes(new Uint8Array(40), 'video'), 0);
+});
+
+test('клипы по дате съёмки: без даты — в конце в прежнем порядке', () => {
+  const media = { a: { taken: 300 }, b: { taken: 100 }, c: {}, d: { taken: 200 }, e: {} };
+  const clips = ['a', 'c', 'b', 'e', 'd'].map((m) => ({ media: m }));
+  assert.deepEqual(VlogData.byTaken(clips, media).map((c) => c.media), ['b', 'd', 'a', 'c', 'e']);
+  assert.equal(VlogData.dateText(new Date(2026, 10, 5).getTime(), 'cam'), 'NOV 05 2026');
+  assert.equal(VlogData.dateText(new Date(2026, 10, 5).getTime(), 'words', 'ru'), '5 ноября');
+});

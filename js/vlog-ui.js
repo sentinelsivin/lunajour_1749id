@@ -82,6 +82,27 @@ window.Vlog = (function () {
     }
     await Store.set(projKey(projId), p);
     await Store.set('vlogs', index);
+    retryUnsaved();
+  }
+  /* файлы, которым не хватило места в базе: пробуем положить ещё раз (место могло освободиться) */
+  let retrying = false;
+  async function retryUnsaved() {
+    const list = Object.values(p.media).filter((m) => m.unsaved && Engine.inMemory(m.id));
+    if (retrying || !list.length) return;
+    retrying = true;
+    let done = 0;
+    try {
+      for (const m of list) if (await Engine.persist(m.id)) { delete m.unsaved; done++; }
+    } finally { retrying = false; }
+    if (done) { await Store.set(projKey(projId), p); renderTrack(); }
+  }
+  /* файлы, которых нет ни в базе, ни в памяти вкладки: клип остался без картинки */
+  let lost = new Set();
+  async function findLost() {
+    try {
+      const keys = new Set((await Store.keys()).map(String));
+      lost = new Set(Object.keys(p.media).filter((id) => !keys.has(`vlog-m-${id}`) && !Engine.inMemory(id)));
+    } catch { lost = new Set(); }
   }
   function freshName() {
     const base = t('Влог');
@@ -146,6 +167,7 @@ window.Vlog = (function () {
     at = 0;
     peek = null;
     Engine.preloadLooks(p);
+    await findLost();
     await Store.set('vlogs', index);
     syncName();
     if (sync && open) {
@@ -185,9 +207,10 @@ window.Vlog = (function () {
   }
 
   /* любое изменение проекта: сначала копия для отмены, потом действие */
+  /* надписи, стикеры, озвучка и обложка едут вместе со своим клипом (Timeline.anchors) */
   function commit(fn) {
     hist.push(p);
-    fn();
+    keepPinned(fn);
     changed();
   }
   function changed() {
@@ -199,6 +222,12 @@ window.Vlog = (function () {
     Engine.preloadLooks(p);
     save();
     syncAll();
+  }
+  function keepPinned(fn) {
+    const keep = Timeline.anchors(p);
+    const out = fn();
+    Timeline.reanchor(p, keep);
+    return out;
   }
   function undo(redo) {
     const next = redo ? hist.redo(p) : hist.undo(p);
@@ -313,6 +342,16 @@ window.Vlog = (function () {
       if (c.kind === 'video' && c.vol === 0) bits.push('🔇');
       tag.textContent = bits.join(' · ');
       el.append(tag);
+      /* файл не лёг в память браузера или уже пропал: видно прямо на клипе */
+      const warn = lost.has(c.media) ? t('Файл пропал: добавь его заново') : m.unsaved ? t('Не сохранён: не хватило места в браузере. Сохрани влог файлом') : '';
+      if (warn) {
+        const w = document.createElement('span');
+        w.className = `vlog-clip-warn${lost.has(c.media) ? ' lost' : ''}`;
+        w.textContent = '!';
+        w.title = warn;
+        el.append(w);
+        el.title = warn;
+      }
       if (i === sel) {
         ['in', 'out'].forEach((edge) => {
           const h = document.createElement('i');
@@ -692,6 +731,7 @@ window.Vlog = (function () {
       const c = p.clips[g.i];
       if (!g.pushed) { hist.push(p); g.pushed = true; }
       const ms = (dx * 1000 * c.speed) / pps;
+      const keep = Timeline.anchors(p);
       if (c.kind === 'image') Timeline.trim(p, g.i, 'out', g.out + (g.edge === 'in' ? -ms : ms));
       else if (g.edge === 'in') Timeline.trim(p, g.i, 'in', g.in + ms);
       else Timeline.trim(p, g.i, 'out', g.out + ms);
@@ -704,6 +744,7 @@ window.Vlog = (function () {
         else if (g.edge === 'in') Timeline.trim(p, g.i, 'in', c.in - d);
         else Timeline.trim(p, g.i, 'out', c.out + d);
       }
+      Timeline.reanchor(p, keep);
       /* в просмотре видно кадр на краю, который двигаешь */
       const start = Timeline.starts(p)[g.i];
       peek = g.edge === 'in' ? start : start + Timeline.len(c) - 1;
@@ -1164,7 +1205,7 @@ window.Vlog = (function () {
     /* похожие настройки собраны в группы: одна кнопка, внутри шторки вкладки */
     const open = (g) => GROUPS[g].includes(sheet) || (desktop() && !sheet && g === 'g-fx');
     nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('g-dress', 'Оформление', open('g-dress')), toolBtn('g-fx', 'Эффекты', open('g-fx')));
-    if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
+    if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'), toolBtn('pauses', 'Без пауз'), toolBtn('freeze', 'Стоп-кадр'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
     requestAnimationFrame(fadeTools);
@@ -1217,6 +1258,8 @@ window.Vlog = (function () {
     if (id === 'add') return $('vlogFiles').click();
     if (id === 'back') { select(-1); return selectOv(''); }
     if (id === 'split') return split();
+    if (id === 'pauses') return cutPauses();
+    if (id === 'freeze') return freezeFrame();
     if (id === 'newText') return addText();
     if (id === 'newFx') return addEffect();
     if (id === 'trans') {
@@ -1263,11 +1306,119 @@ window.Vlog = (function () {
     sel = Timeline.at(p, at + 1).i;
     syncAll();
   }
+  /* ---------- без пауз: из клипа, где говорят в камеру, вырезаются места тишины ----------
+     Звук клипа разбираем по кусочкам по 20 мс; порог тишины от громкости самой речи, а не постоянный:
+     у тихого и громкого микрофона он свой. Клип делится на куски, первый остаётся тем же клипом. */
+  let busy = false;
+  async function cutPauses() {
+    const c = clip();
+    if (busy || !c || c.kind !== 'video') return;
+    pauseNow();
+    busy = true;
+    toast(t('Ищу паузы…'), 20000);
+    try {
+      const blob = await Engine.blobOf(c.media);
+      let buf = null;
+      try { buf = blob && (await new OfflineAudioContext(1, 1, 16000).decodeAudioData(await blob.arrayBuffer())); } catch { buf = null; }
+      if (!buf) { toast(t('В этом клипе нет звука: паузы искать не по чему.')); return; }
+      const STEP = 20;
+      const sr = buf.sampleRate;
+      const ch = [...Array(buf.numberOfChannels)].map((_, k) => buf.getChannelData(k));
+      const per = Math.round((sr * STEP) / 1000);
+      const from = Math.floor((c.in / 1000) * sr);
+      const to = Math.min(ch[0].length, Math.floor((c.out / 1000) * sr));
+      const level = [];
+      for (let i = from; i < to; i += per) {
+        let s = 0;
+        const e = Math.min(to, i + per);
+        for (let j = i; j < e; j++) {
+          let v = 0;
+          for (let k = 0; k < ch.length; k++) v += ch[k][j];
+          v /= ch.length;
+          s += v * v;
+        }
+        level.push(Math.sqrt(s / Math.max(1, e - i)));
+      }
+      const sorted = [...level].sort((a, b) => a - b);
+      const loud = sorted[Math.floor(sorted.length * 0.9)] || 0;
+      if (loud < 0.005) { toast(t('В этом клипе почти тишина: паузы не вырезаны.')); return; }
+      const keep = window.VlogData.keepRanges(level, STEP, { threshold: Math.max(0.006, loud * 0.12) });
+      const was = c.out - c.in;
+      const left = keep.reduce((s, r) => s + r.to - r.from, 0);
+      if (!keep.length || was - left < 300) { toast(t('Пауз не нашлось.')); return; }
+      const i = sel;
+      commit(() => {
+        const tr = c.tr;
+        const pieces = keep.map((r, k) => ({ ...JSON.parse(JSON.stringify(c)), id: k ? Timeline.uid() : c.id, in: Math.round(c.in + r.from), out: Math.round(Math.min(c.out, c.in + r.to)) }));
+        pieces.forEach((x) => { delete x.tr; });
+        if (tr) pieces[pieces.length - 1].tr = tr;
+        p.clips.splice(i, 1, ...pieces);
+      });
+      select(i);
+      toast(`${t('Паузы вырезаны: клип короче на')} ${((was - left) / 1000 / (c.speed || 1)).toFixed(1)} ${t('с')}, ${clipsText(keep.length)}.`);
+    } finally { busy = false; }
+  }
+
+  /* ---------- стоп-кадр: кадр видео под указателем становится фото на 2 с, видео идёт дальше после него ---------- */
+  async function freezeFrame() {
+    const c = clip();
+    if (busy || !c || c.kind !== 'video') return;
+    pauseNow();
+    busy = true;
+    try {
+      const i = sel;
+      const hit = Timeline.at(p, at);
+      const inside = !!hit && hit.i === i;
+      const local = inside ? hit.local : c.out - 40;
+      const blob = await Engine.blobOf(c.media);
+      if (!blob) { toast(t('Файл этого клипа пропал.')); return; }
+      const v = document.createElement('video');
+      v.muted = true;
+      v.playsInline = true;
+      v.preload = 'auto';
+      v.src = URL.createObjectURL(blob);
+      let file = null;
+      try {
+        await new Promise((ok, no) => { v.onloadeddata = ok; v.onerror = no; });
+        v.currentTime = Math.max(0, local / 1000);
+        await new Promise((ok) => { v.onseeked = ok; setTimeout(ok, 4000); });
+        const cv = Render.canvas(v.videoWidth, v.videoHeight);
+        cv.getContext('2d').drawImage(v, 0, 0);
+        const jpg = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', 0.92));
+        const base = ((p.media[c.media] && p.media[c.media].name) || 'frame').replace(/\.[^.]+$/, '');
+        file = jpg && new File([jpg], `${base}-still.jpg`, { type: 'image/jpeg' });
+      } catch { file = null; } finally {
+        URL.revokeObjectURL(v.src);
+        v.removeAttribute('src');
+        v.load();
+      }
+      if (!file) { toast(t('Не получилось взять кадр из видео.')); return; }
+      const m = await Engine.importFile(file);
+      m.taken = (p.media[c.media] && p.media[c.media].taken) || m.taken;
+      /* сначала режем, потом запоминаем привязки: надписи с правой половины едут вместе с ней за стоп-кадр */
+      hist.push(p);
+      if (inside && Timeline.canSplit(p, at)) Timeline.split(p, at);
+      const keep = Timeline.anchors(p);
+      p.media[m.id] = m;
+      const [still] = Timeline.add(p, [m], i + 1);
+      still.out = 2000;
+      ['look', 'fx', 'fxs', 'scan', 'card', 'cardId', 'layout', 'shape', 'fit', 'zoom', 'x', 'y'].forEach((k) => { if (c[k] !== undefined) still[k] = JSON.parse(JSON.stringify(c[k])); });
+      Timeline.reanchor(p, keep);
+      changed();
+      select(i + 1);
+      seekTo(Timeline.starts(p)[i + 1]);
+      toast(t('Стоп-кадр добавлен на 2 с. Длину можно поменять в «Длина».'));
+    } finally { busy = false; }
+  }
+
   function removeSel() {
     if (overlay()) return runTool('del');
     if (sel < 0) return;
     const i = sel;
+    const was = p.overlays.length;
     commit(() => Timeline.remove(p, i));
+    const lost = was - p.overlays.length;
+    if (lost) toast(`${t('Вместе с клипом убрано наложений')}: ${lost}. ${t('Вернуть — «Отменить».')}`);
     sel = -1;
     syncAll();
   }
@@ -1319,7 +1470,7 @@ window.Vlog = (function () {
       if (!pushed) { hist.push(p); pushed = true; }
       const v = Number(input.value);
       val.textContent = show(v);
-      apply(v);
+      keepPinned(() => apply(v));
       dirty = true;
       renderTrack();
       syncTime();
@@ -1390,6 +1541,7 @@ window.Vlog = (function () {
     if (id === 'shape') sheetShape(body, c);
     if (id === 'speed') {
       body.append(group('Скорость', chips(SPEEDS.map((v) => [v, `${v}×`]), c.speed, (v) => commit(() => { c.speed = v; }))));
+      body.append(toAll('Ко всем видео', () => p.clips.forEach((x) => { if (x.kind === 'video') x.speed = c.speed; })));
       body.append(el('p', 'hint', t('Звук ускоряется вместе с видео. Замедленный клип становится длиннее.')));
     }
     if (id === 'vol') {
@@ -1496,6 +1648,25 @@ window.Vlog = (function () {
   }
   const editLayer = (o, patch) => commit(() => Object.assign(o.layer, patch));
 
+  /* дата съёмки клипа, на котором стоит надпись: как штамп старой камеры или обычным текстом */
+  function sheetDate(body, o) {
+    const hit = Timeline.at(p, o.start);
+    const m = hit && p.media[hit.clip.media];
+    const ms = (m && m.taken) || 0;
+    if (!ms) return;
+    const row = el('div', 'chips');
+    [['cam', 'Как на камере'], ['num', ''], ['words', '']].forEach(([kind, name]) => {
+      const text = window.VlogData.dateText(ms, kind, I18n.lang);
+      const b = el('button', 'chip', name ? `${t(name)}: ${text}` : text);
+      b.type = 'button';
+      b.onclick = () => editLayer(o, kind === 'cam'
+        ? { text, font: 'mono', color: '#ff9f43', style: 'none', shadow: 'soft', size: 0.045, x: 0.74, y: 0.9, rot: 0 }
+        : { text });
+      row.append(b);
+    });
+    body.append(group('Дата съёмки', row));
+  }
+
   function sheetText(body, o) {
     const l = o.layer;
     const area = el('textarea', 'vlog-textarea');
@@ -1529,6 +1700,7 @@ window.Vlog = (function () {
     if (l.card || l.style === 'plaque' || l.style === 'outline' || l.style === 'haze') body.append(group(l.card ? 'Фон' : 'Цвет подложки', swatches(l.bg, (c) => editLayer(o, { bg: c }))));
     body.append(slider('Размер', 2, 40, 0.5, Math.round(l.size * 200) / 2, (v) => `${Math.round(v)}`, (v) => { l.size = v / 100; }));
     body.append(el('p', 'hint', t('На кадре надпись можно тянуть; угол рамки меняет размер и поворот. Двумя пальцами тоже.')));
+    if (!l.card) sheetDate(body, o);
   }
 
   function sheetStickers(body) {
@@ -1804,6 +1976,48 @@ window.Vlog = (function () {
     go.onclick = autoAssemble;
     body.append(go);
     body.append(el('p', 'hint', t('Ставит музыку, длину фото, движение, переходы, цвет и подпись, а стыки — на такт. Твои эффекты, надписи и стикеры остаются. Не понравилось — «Отменить» вернёт как было.')));
+    sheetScenario(body);
+  }
+
+  /* сценарий: подписи на клипах по порядку, видом как подпись выбранного стиля */
+  let scenario = 'day';
+  function sheetScenario(body) {
+    const S = window.VlogData.SCENARIOS;
+    const cur = S.find((x) => x.id === scenario) || S[0];
+    const box = el('div', 'vlog-scenario');
+    box.append(chips(S.map((x) => [x.id, t(x.name)]), cur.id, (v) => { scenario = v; syncSheet(); }));
+    box.append(el('p', 'hint', cur.lines.map((x) => t(x)).join(' · ')));
+    const row = el('div', 'row');
+    const go = el('button', 'btn small', t('Подписать клипы'));
+    go.type = 'button';
+    go.onclick = () => applyScenario(cur);
+    row.append(go);
+    if (p.overlays.some((o) => o.layer.scene)) {
+      const off = el('button', 'btn small', t('Убрать подписи сценария'));
+      off.type = 'button';
+      off.onclick = () => { commit(() => { p.overlays = p.overlays.filter((o) => !o.layer.scene); }); syncSheet(); };
+      row.append(off);
+    }
+    box.append(row);
+    body.append(group('Сценарий', box));
+  }
+  function applyScenario(sc) {
+    if (!p.clips.length) return;
+    pauseNow();
+    const st = allStyles().find((x) => x.id === autoStyle) || AUTO_STYLES[0];
+    const { anim, ...look } = st.title;
+    const st0 = Timeline.starts(p);
+    commit(() => {
+      p.overlays = p.overlays.filter((o) => !o.layer.scene);
+      p.clips.slice(0, sc.lines.length).forEach((c, i) => {
+        const o = Timeline.addOverlay(p, { type: 'text', text: t(sc.lines[i]), size: 0.07, x: 0.5, y: 0.82, rot: 0, scene: true, ...look }, st0[i]);
+        o.start = Math.round(st0[i]);
+        o.end = Math.round(Math.min(st0[i] + Timeline.len(c), st0[i] + 2600));
+        o.anim = anim;
+      });
+    });
+    const left = p.clips.length - sc.lines.length;
+    toast(left > 0 ? `${t('Подписано клипов')}: ${sc.lines.length}. ${t('Остальные без подписи.')}` : `${t('Подписано клипов')}: ${p.clips.length}.`);
   }
   async function autoAssemble() {
     if (autoBusy || !p.clips.length) return;
@@ -1812,6 +2026,7 @@ window.Vlog = (function () {
     syncSheet();
     pauseNow();
     hist.push(p);
+    const keep = Timeline.anchors(p);
     try {
       /* у своего стиля со своей музыкой трека нет: музыка влога остаётся */
       if (st.track && !(autoOwn && p.music.fileId)) {
@@ -1841,6 +2056,7 @@ window.Vlog = (function () {
       });
       /* подпись в начале: прошлую собранную заменяем, свои надписи не трогаем */
       p.overlays = p.overlays.filter((o) => !o.layer.auto);
+      Timeline.reanchor(p, keep);
       const text = (autoTitle != null ? autoTitle : (entry() && entry().name) || '').trim();
       if (text) {
         const { anim, ...look } = st.title;
@@ -2088,6 +2304,19 @@ window.Vlog = (function () {
       seg.append(b);
     });
     body.append(group('Формат ролика', seg), el('p', 'hint', t('9:16 для Reels, Shorts и TikTok. Как клип ляжет в кадр, настраивается у клипа в «Кадр».')));
+    if (p.clips.length > 1) {
+      const sort = el('button', 'btn small', t('Разложить по дате съёмки'));
+      sort.type = 'button';
+      sort.onclick = () => {
+        const dated = p.clips.filter((c) => p.media[c.media] && p.media[c.media].taken).length;
+        if (!dated) { toast(t('У этих клипов нет даты съёмки.')); return; }
+        commit(() => { p.clips = window.VlogData.byTaken(p.clips, p.media); });
+        sel = -1;
+        syncAll();
+        toast(t('Клипы разложены по времени съёмки. Надписи и озвучка переехали вместе с ними.'));
+      };
+      body.append(sort);
+    }
   }
 
   /* карточка на клипе: «как в редакторе» или свой стиль. Оформление копируется в клип,
@@ -2681,12 +2910,14 @@ window.Vlog = (function () {
         failed++;
       }
     }
+    /* отметка остаётся: на клипе виден значок, при сохранении влога файл пробуем положить ещё раз */
     const unsaved = fresh.filter((m) => m.unsaved).length;
-    fresh.forEach((m) => { delete m.unsaved; });
     if (unsaved) toast(t('В памяти браузера не хватило места: эти клипы пропадут после перезагрузки. Сохрани ролик, пока вкладка открыта.'), 9000);
     else if (failed) toast(t('Часть файлов не открылась. Попробуй MP4 или фото JPG/PNG.'));
     else $('toast').hidden = true;
     if (!fresh.length) return;
+    /* пачка файлов встаёт по времени съёмки, а не в том порядке, как их отдала галерея */
+    if (fresh.length > 1) fresh.sort((a, b) => (a.taken || Infinity) - (b.taken || Infinity));
     const index = sel >= 0 ? sel + 1 : p.clips.length;
     commit(() => {
       fresh.forEach((m) => { p.media[m.id] = m; });
@@ -2866,6 +3097,16 @@ window.Vlog = (function () {
     return `lunajour-${name}-${new Date().toLocaleDateString('sv-SE')}.${ext}`;
   }
 
+  /* скопированный клип вставляется только в тот же влог: файлы у каждого влога свои */
+  let copied = null;
+  function pasteClip() {
+    if (copied.proj !== projId || !p.media[copied.clip.media]) { toast(t('Клип можно вставить только в тот же влог.')); return; }
+    const i = sel >= 0 ? sel + 1 : p.clips.length;
+    commit(() => { p.clips.splice(i, 0, { ...JSON.parse(JSON.stringify(copied.clip)), id: Timeline.uid() }); });
+    select(i);
+    seekTo(Timeline.starts(p)[i]);
+  }
+
   /* ---------- клавиши: пока влог открыт, клавиши карточки не срабатывают ---------- */
   function onKey(e) {
     if (!open) return;
@@ -2877,6 +3118,10 @@ window.Vlog = (function () {
     const k = e.key;
     if (mod && (k === 'z' || k === 'Z' || k === 'я' || k === 'Я')) { e.preventDefault(); undo(e.shiftKey); return; }
     if (mod && (k === 'y' || k === 'н')) { e.preventDefault(); undo(true); return; }
+    /* копировать, вставить и повторить клип */
+    if (mod && (k === 'c' || k === 'с') && clip()) { e.preventDefault(); copied = { proj: projId, clip: JSON.parse(JSON.stringify(clip())) }; toast(t('Клип скопирован.'), 1500); return; }
+    if (mod && (k === 'v' || k === 'м') && copied) { e.preventDefault(); pasteClip(); return; }
+    if (mod && (k === 'd' || k === 'в') && (clip() || overlay())) { e.preventDefault(); runTool('dup'); return; }
     if (mod) return;
     if (a && a.type === 'range' && k.startsWith('Arrow')) return;
     if (k === ' ') { e.preventDefault(); togglePlay(); }
@@ -2886,6 +3131,13 @@ window.Vlog = (function () {
       e.preventDefault();
       if (Engine.playing) { Engine.pause(); syncPlay(); }
       seekTo(at + (k === 'ArrowLeft' ? -1 : 1) * (e.shiftKey ? 1000 : FRAME_MS));
+    } else if (k === 'ArrowUp' || k === 'ArrowDown') {
+      /* к началу соседнего клипа */
+      e.preventDefault();
+      pauseNow();
+      const st = Timeline.starts(p);
+      const next = k === 'ArrowDown' ? st.find((x) => x > at + 1) : [...st].reverse().find((x) => x < at - 1);
+      seekTo(next ?? (k === 'ArrowDown' ? total() : 0));
     } else if (k === 'Home') seekTo(0);
     else if (k === 'End') seekTo(total());
     else if (k === '+' || k === '=') zoom(1.4);

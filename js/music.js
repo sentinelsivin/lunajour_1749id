@@ -17,6 +17,9 @@
     { id: 'lofi', name: 'Лоу-фай', bpm: 78 },
     { id: 'dream', name: 'Мечта', bpm: 70 },
     { id: 'neon', name: 'Неон', bpm: 108 },
+    { id: 'chill', name: 'Акустика', bpm: 90 },
+    { id: 'sunset', name: 'Закат', bpm: 100 },
+    { id: 'pop', name: 'Солнце', bpm: 118 },
   ];
   const cache = new Map();
   let file = null;
@@ -144,6 +147,56 @@
         ch.forEach((m) => note(t0, m, 4 * beat, { waves: ['sawtooth', 'sawtooth'], detune: 8, level: 0.03, attack: 1.2, decay: 4 * beat - 1, rest: 0.02, cut: 900 }));
         const arp = [ch[1] + 24, ch[2] + 24, ch[3] + 24, ch[2] + 24, ch[1] + 36, ch[3] + 24, ch[2] + 24, ch[0] + 36];
         arp.forEach((m, k) => note(t0 + k * beat * 0.5, m, 0.7, { waves: ['sine'], level: k % 2 ? 0.05 : 0.07, cut: 6000, dest: bells }));
+      });
+    } else if (id === 'chill') {
+      /* акустика: перебор как на гитаре, шейкер восьмыми, щелчок по ободу на 2 и 4, мягкий бас */
+      const chords = [[48, 52, 55, 59], [45, 48, 52, 55], [50, 53, 57, 60], [43, 47, 50, 53]];
+      const strings = echo(beat * 0.5, 0.2, 0.18);
+      chords.forEach((ch, bar) => {
+        const t0 = bar * 4 * beat;
+        const pick = [ch[0], ch[2] + 12, ch[1] + 12, ch[3] + 12, ch[2] + 12, ch[1] + 12, ch[3] + 12, ch[2] + 12];
+        pick.forEach((m, k) => note(t0 + k * beat * 0.5 + (k % 2 ? 0.012 : 0), m, 0.9, { waves: ['triangle', 'sine'], level: k ? 0.06 : 0.08, attack: 0.003, decay: 0.7, cut: 2600, dest: strings }));
+        note(t0, ch[0] - 12, beat * 1.8, { waves: ['sine'], level: 0.2, cut: 300 });
+        note(t0 + 2 * beat, ch[2] - 24, beat * 1.6, { waves: ['sine'], level: 0.16, cut: 300 });
+        for (let b = 0; b < 4; b++) {
+          const t = t0 + b * beat;
+          if (b === 0 || b === 2) kick(t, 0.45);
+          if (b % 2) hiss(t, 2600, 'bandpass', 0.14, 0.05, 3);
+          hiss(t, 6500, 'highpass', 0.04, 0.06);
+          hiss(t + beat * 0.5, 6500, 'highpass', 0.03, 0.05);
+        }
+      });
+    } else if (id === 'sunset') {
+      /* закат: тягучие подушки, бас восьмыми через октаву, гулкий хлопок на 2 и 4, перебор шестнадцатыми */
+      const chords = [[52, 55, 59], [48, 52, 55], [55, 59, 62], [50, 54, 57]];
+      const big = echo(beat * 0.75, 0.35, 0.35);
+      chords.forEach((ch, bar) => {
+        const t0 = bar * 4 * beat;
+        ch.forEach((m) => note(t0, m, 4 * beat, { waves: ['sawtooth', 'sawtooth'], detune: 12, level: 0.025, attack: 0.6, decay: 4 * beat - 0.6, rest: 0.015, cut: 1400 }));
+        for (let e = 0; e < 8; e++) note(t0 + e * beat * 0.5, ch[0] - 24 + (e % 2 ? 12 : 0), beat * 0.4, { waves: ['sawtooth'], level: 0.1, cut: 420 });
+        for (let s = 0; s < 16; s++) note(t0 + s * beat * 0.25, ch[s % 3] + 12 + (s % 8 > 4 ? 12 : 0), beat * 0.2, { waves: ['square'], level: 0.018, cut: 3000, dest: big });
+        for (let b = 0; b < 4; b++) {
+          const t = t0 + b * beat;
+          kick(t, 0.8);
+          if (b % 2) { hiss(t, 1100, 'bandpass', 0.4, 0.25, 0.7); hiss(t, 4000, 'highpass', 0.08, 0.3); }
+          hiss(t + beat * 0.5, 9000, 'highpass', 0.04, 0.04);
+        }
+      });
+    } else if (id === 'pop') {
+      /* солнце: бочка на каждую долю, хлопок на 2 и 4, открытая тарелка на слабые доли, аккорды пианино */
+      const chords = [[60, 64, 67], [55, 59, 62], [57, 60, 64], [53, 57, 60]];
+      const keys = echo(beat * 0.5, 0.2, 0.2);
+      chords.forEach((ch, bar) => {
+        const t0 = bar * 4 * beat;
+        [0, 0.75, 1.5, 2.5, 3.25].forEach((b) => ch.forEach((m) => note(t0 + b * beat, m, beat * 0.45, { waves: ['triangle', 'square'], level: 0.03, attack: 0.004, cut: 3200, dest: keys })));
+        for (let e = 0; e < 8; e++) if (e % 2) note(t0 + e * beat * 0.5, ch[0] - 24, beat * 0.35, { waves: ['sawtooth'], level: 0.13, cut: 600 });
+        note(t0 + 3.5 * beat, ch[2] + 12, beat * 0.4, { waves: ['sine'], level: 0.05, cut: 5000, dest: keys });
+        for (let b = 0; b < 4; b++) {
+          const t = t0 + b * beat;
+          kick(t, 0.9);
+          if (b % 2) { hiss(t, 1500, 'bandpass', 0.32, 0.12, 1.3); hiss(t + 0.012, 1500, 'bandpass', 0.2, 0.1, 1.3); }
+          hiss(t + beat * 0.5, 8000, 'highpass', 0.08, 0.12);
+        }
       });
     } else {
       /* неон: бас восьмыми, бочка на каждую долю, хлопок на 2 и 4, яркие аккорды */

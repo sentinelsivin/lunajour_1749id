@@ -121,3 +121,60 @@ test('озвучка: запись не считается лишним файл
   assert.deepEqual([o.anim, o.fadeOut], ['', false]);
   assert.deepEqual([...Timeline.unused(p)], []);
 });
+
+test('наложения едут за своим клипом при удалении, перестановке и обрезке', () => {
+  const p = project(['image', 2000], ['image', 3000], ['image', 4000]);
+  const [a, b, c] = p.clips.map((x) => x.id);
+  const onB = Timeline.addOverlay(p, { type: 'text', text: 'b' }, 2500);
+  const onC = Timeline.addOverlay(p, { type: 'text', text: 'c' }, 5500);
+  onC.end = 7000;
+  p.cover = { at: 6000 };
+  // обрезка первого клипа: всё дальше сдвигается на ту же величину
+  let keep = Timeline.anchors(p);
+  Timeline.trim(p, 0, 'out', 1000);
+  Timeline.reanchor(p, keep);
+  assert.deepEqual([onB.start, onC.start, onC.end, p.cover.at], [1500, 4500, 6000, 5000]);
+  // перестановка: надпись клипа C уезжает с ним в начало
+  keep = Timeline.anchors(p);
+  Timeline.move(p, 2, 0);
+  Timeline.reanchor(p, keep);
+  assert.deepEqual(p.clips.map((x) => x.id), [c, a, b]);
+  assert.deepEqual([onC.start, onC.end, onB.start], [500, 2000, 5500]);
+  // удаление B: надпись целиком на нём уходит вместе с ним
+  keep = Timeline.anchors(p);
+  Timeline.remove(p, 2);
+  Timeline.reanchor(p, keep);
+  assert.deepEqual(p.overlays.map((o) => o.id), [onC.id]);
+});
+
+test('надпись длиннее удалённого клипа встаёт на его место остатком', () => {
+  const p = project(['image', 2000], ['image', 2000], ['image', 4000]);
+  const o = Timeline.addOverlay(p, { type: 'text', text: 'x' }, 2500);
+  o.end = 6000;
+  const keep = Timeline.anchors(p);
+  Timeline.remove(p, 1);
+  Timeline.reanchor(p, keep);
+  assert.deepEqual([o.start, o.end], [2000, 4000]);
+});
+
+test('правка, которая сама двигает наложение, не сдвигается второй раз', () => {
+  const p = project(['image', 2000], ['image', 2000]);
+  const o = Timeline.addOverlay(p, { type: 'text', text: 'x' }, 2500);
+  const keep = Timeline.anchors(p);
+  Timeline.trim(p, 0, 'out', 1000);
+  o.start = 100;
+  o.end = 900;
+  Timeline.reanchor(p, keep);
+  assert.deepEqual([o.start, o.end], [100, 900]);
+});
+
+test('история отмены: миниатюры не копируются, но возвращаются', () => {
+  const h = Timeline.history();
+  const p = Timeline.newProject();
+  p.media.x = { id: 'x', kind: 'image', thumb: 'data:big' };
+  h.push(p);
+  p.clips.push({ id: 'c' });
+  const back = h.undo(p);
+  assert.equal(back.media.x.thumb, 'data:big');
+  assert.equal(back.clips.length, 0);
+});

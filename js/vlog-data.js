@@ -33,6 +33,8 @@
     layout: '<rect x="3" y="3" width="6" height="6"/><rect x="11" y="3" width="6" height="6"/><rect x="3" y="11" width="6" height="6"/><rect x="11" y="11" width="6" height="6"/>',
     scan: '<path d="M3 7V3h4M13 3h4v4M17 13v4h-4M7 17H3v-4"/><rect x="7" y="7" width="6" height="6"/>',
     shape: '<path d="M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.8l5-.7z"/>',
+    pauses: '<path d="M2 10h3l1.5-4 2 8 1.5-4h1"/><path d="M13 6v8M17 6v8"/>',
+    freeze: '<rect x="3" y="4" width="14" height="12" rx="1"/><path d="M10 7v6M7.5 8.5l5 3M12.5 8.5l-5 3"/>',
     trans: '<rect x="2.5" y="5" width="7" height="10" rx="1"/><rect x="10.5" y="5" width="7" height="10" rx="1" opacity=".5"/><path d="M8 10h4"/>',
   };
 
@@ -46,16 +48,27 @@
       title: { font: 'unbounded', color: '#ffffff', style: 'outline', bg: '#111111', shadow: 'none', anim: 'pop' } },
     { id: 'film', name: 'Плёнка', track: 'lofi', photo: 3, video: 5, look: 'film', tr: ['black'], trMs: 700, moves: ['in', 'none', 'out', 'none'],
       title: { font: 'mono', color: '#111111', style: 'plaque', bg: '#ffe27a', shadow: 'none', anim: 'type' } },
-    { id: 'diary', name: 'Дневник', track: 'lofi', photo: 3, video: 5, look: 'warm', tr: ['fade', 'slide'], trMs: 600, moves: ['in', 'right', 'out', 'left'],
+    { id: 'diary', name: 'Дневник', track: 'chill', photo: 3, video: 5, look: 'warm', tr: ['fade', 'slide'], trMs: 600, moves: ['in', 'right', 'out', 'left'],
       title: { font: 'caveat', color: '#ffffff', style: 'none', shadow: 'soft', anim: 'rise' } },
     { id: 'retro', name: 'Ретро', track: 'lofi', photo: 2.5, video: 4, look: 'p1994', tr: ['flash', 'black'], trMs: 400, moves: ['in', 'none'],
       title: { font: 'retrogression', color: '#ffe27a', style: 'none', shadow: 'soft', anim: 'type' } },
-    { id: 'night', name: 'Ночь', track: 'dream', photo: 3, video: 5, look: 'pNightDriving', tr: ['black', 'fade'], trMs: 800, moves: ['out', 'in'],
+    { id: 'night', name: 'Ночь', track: 'sunset', photo: 3, video: 5, look: 'pNightDriving', tr: ['black', 'fade'], trMs: 800, moves: ['out', 'in'],
       title: { font: 'dreamer', color: '#ffffff', style: 'haze', bg: '#1f3a8a', shadow: 'none', anim: 'fade' } },
     { id: 'tender', name: 'Нежный', track: 'dream', photo: 3.5, video: 5, look: 'pink', tr: ['fade'], trMs: 1000, moves: ['in', 'out'],
       title: { font: 'sexsmith', color: '#f9a8d4', style: 'outline', bg: '#ffffff', shadow: 'soft', anim: 'rise' } },
     { id: 'mono', name: 'Ч/б', track: 'lofi', photo: 2.5, video: 4, look: 'bw', tr: ['black', 'slide'], trMs: 500, moves: ['none', 'in'],
       title: { font: 'mono', color: '#ffffff', style: 'plaque', bg: '#111111', shadow: 'none', anim: 'type' } },
+  ];
+
+  /* ---------- сценарии: готовые подписи по порядку клипов ----------
+     Клипы снимает человек сам, сценарий только подписывает их: первая подпись на первом клипе и так далее. */
+  const SCENARIOS = [
+    { id: 'day', name: 'Мой день', lines: ['утро', 'завтрак', 'дела', 'прогулка', 'вечер', 'спокойной ночи'] },
+    { id: 'trip', name: 'Поездка', lines: ['в дороге', 'приехали', 'гуляем', 'самое вкусное', 'закат', 'до встречи'] },
+    { id: 'food', name: 'Что я ела', lines: ['завтрак', 'перекус', 'обед', 'десерт', 'ужин'] },
+    { id: 'unbox', name: 'Распаковка', lines: ['что пришло', 'открываем', 'что внутри', 'пробуем', 'итог'] },
+    { id: 'week', name: 'Неделя', lines: ['понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота', 'воскресенье'] },
+    { id: 'count', name: 'Счёт', lines: ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'] },
   ];
 
   /* ---------- текст и стикеры ---------- */
@@ -112,5 +125,117 @@
     };
   }
 
-  root.VlogData = { ICONS, AUTO_STYLES, EMOJIS, COLORS, TEXT_PRESETS, RULER_STEPS, fmt, clipsText, styleFromVlog };
+  /* ---------- когда снято ----------
+     Фото JPEG: DateTimeOriginal из EXIF (время по часам камеры, без пояса). Видео MP4/MOV: creation_time
+     из mvhd (секунды с 1904 года, UTC). bytes — начало файла (у видео ещё и хвост: mvhd бывает в конце).
+     → мс от 1970 или 0, если даты нет. */
+  function exifDate(u8) {
+    if (u8[0] !== 0xff || u8[1] !== 0xd8) return 0;
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    let i = 2;
+    while (i + 4 < u8.length) {
+      if (u8[i] !== 0xff) return 0;
+      const mark = u8[i + 1];
+      const size = dv.getUint16(i + 2);
+      if (mark === 0xe1 && String.fromCharCode(...u8.subarray(i + 4, i + 8)) === 'Exif') return tiffDate(dv, i + 10);
+      if (mark === 0xda) return 0;
+      i += 2 + size;
+    }
+    return 0;
+  }
+  function tiffDate(dv, base) {
+    if (base + 8 > dv.byteLength) return 0;
+    const le = dv.getUint16(base) === 0x4949;
+    const u16 = (o) => dv.getUint16(base + o, le);
+    const u32 = (o) => dv.getUint32(base + o, le);
+    /* значение тега в каталоге (IFD) по смещению off: { tag: смещение значения } */
+    const tags = (off) => {
+      const out = {};
+      if (base + off + 2 > dv.byteLength) return out;
+      const n = u16(off);
+      for (let k = 0; k < n; k++) {
+        const e = off + 2 + k * 12;
+        if (base + e + 12 > dv.byteLength) break;
+        out[u16(e)] = { count: u32(e + 4), at: u32(e + 8), raw: e + 8 };
+      }
+      return out;
+    };
+    const ascii = (t) => {
+      if (!t || t.count < 19 || base + t.at + 19 > dv.byteLength) return '';
+      let s = '';
+      for (let k = 0; k < 19; k++) s += String.fromCharCode(dv.getUint8(base + t.at + k));
+      return s;
+    };
+    const ifd0 = tags(u32(4));
+    const exif = ifd0[0x8769] ? tags(ifd0[0x8769].at) : {};
+    return parseExifTime(ascii(exif[0x9003]) || ascii(exif[0x9004]) || ascii(ifd0[0x0132]));
+  }
+  /* «2026:11:20 18:04:31» → мс по местному времени */
+  function parseExifTime(s) {
+    const m = /^(\d{4}):(\d{2}):(\d{2}) (\d{2}):(\d{2}):(\d{2})/.exec(s || '');
+    if (!m || m[1] === '0000') return 0;
+    return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+  }
+  function mp4Date(u8) {
+    const dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+    for (let i = 4; i + 24 < u8.length; i++) {
+      if (u8[i] !== 0x6d || u8[i + 1] !== 0x76 || u8[i + 2] !== 0x68 || u8[i + 3] !== 0x64) continue; /* 'mvhd' */
+      const v = u8[i + 4];
+      const secs = v === 1 ? dv.getUint32(i + 8) * 4294967296 + dv.getUint32(i + 12) : dv.getUint32(i + 8);
+      /* 0 и даты раньше 2000 года — камера без часов */
+      const ms = (secs - 2082844800) * 1000;
+      return ms > 946684800000 ? ms : 0;
+    }
+    return 0;
+  }
+  function takenFromBytes(u8, kind) {
+    try { return kind === 'video' ? mp4Date(u8) : exifDate(u8); } catch { return 0; }
+  }
+
+  /* надпись даты: «20.11.2026», «NOV 20 2026» как на старой камере, «20 ноября» */
+  const MONTHS_RU = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const MONTHS_EN = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  function dateText(ms, kind, lang) {
+    const d = new Date(ms);
+    const dd = String(d.getDate()).padStart(2, '0');
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    if (kind === 'cam') return `${MONTHS_EN[d.getMonth()].slice(0, 3).toUpperCase()} ${dd} ${d.getFullYear()}`;
+    if (kind === 'words') return lang === 'en' ? `${MONTHS_EN[d.getMonth()]} ${d.getDate()}` : `${d.getDate()} ${MONTHS_RU[d.getMonth()]}`;
+    return `${dd}.${mm}.${d.getFullYear()}`;
+  }
+
+  /* порядок клипов по времени съёмки; клипы без даты уходят в конец в прежнем порядке */
+  function byTaken(clips, media) {
+    const when = (c) => (media[c.media] && media[c.media].taken) || Infinity;
+    return clips.map((c, i) => [c, i]).sort((a, b) => when(a[0]) - when(b[0]) || a[1] - b[1]).map(([c]) => c);
+  }
+
+  /* ---------- паузы в речи ----------
+     level: громкость по кусочкам (0..1), step: мс на кусочек. Тишина — тише порога дольше minGap.
+     → куски, которые оставить: [{ from, to }] в мс, с запасом pad по краям, чтобы не резать слова. */
+  function keepRanges(level, step, { threshold = 0.04, minGap = 600, pad = 120, minKeep = 300 } = {}) {
+    const n = level.length;
+    const quiet = [];
+    let s = -1;
+    for (let k = 0; k <= n; k++) {
+      const q = k < n && level[k] < threshold;
+      if (q && s < 0) s = k;
+      if (!q && s >= 0) {
+        if ((k - s) * step >= minGap) quiet.push([s * step, k * step]);
+        s = -1;
+      }
+    }
+    const total = n * step;
+    const keep = [];
+    let from = 0;
+    quiet.forEach(([a, b]) => {
+      const to = a === 0 ? 0 : a + pad;
+      if (to - from >= minKeep) keep.push({ from, to });
+      from = b >= total ? total : Math.max(to, b - pad);
+    });
+    if (total - from >= minKeep) keep.push({ from, to: total });
+    return keep;
+  }
+
+  root.VlogData = { ICONS, AUTO_STYLES, SCENARIOS, EMOJIS, COLORS, TEXT_PRESETS, RULER_STEPS, fmt, clipsText, styleFromVlog, takenFromBytes, parseExifTime, dateText, byTaken, keepRanges };
 })(typeof window !== 'undefined' ? window : globalThis);

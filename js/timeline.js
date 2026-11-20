@@ -199,6 +199,62 @@ window.Timeline = (function () {
     return moved;
   }
 
+  /* ---------- привязка к клипам ----------
+     Надписи, стикеры, эффекты на время, озвучка и кадр обложки держатся за клип, на котором начинаются.
+     anchors() запоминает, где они стоят, до правки ленты; reanchor() после неё сдвигает их вслед за своим клипом.
+     Если клип удалили: то, что целиком лежало на нём, уходит вместе с ним, остальное встаёт на его бывшее место. */
+  function anchors(p) {
+    const st = starts(p);
+    const pin = (t) => {
+      const h = at(p, t);
+      return h ? { id: h.clip.id, start: h.start, end: h.start + len(h.clip) } : null;
+    };
+    return {
+      order: p.clips.map((c) => c.id),
+      starts: st,
+      ov: p.overlays.map((o) => ({ id: o.id, start: o.start, end: o.end, a: pin(o.start) })),
+      cover: p.cover ? { at: p.cover.at || 0, a: pin(p.cover.at || 0) } : null,
+    };
+  }
+  function reanchor(p, keep) {
+    const st = starts(p);
+    const idx = new Map(p.clips.map((c, i) => [c.id, i]));
+    const total = duration(p);
+    /* новое начало клипа; у удалённого — начало следующего уцелевшего (или конец ролика) */
+    const newStart = (id) => {
+      if (idx.has(id)) return st[idx.get(id)];
+      for (let k = keep.order.indexOf(id) + 1; k > 0 && k < keep.order.length; k++) {
+        if (idx.has(keep.order[k])) return st[idx.get(keep.order[k])];
+      }
+      return total;
+    };
+    const gone = new Set();
+    keep.ov.forEach((k) => {
+      const o = p.overlays.find((x) => x.id === k.id);
+      /* наложение сдвинули саму этой же правкой: его не трогаем */
+      if (!o || !k.a || o.start !== k.start || o.end !== k.end) return;
+      const s = newStart(k.a.id);
+      if (idx.has(k.a.id)) {
+        const d = s - k.a.start;
+        o.start = Math.round(k.start + d);
+        o.end = Math.round(k.end + d);
+        return;
+      }
+      /* клип удалили: целиком на нём — удаляем, длиннее — остаток встаёт на его место */
+      const rest = k.end - k.a.end;
+      if (rest < MIN_MS) { gone.add(o.id); return; }
+      o.start = Math.round(s);
+      o.end = Math.round(s + rest);
+    });
+    if (gone.size) p.overlays = p.overlays.filter((o) => !gone.has(o.id));
+    if (keep.cover && keep.cover.a && p.cover && (p.cover.at || 0) === keep.cover.at) {
+      const s = newStart(keep.cover.a.id);
+      const off = idx.has(keep.cover.a.id) ? keep.cover.at - keep.cover.a.start : 0;
+      p.cover.at = Math.round(Math.max(0, Math.min(Math.max(0, total - 1), s + off)));
+    }
+    fitOverlays(p);
+  }
+
   /* файлы, на которые больше не ссылается ни один клип, стикер и не музыка */
   function unused(p) {
     const used = new Set(p.clips.map((c) => c.media));
@@ -210,26 +266,42 @@ window.Timeline = (function () {
   }
 
   /* отмена: копии проекта до каждого действия */
+  /* Картинки-миниатюры файлов (m.thumb) в копии не кладём: они не меняются, а весят больше всего проекта.
+     Держим их один раз по номеру файла и возвращаем при отмене. */
   function history() {
     let back = [];
     let ahead = [];
+    const thumbs = new Map();
+    const pack = (p) => {
+      const media = {};
+      Object.entries(p.media || {}).forEach(([k, m]) => {
+        if (m.thumb) thumbs.set(k, m.thumb);
+        media[k] = { ...m, thumb: '' };
+      });
+      return JSON.stringify({ ...p, media });
+    };
+    const unpack = (s) => {
+      const q = JSON.parse(s);
+      Object.entries(q.media || {}).forEach(([k, m]) => { m.thumb = thumbs.get(k) || ''; });
+      return q;
+    };
     return {
       push(p) {
-        back.push(JSON.stringify(p));
+        back.push(pack(p));
         if (back.length > HISTORY) back.shift();
         ahead = [];
       },
       undo(p) {
         if (!back.length) return null;
-        ahead.push(JSON.stringify(p));
-        return JSON.parse(back.pop());
+        ahead.push(pack(p));
+        return unpack(back.pop());
       },
       redo(p) {
         if (!ahead.length) return null;
-        back.push(JSON.stringify(p));
-        return JSON.parse(ahead.pop());
+        back.push(pack(p));
+        return unpack(ahead.pop());
       },
-      clear() { back = []; ahead = []; },
+      clear() { back = []; ahead = []; thumbs.clear(); },
       get canUndo() { return back.length > 0; },
       get canRedo() { return ahead.length > 0; },
     };
@@ -237,6 +309,6 @@ window.Timeline = (function () {
 
   return {
     MIN_MS, IMAGE_MS, TR_MS, uid, newProject, newClip, len, duration, starts, at, add, canSplit, split, trim, move, remove, dup, unused, history, nearest, fitToBeats,
-    trDur, transitionAt, addOverlay, fitOverlays, overlayRows,
+    trDur, transitionAt, addOverlay, fitOverlays, overlayRows, anchors, reanchor,
   };
 })();

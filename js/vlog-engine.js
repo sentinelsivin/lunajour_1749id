@@ -102,6 +102,21 @@ window.VlogEngine = (function () {
     return th.toDataURL('image/jpeg', 0.7);
   }
 
+  /* когда снято: дата из файла (EXIF у фото, mvhd у видео), иначе дата изменения файла */
+  async function takenOf(file, kind) {
+    let ms = 0;
+    try {
+      const head = new Uint8Array(await file.slice(0, 256 * 1024).arrayBuffer());
+      ms = window.VlogData.takenFromBytes(head, kind);
+      /* у видео с телефона сведения о ролике часто лежат в конце файла */
+      if (!ms && kind === 'video' && file.size > 256 * 1024) {
+        const tail = new Uint8Array(await file.slice(Math.max(256 * 1024, file.size - 2 * 1024 * 1024)).arrayBuffer());
+        ms = window.VlogData.takenFromBytes(tail, kind);
+      }
+    } catch { ms = 0; }
+    return ms || file.lastModified || 0;
+  }
+
   /* новый файл: кладём в базу и узнаём размер, длину и картинку для ленты */
   async function importFile(file) {
     const video = file.type.startsWith('video/') || (!file.type.startsWith('image/') && /\.(mp4|m4v|mov|webm|mkv|3gp)$/i.test(file.name));
@@ -132,11 +147,20 @@ window.VlogEngine = (function () {
       m.h = small.height;
       m.thumb = thumbOf(small, m.w, m.h);
     }
+    m.taken = await takenOf(file, m.kind);
     /* файл не лёг в базу (чаще всего кончилось место): в этот раз клип работает, но после перезагрузки его не будет */
     if (!(await Store.set(blobKey(id), file))) m.unsaved = true;
     blobs.set(id, file);
     return m;
   }
+
+  /* ещё раз положить файл в базу (в прошлый раз не хватило места); true — получилось */
+  async function persist(id) {
+    const b = blobs.get(id);
+    return !!(b && (await Store.set(blobKey(id), b)));
+  }
+  /* файл есть в памяти вкладки или в базе */
+  const inMemory = (id) => blobs.has(id) || images.has(id);
 
   async function forget(id) {
     blobs.delete(id);
@@ -1033,7 +1057,7 @@ window.VlogEngine = (function () {
   }
 
   return {
-    importFile, forget, blobOf, muteSpeakers, voiceBuffer, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
+    importFile, forget, persist, inMemory, blobOf, muteSpeakers, voiceBuffer, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
     /* для быстрой записи (js/vlog-fast.js) */
     preload, prepareFrame, frameNeeds, seekClip, setFrame, setExporting, musicBuffer, musicInfo, beatTimes, WAVE_RATE, edgeMs, DUCK_TO, DUCK_RMS, DUCK_HOLD,
     audio, looks, lookOf, TRANSITIONS, ANIMS, FITS, MOVES, ZOOM_MAX, framing, visible, overlayBox, assets,
