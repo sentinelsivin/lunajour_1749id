@@ -36,7 +36,8 @@ window.Vlog = (function () {
 
   /* несколько выбранных клипов (id): Shift или Ctrl по клипу, на телефоне долгое нажатие */
   let multi = new Set();
-  const multiOn = () => multi.size > 1;
+  /* режим выбора нескольких: включается первым долгим нажатием, держится и на одном клипе */
+  const multiOn = () => multi.size > 0;
   /* к каким клипам применять настройку: ко всем выбранным или к одному */
   const targets = () => (multiOn() ? p.clips.filter((c) => multi.has(c.id)) : [p.clips[sel]].filter(Boolean));
   function toggleMulti(i) {
@@ -48,7 +49,6 @@ window.Vlog = (function () {
     sel = multi.has(c.id) ? i : last;
     ov = '';
     join = -1;
-    if (!multiOn() && multi.size === 1) multi.clear();
     if (sheet && !['look', 'speed', 'dur', 'vol'].includes(sheet)) sheet = '';
     syncAll();
   }
@@ -101,6 +101,8 @@ window.Vlog = (function () {
     }
     await Store.set(projKey(projId), p);
     await Store.set('vlogs', index);
+    /* открытый список влогов показывает свежее число клипов и длину; пока в нём печатают название — не трогаем */
+    if (open && sheet === 'projects' && !$('vlogSheetBody').contains(document.activeElement)) syncSheet();
     retryUnsaved();
   }
   /* файлы, которым не хватило места в базе: пробуем положить ещё раз (место могло освободиться) */
@@ -233,7 +235,7 @@ window.Vlog = (function () {
     changed();
   }
   function changed() {
-    if (multi.size) { const ids = new Set(p.clips.map((c) => c.id)); multi.forEach((id) => { if (!ids.has(id)) multi.delete(id); }); if (multi.size < 2) multi.clear(); }
+    if (multi.size) { const ids = new Set(p.clips.map((c) => c.id)); multi.forEach((id) => { if (!ids.has(id)) multi.delete(id); }); }
     if (sel >= p.clips.length) sel = p.clips.length - 1;
     if (join >= p.clips.length - 1) join = -1;
     Timeline.fitOverlays(p);
@@ -722,6 +724,8 @@ window.Vlog = (function () {
       if (Engine.playing) { Engine.pause(); syncPlay(); }
       const c = p.clips[i];
       g = { kind: edge ? 'trim' : 'press', edge, i, x: e.clientX, y: e.clientY, id: e.pointerId, in: c.in, out: c.out, el, pushed: false };
+      /* долгое нажатие пальцем на выбранный клип тоже начинает выбор нескольких (если клип не сдвинули) */
+      if (!edge && !mouse) g.long = setTimeout(() => { if (g && g.kind === 'press' && g.i === i) { g = null; if (navigator.vibrate) navigator.vibrate(15); toggleMulti(i); } }, 480);
       try { box.setPointerCapture(e.pointerId); } catch { /* палец уже отпущен */ }
       if (!edge && i !== sel) select(i);
       e.preventDefault();
@@ -733,7 +737,7 @@ window.Vlog = (function () {
         if (Math.abs(dx) > 8 || Math.abs(e.clientY - g.y) > 8) { clearTimeout(g.long); g = null; }
         return;
       }
-      if (g.kind === 'press' && Math.abs(dx) > 8) startDrag();
+      if (g.kind === 'press' && Math.abs(dx) > 8) { clearTimeout(g.long); startDrag(); }
       if (g.kind === 'trim') trimMove(dx);
       if (g.kind === 'drag') dragMove(e.clientX);
     });
@@ -1540,14 +1544,14 @@ window.Vlog = (function () {
       const buf = await window.VlogFast.mix(speech, total());
       if (!buf) { toast(t('В ролике нет звука речи: ни у клипов, ни в озвучке.')); return; }
       const lines = await window.VlogSubs.transcribe(buf, subsLang, (stage, k) => {
-        show(stage === 'load' ? `${t('Скачиваю модель')}: ${Math.round(k * 100)}%` : t('Распознаю речь…'));
+        show(stage === 'load' ? `${t('Скачиваю модель')}: ${Math.round(k * 100)}%` : `${t('Распознаю речь…')} ${Math.round(k * 100)}%`);
       });
       if (!lines.length) { toast(t('Речь не распознана.')); return; }
       commit(() => {
         p.overlays = p.overlays.filter((o) => !o.layer.sub);
         lines.forEach((l) => {
           if (l.end - l.start < 200 || l.start >= total()) return;
-          const o = Timeline.addOverlay(p, { type: 'text', text: l.text, font: 'golos', color: '#ffffff', bg: '#111111', style: 'plaque', shadow: 'none', size: 0.042, x: 0.5, y: 0.8, rot: 0, sub: true }, l.start);
+          const o = Timeline.addOverlay(p, { type: 'text', text: l.text, font: 'golos', color: '#ffffff', bg: '#111111', style: 'plaque', shadow: 'none', size: 0.05, x: 0.5, y: 0.8, rot: 0, sub: true }, l.start);
           o.start = Math.round(l.start);
           o.end = Math.round(Math.min(total(), Math.max(l.start + Timeline.MIN_MS, l.end)));
           o.anim = 'fade';

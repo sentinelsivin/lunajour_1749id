@@ -1361,3 +1361,9 @@ button.vlog-title svg { flex: none; opacity: .6; }
 .vlog-safe .top { left: 0; right: 0; top: 0; height: 12%; }
 .vlog-safe .bottom { left: 0; right: 0; bottom: 0; height: 22%; }
 .vlog-safe .side { right: 0; top: 40%; bottom: 22%; width: 14%; }
+/* узкий телефон: «Карточки» сворачивается в стрелку, чтобы название влога не обрезалось */
+@media (max-width: 420px) {
+  #vlogBack { font-size: 0; min-width: 36px; }
+  #vlogBack::before { content: '‹'; font-size: 20px; line-height: 1; }
+  .vlog-title { font-size: 19px; }
+}

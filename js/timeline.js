@@ -269,12 +269,13 @@ window.Timeline = (function () {
     keep.forEach((r) => { if (r.from > prev) gaps.push([prev, r.from]); prev = Math.max(prev, r.to); });
     if (prev < was) gaps.push([prev, was]);
     const squeeze = (rel) => rel - gaps.reduce((s, [a, b]) => s + Math.max(0, Math.min(b, rel) - a), 0);
+    /* время ролика внутри клипа → после вырезания; за концом клипа всё сдвигается на всё вырезанное */
+    const cut = squeeze(was) - was;
+    const map = (t) => (t >= S + L ? t + cut / sp : S + squeeze((t - S) * sp) / sp);
     p.overlays.forEach((o) => {
       if (o.start < S || o.start >= S + L) return;
-      const d = squeeze((o.start - S) * sp) / sp - (o.start - S);
-      if (!d) return;
-      o.start = Math.round(o.start + d);
-      o.end = Math.round(Math.max(o.start + MIN_MS, o.end + d));
+      o.start = Math.round(map(o.start));
+      o.end = Math.round(Math.max(o.start + MIN_MS, map(o.end)));
     });
     const tr = c.tr;
     const pieces = keep.map((r, k) => ({ ...JSON.parse(JSON.stringify(c)), id: k ? uid() : c.id, in: Math.round(c.in + r.from), out: Math.round(Math.min(c.out, c.in + r.to)) }));

@@ -195,3 +195,13 @@ test('без пауз: клип делится, надписи на нём сд�
   assert.deepEqual([onWord.start, onWord.end], [3000, 3500]);
   assert.equal(after.start, 5500);
 });
+
+test('без пауз: конец надписи тоже считается по вырезанному, строки не наезжают', () => {
+  const p = project(['video', 6000, 6000]);
+  const a = Timeline.addOverlay(p, { type: 'text', text: 'a' }, 0);
+  a.end = 2500; // кончается внутри вырезанной паузы
+  const b = Timeline.addOverlay(p, { type: 'text', text: 'b' }, 3000);
+  b.end = 5000;
+  Timeline.keepOnly(p, 0, [{ from: 0, to: 2000 }, { from: 3000, to: 6000 }]);
+  assert.deepEqual([a.start, a.end, b.start, b.end], [0, 2000, 2000, 4000]);
+});
