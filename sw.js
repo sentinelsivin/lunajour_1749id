@@ -7,6 +7,8 @@ self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
 
 self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
+  /* чужие сайты (библиотека и модель субтитров) кэширует сама библиотека: второй копии не нужно */
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request, { cache: 'no-cache' })
       .then((res) => {

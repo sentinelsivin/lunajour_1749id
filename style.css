@@ -1349,3 +1349,15 @@ button.vlog-title svg { flex: none; opacity: .6; }
   background: #e8913a; color: #111; font: 700 11px/1 var(--mono); pointer-events: none;
 }
 .vlog-clip-warn.lost { background: #d64545; color: #fff; }
+.vlog-clip.multi { z-index: 1; outline: 2px solid var(--accent-light); outline-offset: -2px; }
+.vlog-clip.multi::after {
+  content: '✓'; position: absolute; left: 4px; top: 4px;
+  width: 16px; height: 16px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--accent-light); color: #111; font: 700 10px/1 var(--mono); pointer-events: none;
+}
+.vlog-safe { position: absolute; pointer-events: none; z-index: 1; }
+.vlog-safe i { position: absolute; background: repeating-linear-gradient(135deg, rgba(255, 80, 80, .28) 0 6px, rgba(255, 80, 80, .12) 6px 12px); outline: 1px dashed rgba(255, 120, 120, .8); }
+.vlog-safe .top { left: 0; right: 0; top: 0; height: 12%; }
+.vlog-safe .bottom { left: 0; right: 0; bottom: 0; height: 22%; }
+.vlog-safe .side { right: 0; top: 40%; bottom: 22%; width: 14%; }

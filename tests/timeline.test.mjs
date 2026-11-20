@@ -178,3 +178,20 @@ test('история отмены: миниатюры не копируются,
   assert.equal(back.media.x.thumb, 'data:big');
   assert.equal(back.clips.length, 0);
 });
+
+test('без пауз: клип делится, надписи на нём сдвигаются на вырезанное', () => {
+  const p = project(['image', 1000], ['video', 6000, 6000], ['image', 2000]);
+  const id = p.clips[1].id;
+  const onWord = Timeline.addOverlay(p, { type: 'text', text: 'слово' }, 1000 + 4000);
+  onWord.end = 1000 + 4500;
+  const after = Timeline.addOverlay(p, { type: 'text', text: 'после' }, 7500);
+  const keep = Timeline.anchors(p);
+  // вырезаем 1–3 с клипа
+  Timeline.keepOnly(p, 1, [{ from: 0, to: 1000 }, { from: 3000, to: 6000 }]);
+  Timeline.reanchor(p, keep);
+  assert.equal(p.clips.length, 4);
+  assert.equal(p.clips[1].id, id);
+  assert.deepEqual(p.clips.slice(1, 3).map((c) => [c.in, c.out]), [[0, 1000], [3000, 6000]]);
+  assert.deepEqual([onWord.start, onWord.end], [3000, 3500]);
+  assert.equal(after.start, 5500);
+});

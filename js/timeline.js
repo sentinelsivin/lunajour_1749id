@@ -255,6 +255,35 @@ window.Timeline = (function () {
     fitOverlays(p);
   }
 
+  /* Оставить у клипа i только куски keep ([{ from, to }], мс от c.in): клип делится на части, первая остаётся тем же клипом.
+     Надписи и озвучка, которые начинаются на этом клипе, сдвигаются на вырезанное перед ними: остаются на тех же словах. */
+  function keepOnly(p, i, keep) {
+    const c = p.clips[i];
+    if (!c || !keep.length) return false;
+    const S = starts(p)[i];
+    const L = len(c);
+    const sp = c.speed || 1;
+    const was = c.out - c.in;
+    const gaps = [];
+    let prev = 0;
+    keep.forEach((r) => { if (r.from > prev) gaps.push([prev, r.from]); prev = Math.max(prev, r.to); });
+    if (prev < was) gaps.push([prev, was]);
+    const squeeze = (rel) => rel - gaps.reduce((s, [a, b]) => s + Math.max(0, Math.min(b, rel) - a), 0);
+    p.overlays.forEach((o) => {
+      if (o.start < S || o.start >= S + L) return;
+      const d = squeeze((o.start - S) * sp) / sp - (o.start - S);
+      if (!d) return;
+      o.start = Math.round(o.start + d);
+      o.end = Math.round(Math.max(o.start + MIN_MS, o.end + d));
+    });
+    const tr = c.tr;
+    const pieces = keep.map((r, k) => ({ ...JSON.parse(JSON.stringify(c)), id: k ? uid() : c.id, in: Math.round(c.in + r.from), out: Math.round(Math.min(c.out, c.in + r.to)) }));
+    pieces.forEach((x) => { delete x.tr; });
+    if (tr) pieces[pieces.length - 1].tr = tr;
+    p.clips.splice(i, 1, ...pieces);
+    return true;
+  }
+
   /* файлы, на которые больше не ссылается ни один клип, стикер и не музыка */
   function unused(p) {
     const used = new Set(p.clips.map((c) => c.media));
@@ -309,6 +338,6 @@ window.Timeline = (function () {
 
   return {
     MIN_MS, IMAGE_MS, TR_MS, uid, newProject, newClip, len, duration, starts, at, add, canSplit, split, trim, move, remove, dup, unused, history, nearest, fitToBeats,
-    trDur, transitionAt, addOverlay, fitOverlays, overlayRows, anchors, reanchor,
+    trDur, transitionAt, addOverlay, fitOverlays, overlayRows, anchors, reanchor, keepOnly,
   };
 })();

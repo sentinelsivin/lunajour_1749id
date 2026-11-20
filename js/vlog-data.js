@@ -35,6 +35,8 @@
     shape: '<path d="M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5-4.5-2.4-4.5 2.4.9-5L2.8 7.8l5-.7z"/>',
     pauses: '<path d="M2 10h3l1.5-4 2 8 1.5-4h1"/><path d="M13 6v8M17 6v8"/>',
     freeze: '<rect x="3" y="4" width="14" height="12" rx="1"/><path d="M10 7v6M7.5 8.5l5 3M12.5 8.5l-5 3"/>',
+    reverse: '<path d="M8 5L4 9l4 4"/><path d="M4 9h8a4 4 0 0 1 0 8H9"/>',
+    subs: '<rect x="2.5" y="4" width="15" height="12" rx="1.5"/><path d="M5.5 11h3M10.5 11h4M5.5 13.5h6"/>',
     trans: '<rect x="2.5" y="5" width="7" height="10" rx="1"/><rect x="10.5" y="5" width="7" height="10" rx="1" opacity=".5"/><path d="M8 10h4"/>',
   };
 
@@ -237,5 +239,52 @@
     return keep;
   }
 
-  root.VlogData = { ICONS, AUTO_STYLES, SCENARIOS, EMOJIS, COLORS, TEXT_PRESETS, RULER_STEPS, fmt, clipsText, styleFromVlog, takenFromBytes, parseExifTime, dateText, byTaken, keepRanges };
+  /* ---------- субтитры ----------
+     Куски речи от распознавания ({ start, end, text }, мс) → строки не длиннее max знаков.
+     Длинный кусок делится по словам, время между строками — пропорционально числу знаков. */
+  function subLines(chunks, max = 42) {
+    const out = [];
+    chunks.forEach((c) => {
+      /* пометки вместо речи: «(свист)», «[Музыка]», «♪» — не субтитры */
+      const said = String(c.text || '').replace(/\([^)]*\)|\[[^\]]*\]|[♪♫*]/g, ' ');
+      const words = said.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+      if (!words.length || !(c.end > c.start)) return;
+      const lines = [];
+      let cur = '';
+      words.forEach((w) => {
+        if (cur && (cur + ' ' + w).length > max) { lines.push(cur); cur = w; } else cur = cur ? `${cur} ${w}` : w;
+      });
+      if (cur) lines.push(cur);
+      const chars = lines.reduce((s, l) => s + l.length, 0);
+      let at = c.start;
+      lines.forEach((l, k) => {
+        const end = k === lines.length - 1 ? c.end : Math.round(at + ((c.end - c.start) * l.length) / chars);
+        out.push({ start: Math.round(at), end, text: l });
+        at = end;
+      });
+    });
+    return out;
+  }
+
+  /* ---------- ограничения площадок по длине, с ---------- */
+  const LIMITS = [
+    { name: 'Reels', max: 180 },
+    { name: 'Shorts', max: 180 },
+    { name: 'TikTok', max: 600 },
+  ];
+  function limitsText(totalMs, ratio, lang) {
+    const s = totalMs / 1000;
+    const ok = LIMITS.filter((l) => s <= l.max).map((l) => l.name);
+    const no = LIMITS.filter((l) => s > l.max).map((l) => l.name);
+    const en = lang === 'en';
+    let text = !no.length
+      ? (en ? `Fits ${ok.join(', ')}.` : `Подходит для ${ok.join(', ')}.`)
+      : ok.length
+        ? (en ? `Too long for ${no.join(' and ')} (3 min max); fine for ${ok.join(', ')}.` : `Длиннее, чем принимают ${no.join(' и ')} (до 3 мин); ${ok.join(', ')} — подходит.`)
+        : (en ? 'Longer than Reels, Shorts and TikTok accept.' : 'Длиннее, чем принимают Reels, Shorts и TikTok.');
+    if (ratio !== '9:16') text += en ? ' These apps fill the screen best with 9:16.' : ' Для них лучше формат 9:16.';
+    return text;
+  }
+
+  root.VlogData = { subLines, limitsText, ICONS, AUTO_STYLES, SCENARIOS, EMOJIS, COLORS, TEXT_PRESETS, RULER_STEPS, fmt, clipsText, styleFromVlog, takenFromBytes, parseExifTime, dateText, byTaken, keepRanges };
 })(typeof window !== 'undefined' ? window : globalThis);

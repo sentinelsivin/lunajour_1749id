@@ -110,3 +110,22 @@ test('клипы по дате съёмки: без даты — в конце �
   assert.equal(VlogData.dateText(new Date(2026, 10, 5).getTime(), 'cam'), 'NOV 05 2026');
   assert.equal(VlogData.dateText(new Date(2026, 10, 5).getTime(), 'words', 'ru'), '5 ноября');
 });
+
+test('субтитры: длинный кусок делится по словам, время по числу знаков', () => {
+  const lines = VlogData.subLines([{ start: 0, end: 4000, text: ' раз два три четыре пять шесть ' }, { start: 5000, end: 5000, text: 'пусто' }], 14);
+  assert.deepEqual(lines.map((l) => l.text), ['раз два три', 'четыре пять', 'шесть']);
+  assert.equal(lines[0].start, 0);
+  assert.equal(lines[2].end, 4000);
+  assert.ok(lines[0].end > 0 && lines[0].end === lines[1].start);
+});
+
+test('длина ролика и площадки', () => {
+  assert.equal(VlogData.limitsText(60000, '9:16', 'ru'), 'Подходит для Reels, Shorts, TikTok.');
+  assert.match(VlogData.limitsText(240000, '9:16', 'ru'), /Reels и Shorts/);
+  assert.match(VlogData.limitsText(60000, '16:9', 'en'), /9:16/);
+});
+
+test('субтитры: пометки вместо речи отбрасываются', () => {
+  const lines = VlogData.subLines([{ start: 0, end: 1000, text: ' (whistling)' }, { start: 1000, end: 2000, text: '[Музыка] ♪ привет ♪' }]);
+  assert.deepEqual(lines.map((l) => l.text), ['привет']);
+});

@@ -34,6 +34,25 @@ window.Vlog = (function () {
   let editorCard = null;
   let myStyles = [];
 
+  /* несколько выбранных клипов (id): Shift или Ctrl по клипу, на телефоне долгое нажатие */
+  let multi = new Set();
+  const multiOn = () => multi.size > 1;
+  /* к каким клипам применять настройку: ко всем выбранным или к одному */
+  const targets = () => (multiOn() ? p.clips.filter((c) => multi.has(c.id)) : [p.clips[sel]].filter(Boolean));
+  function toggleMulti(i) {
+    const c = p.clips[i];
+    if (!c) return;
+    if (!multi.size && sel >= 0 && sel !== i && p.clips[sel]) multi.add(p.clips[sel].id);
+    if (multi.has(c.id)) multi.delete(c.id); else multi.add(c.id);
+    const last = p.clips.findIndex((x) => multi.has(x.id));
+    sel = multi.has(c.id) ? i : last;
+    ov = '';
+    join = -1;
+    if (!multiOn() && multi.size === 1) multi.clear();
+    if (sheet && !['look', 'speed', 'dur', 'vol'].includes(sheet)) sheet = '';
+    syncAll();
+  }
+
   const canvasEl = () => $('vlogCanvas');
   const total = () => Timeline.duration(p);
   const clip = () => p.clips[sel] || null;
@@ -214,6 +233,7 @@ window.Vlog = (function () {
     changed();
   }
   function changed() {
+    if (multi.size) { const ids = new Set(p.clips.map((c) => c.id)); multi.forEach((id) => { if (!ids.has(id)) multi.delete(id); }); if (multi.size < 2) multi.clear(); }
     if (sel >= p.clips.length) sel = p.clips.length - 1;
     if (join >= p.clips.length - 1) join = -1;
     Timeline.fitOverlays(p);
@@ -324,7 +344,7 @@ window.Vlog = (function () {
     p.clips.forEach((c, i) => {
       const m = p.media[c.media] || {};
       const el = document.createElement('div');
-      el.className = `vlog-clip${i === sel ? ' sel' : ''}`;
+      el.className = `vlog-clip${i === sel && !multiOn() ? ' sel' : ''}${multi.has(c.id) ? ' multi' : ''}`;
       el.dataset.i = i;
       el.style.width = `${Math.max(4, (Timeline.len(c) * pps) / 1000)}px`;
       if (m.thumb) el.style.backgroundImage = `url("${m.thumb}")`;
@@ -352,7 +372,7 @@ window.Vlog = (function () {
         el.append(w);
         el.title = warn;
       }
-      if (i === sel) {
+      if (i === sel && !multiOn()) {
         ['in', 'out'].forEach((edge) => {
           const h = document.createElement('i');
           h.className = `vlog-handle ${edge}`;
@@ -691,10 +711,14 @@ window.Vlog = (function () {
       const i = Number(el.dataset.i);
       const edge = e.target.dataset.edge || '';
       const mouse = e.pointerType === 'mouse';
-      if (!edge && i !== sel && !mouse) {
+      if (!edge && mouse && (e.shiftKey || e.ctrlKey || e.metaKey)) { e.preventDefault(); toggleMulti(i); return; }
+      if (!edge && !mouse && (i !== sel || multi.size)) {
         g = { kind: 'tap', i, x: e.clientX, y: e.clientY, id: e.pointerId };
+        /* долгое нажатие: выбрать несколько клипов */
+        g.long = setTimeout(() => { if (g && g.kind === 'tap') { g = null; if (navigator.vibrate) navigator.vibrate(15); toggleMulti(i); } }, 480);
         return;
       }
+      if (multi.size && !edge) { e.preventDefault(); select(i); return; }
       if (Engine.playing) { Engine.pause(); syncPlay(); }
       const c = p.clips[i];
       g = { kind: edge ? 'trim' : 'press', edge, i, x: e.clientX, y: e.clientY, id: e.pointerId, in: c.in, out: c.out, el, pushed: false };
@@ -706,7 +730,7 @@ window.Vlog = (function () {
       if (!g || e.pointerId !== g.id) return;
       const dx = e.clientX - g.x;
       if (g.kind === 'tap') {
-        if (Math.abs(dx) > 8 || Math.abs(e.clientY - g.y) > 8) g = null;
+        if (Math.abs(dx) > 8 || Math.abs(e.clientY - g.y) > 8) { clearTimeout(g.long); g = null; }
         return;
       }
       if (g.kind === 'press' && Math.abs(dx) > 8) startDrag();
@@ -717,7 +741,11 @@ window.Vlog = (function () {
       if (!g || e.pointerId !== g.id) return;
       const was = g;
       g = null;
-      if (was.kind === 'tap') select(was.i === sel ? -1 : was.i);
+      clearTimeout(was.long);
+      if (was.kind === 'tap') {
+        if (multi.size) toggleMulti(was.i);
+        else select(was.i === sel ? -1 : was.i);
+      }
       if (was.kind === 'trim') { peek = null; dirty = true; changed(); }
       if (was.kind === 'drag') dragEnd(was);
     };
@@ -875,6 +903,7 @@ window.Vlog = (function () {
   }
 
   function select(i) {
+    multi.clear();
     if (i !== sel) pieceSel = -1;
     sel = i;
     if (i >= 0) { ov = ''; join = -1; }
@@ -939,7 +968,25 @@ window.Vlog = (function () {
     syncTime();
   }
 
+  /* безопасная зона: где в Reels, Shorts и TikTok лежат подписи и кнопки. Только на просмотре, в ролик не попадает */
+  let safeOn = (() => { try { return localStorage.getItem('vlog-safe') === '1'; } catch { return false; } })();
+  function positionSafe() {
+    let z = $('vlogSafe');
+    if (!z) {
+      z = document.createElement('div');
+      z.id = 'vlogSafe';
+      z.className = 'vlog-safe';
+      z.innerHTML = '<i class="top"></i><i class="bottom"></i><i class="side"></i>';
+      $('vlogStage').append(z);
+    }
+    z.hidden = !safeOn || !p.clips.length;
+    if (z.hidden) return;
+    const cr = canvasEl().getBoundingClientRect();
+    const sr = $('vlogStage').getBoundingClientRect();
+    Object.assign(z.style, { left: `${cr.left - sr.left}px`, top: `${cr.top - sr.top}px`, width: `${cr.width}px`, height: `${cr.height}px` });
+  }
   function positionBox() {
+    positionSafe();
     const boxEl = $('vlogBox');
     if (piecesOn() && !Engine.playing) {
       const q = clip().shape.pieces[pieceSel];
@@ -1197,15 +1244,24 @@ window.Vlog = (function () {
     }
     if (!c) {
       nav.append(
-        toolBtn('add', 'Добавить'), toolBtn('auto', 'Собрать', sheet === 'auto'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'), toolBtn('voice', 'Озвучка', sheet === 'voice'),
+        toolBtn('add', 'Добавить'), toolBtn('auto', 'Собрать', sheet === 'auto'), toolBtn('split', 'Разрезать'), toolBtn('newText', 'Текст'), toolBtn('stickers', 'Стикеры', sheet === 'stickers'), toolBtn('newFx', 'Эффект'), toolBtn('voice', 'Озвучка', sheet === 'voice'), toolBtn('subs', 'Субтитры', sheet === 'subs'),
         toolBtn('trans', 'Переход', sheet === 'trans'), toolBtn('music', 'Музыка', sheet === 'music'), toolBtn('format', 'Формат', sheet === 'format'),
       );
+      return;
+    }
+    if (multiOn()) {
+      const list = targets();
+      nav.append(toolBtn('back', `${t('Снять выбор')} (${multi.size})`), toolBtn('look', 'Цвет', sheet === 'look'));
+      if (list.every((x) => x.kind === 'video')) nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'));
+      if (list.every((x) => x.kind === 'image')) nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
+      nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
+      requestAnimationFrame(fadeTools);
       return;
     }
     /* похожие настройки собраны в группы: одна кнопка, внутри шторки вкладки */
     const open = (g) => GROUPS[g].includes(sheet) || (desktop() && !sheet && g === 'g-fx');
     nav.append(toolBtn('back', 'Все клипы'), toolBtn('split', 'Разрезать'), toolBtn('frame', 'Кадр', sheet === 'frame'), toolBtn('g-dress', 'Оформление', open('g-dress')), toolBtn('g-fx', 'Эффекты', open('g-fx')));
-    if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'), toolBtn('pauses', 'Без пауз'), toolBtn('freeze', 'Стоп-кадр'));
+    if (c.kind === 'video') nav.append(toolBtn('speed', 'Скорость', sheet === 'speed'), toolBtn('vol', 'Звук', sheet === 'vol'), toolBtn('pauses', 'Без пауз'), toolBtn('freeze', 'Стоп-кадр'), toolBtn('reverse', 'Реверс'));
     else nav.append(toolBtn('dur', 'Длина', sheet === 'dur'));
     nav.append(toolBtn('dup', 'Копия'), toolBtn('del', 'Удалить'));
     requestAnimationFrame(fadeTools);
@@ -1257,9 +1313,26 @@ window.Vlog = (function () {
   function runTool(id) {
     if (id === 'add') return $('vlogFiles').click();
     if (id === 'back') { select(-1); return selectOv(''); }
+    if (multiOn() && (id === 'dup' || id === 'del')) {
+      const ids = new Set(targets().map((c) => c.id));
+      if (id === 'del') {
+        const was = p.overlays.length;
+        commit(() => { p.clips = p.clips.filter((c) => !ids.has(c.id)); });
+        multi.clear();
+        sel = -1;
+        const lost = was - p.overlays.length;
+        toast(`${t('Удалено')}: ${clipsText(ids.size)}.${lost ? ` ${t('Вместе с клипом убрано наложений')}: ${lost}.` : ''} ${t('Вернуть — «Отменить».')}`);
+        return syncAll();
+      }
+      commit(() => {
+        for (let i = p.clips.length - 1; i >= 0; i--) if (ids.has(p.clips[i].id)) Timeline.dup(p, i);
+      });
+      return syncAll();
+    }
     if (id === 'split') return split();
     if (id === 'pauses') return cutPauses();
     if (id === 'freeze') return freezeFrame();
+    if (id === 'reverse') return reverseClip();
     if (id === 'newText') return addText();
     if (id === 'newFx') return addEffect();
     if (id === 'trans') {
@@ -1347,13 +1420,7 @@ window.Vlog = (function () {
       const left = keep.reduce((s, r) => s + r.to - r.from, 0);
       if (!keep.length || was - left < 300) { toast(t('Пауз не нашлось.')); return; }
       const i = sel;
-      commit(() => {
-        const tr = c.tr;
-        const pieces = keep.map((r, k) => ({ ...JSON.parse(JSON.stringify(c)), id: k ? Timeline.uid() : c.id, in: Math.round(c.in + r.from), out: Math.round(Math.min(c.out, c.in + r.to)) }));
-        pieces.forEach((x) => { delete x.tr; });
-        if (tr) pieces[pieces.length - 1].tr = tr;
-        p.clips.splice(i, 1, ...pieces);
-      });
+      commit(() => Timeline.keepOnly(p, i, keep));
       select(i);
       toast(`${t('Паузы вырезаны: клип короче на')} ${((was - left) / 1000 / (c.speed || 1)).toFixed(1)} ${t('с')}, ${clipsText(keep.length)}.`);
     } finally { busy = false; }
@@ -1411,6 +1478,88 @@ window.Vlog = (function () {
     } finally { busy = false; }
   }
 
+  /* ---------- назад: клип перекодируется задом наперёд и встаёт на своё место (тот же клип, другой файл) ---------- */
+  async function reverseClip() {
+    const c = clip();
+    if (busy || !c || c.kind !== 'video' || !window.VlogFast) return;
+    if (c.out - c.in > window.VlogFast.REVERSE_MAX_MS) { toast(t('Задом наперёд можно клип до 30 с: сначала разрежь его.')); return; }
+    pauseNow();
+    busy = true;
+    toast(`${t('Разворачиваю клип')}…`, 60000);
+    try {
+      const blob = await window.VlogFast.reverse(c, (k) => toast(`${t('Разворачиваю клип')}: ${Math.round(k * 100)}%`, 60000));
+      if (!blob) return;
+      const base = ((p.media[c.media] && p.media[c.media].name) || 'clip').replace(/\.[^.]+$/, '');
+      const m = await Engine.importFile(new File([blob], `${base}-reverse.mp4`, { type: 'video/mp4' }));
+      m.taken = (p.media[c.media] && p.media[c.media].taken) || m.taken;
+      const was = c.out - c.in;
+      commit(() => {
+        p.media[m.id] = m;
+        c.media = m.id;
+        c.in = 0;
+        c.out = Math.max(Timeline.MIN_MS, Math.min(m.dur || was, was));
+        c.reversed = !c.reversed;
+      });
+      toast(t('Клип идёт задом наперёд. Вернуть — «Отменить».'));
+    } catch {
+      toast(t('Этот браузер не смог развернуть клип. Попробуй в Chrome.'));
+    } finally { busy = false; }
+  }
+
+  /* ---------- субтитры: речь клипов и озвучки → надписи внизу кадра ---------- */
+  let subsLang = '';
+  let subsBusy = '';
+  function sheetSubs(body) {
+    if (!p.clips.length) { body.append(el('p', 'hint', t('Сначала добавь клипы и фото.'))); return; }
+    const S = window.VlogSubs;
+    body.append(group('Язык речи', chips([['', t('Определить сам')], ['russian', 'Русский'], ['english', 'English']], subsLang, (v) => { subsLang = v; syncSheet(); })));
+    const row = el('div', 'row');
+    const go = el('button', 'btn primary', subsBusy || t('Сделать субтитры'));
+    go.type = 'button';
+    go.disabled = !!subsBusy || !S;
+    go.onclick = makeSubs;
+    row.append(go);
+    if (p.overlays.some((o) => o.layer.sub)) {
+      const off = el('button', 'btn small', t('Убрать субтитры'));
+      off.type = 'button';
+      off.disabled = !!subsBusy;
+      off.onclick = () => commit(() => { p.overlays = p.overlays.filter((o) => !o.layer.sub); });
+      row.append(off);
+    }
+    body.append(row);
+    body.append(el('p', 'hint', `${t('Речь распознаётся прямо на устройстве, звук никуда не отправляется. При первом запуске скачается модель распознавания, около')} ${S ? S.MODEL_MB : 80} ${t('МБ')}; ${t('потом она хранится в браузере. Субтитры — обычные надписи: их можно поправить и передвинуть.')}`));
+  }
+  async function makeSubs() {
+    if (subsBusy || !window.VlogSubs || !window.VlogFast) return;
+    pauseNow();
+    const show = (text) => { subsBusy = text; if (sheet === 'subs') syncSheet(); };
+    show(t('Готовлю звук…'));
+    try {
+      /* только речь: звук клипов и озвучка, без музыки */
+      const speech = { ...p, music: { ...p.music, track: '', fileId: '' } };
+      const buf = await window.VlogFast.mix(speech, total());
+      if (!buf) { toast(t('В ролике нет звука речи: ни у клипов, ни в озвучке.')); return; }
+      const lines = await window.VlogSubs.transcribe(buf, subsLang, (stage, k) => {
+        show(stage === 'load' ? `${t('Скачиваю модель')}: ${Math.round(k * 100)}%` : t('Распознаю речь…'));
+      });
+      if (!lines.length) { toast(t('Речь не распознана.')); return; }
+      commit(() => {
+        p.overlays = p.overlays.filter((o) => !o.layer.sub);
+        lines.forEach((l) => {
+          if (l.end - l.start < 200 || l.start >= total()) return;
+          const o = Timeline.addOverlay(p, { type: 'text', text: l.text, font: 'golos', color: '#ffffff', bg: '#111111', style: 'plaque', shadow: 'none', size: 0.042, x: 0.5, y: 0.8, rot: 0, sub: true }, l.start);
+          o.start = Math.round(l.start);
+          o.end = Math.round(Math.min(total(), Math.max(l.start + Timeline.MIN_MS, l.end)));
+          o.anim = 'fade';
+        });
+      });
+      toast(`${t('Субтитры готовы')}: ${lines.length}. ${t('Каждую строку можно поправить: нажми на неё на дорожке.')}`, 6000);
+    } catch (err) {
+      console.warn('subtitles failed', err);
+      toast(t('Не получилось сделать субтитры. Нужен интернет для первой загрузки модели.'));
+    } finally { show(''); }
+  }
+
   function removeSel() {
     if (overlay()) return runTool('del');
     if (sel < 0) return;
@@ -1426,7 +1575,7 @@ window.Vlog = (function () {
   /* ---------- шторка настроек ---------- */
   const SHEETS = {
     music: 'Музыка', format: 'Формат', frame: 'Кадр', card: 'Карточка', layout: 'Макет', look: 'Цвет', fx: 'Эффект', scan: 'Сканер', shape: 'Фигура', speed: 'Скорость', vol: 'Звук клипа', dur: 'Длина показа', project: 'Влог',
-    projects: 'Мои влоги', voice: 'Озвучка', voicevol: 'Голос', auto: 'Собрать за меня', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
+    projects: 'Мои влоги', subs: 'Субтитры', voice: 'Озвучка', voicevol: 'Голос', auto: 'Собрать за меня', text: 'Текст', stickers: 'Стикеры', ovfx: 'Эффект на время', ovscan: 'Сканер на время', style: 'Вид стикера', anim: 'Появление', trans: 'Переход',
   };
   function openSheet(id) {
     sheet = id;
@@ -1479,6 +1628,16 @@ window.Vlog = (function () {
     wrap.append(head, input);
     return wrap;
   }
+  /* галочка в шторке */
+  function checkRow(label, on, pick) {
+    const lab = el('label', 'check');
+    const box = el('input');
+    box.type = 'checkbox';
+    box.checked = on;
+    box.onchange = () => pick(box.checked);
+    lab.append(box, document.createTextNode(t(label)));
+    return lab;
+  }
   const toAll = (label, fn) => {
     const b = el('button', 'btn small', t(label));
     b.type = 'button';
@@ -1496,7 +1655,7 @@ window.Vlog = (function () {
     body.textContent = '';
     side.hidden = !id;
     if (!id) return;
-    const g = clip() ? groupOf(id) : '';
+    const g = clip() && !multiOn() ? groupOf(id) : '';
     $('vlogSheetTitle').textContent = t(g ? GROUP_NAMES[g] : SHEETS[id] || '');
     $('vlogSheetClose').hidden = desktop() && !sheet;
     if (g) {
@@ -1513,6 +1672,7 @@ window.Vlog = (function () {
       body.append(styleRow());
     }
     const c = clip();
+    if (multiOn() && c) body.append(el('p', 'hint', `${t('Выбрано')}: ${clipsText(multi.size)}. ${t('Настройка ляжет на все выбранные.')}`));
     if (id === 'project') {
       body.append(el('p', 'hint', t('Нажми на клип в ленте, чтобы настроить его. Перематывай полоской под просмотром или нажми на линейку времени над клипами.')));
       sheetFormat(body);
@@ -1531,6 +1691,7 @@ window.Vlog = (function () {
     if (isFxOv(o) && id === 'ovscan') { sheetScan(body, o.layer, shotOf(o)); sheetSpan(body, o); }
     if (isVoiceOv(o) && id === 'voicevol') sheetVoiceVol(body, o);
     if (id === 'voice') sheetVoice(body);
+    if (id === 'subs') sheetSubs(body);
     if (!c) return;
     if (id === 'frame') sheetFrame(body, c);
     if (id === 'card') sheetCard(body, c);
@@ -1540,16 +1701,18 @@ window.Vlog = (function () {
     if (id === 'layout') sheetLayout(body, c);
     if (id === 'shape') sheetShape(body, c);
     if (id === 'speed') {
-      body.append(group('Скорость', chips(SPEEDS.map((v) => [v, `${v}×`]), c.speed, (v) => commit(() => { c.speed = v; }))));
+      body.append(group('Скорость', chips(SPEEDS.map((v) => [v, `${v}×`]), c.speed, (v) => commit(() => { targets().forEach((x) => { if (x.kind === 'video') x.speed = v; }); }))));
       body.append(toAll('Ко всем видео', () => p.clips.forEach((x) => { if (x.kind === 'video') x.speed = c.speed; })));
       body.append(el('p', 'hint', t('Звук ускоряется вместе с видео. Замедленный клип становится длиннее.')));
     }
     if (id === 'vol') {
-      body.append(slider('Громкость', 0, 100, 1, c.vol, (v) => `${v}%`, (v) => { c.vol = v; }));
-      body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.vol = c.vol; })));
+      body.append(slider('Громкость', 0, 100, 1, c.vol, (v) => `${v}%`, (v) => { targets().forEach((x) => { x.vol = v; }); }));
+      body.append(checkRow('Чистый голос', !!c.clean, (on) => commit(() => { targets().forEach((x) => { x.clean = on; }); })));
+      body.append(el('p', 'hint', t('Убирает гул, ветер в микрофоне и шипение, выравнивает громкость речи.')));
+      body.append(toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.vol = c.vol; x.clean = !!c.clean; })));
     }
     if (id === 'dur') {
-      body.append(slider('Сколько показывать фото', 500, 10000, 100, c.out - c.in, (v) => `${(v / 1000).toFixed(1)} ${t('с')}`, (v) => { c.in = 0; c.out = v; }));
+      body.append(slider('Сколько показывать фото', 500, 10000, 100, c.out - c.in, (v) => `${(v / 1000).toFixed(1)} ${t('с')}`, (v) => { targets().forEach((x) => { if (x.kind === 'image') { x.in = 0; x.out = v; } }); }));
       body.append(toAll('Ко всем фото', () => p.clips.forEach((x) => { if (x.kind === 'image') { x.in = 0; x.out = c.out - c.in; } })));
     }
   }
@@ -1977,6 +2140,66 @@ window.Vlog = (function () {
     body.append(go);
     body.append(el('p', 'hint', t('Ставит музыку, длину фото, движение, переходы, цвет и подпись, а стыки — на такт. Твои эффекты, надписи и стикеры остаются. Не понравилось — «Отменить» вернёт как было.')));
     sheetScenario(body);
+    const intro = el('div', 'row');
+    const mk = el('button', 'btn small', p.clips.some((c) => c.intro) ? t('Обновить заставку') : t('Заставка в начале'));
+    mk.type = 'button';
+    mk.onclick = makeIntro;
+    intro.append(mk);
+    body.append(group('Заставка', intro), el('p', 'hint', t('Затемнённый кадр обложки с названием влога и датой: первые 2.5 с ролика.')));
+  }
+
+  /* заставка: кадр обложки, притушенный и размытый, отдельным фото в начале; на нём название и дата */
+  async function makeIntro() {
+    if (busy || !p.clips.length || !window.VlogFast) return;
+    pauseNow();
+    busy = true;
+    try {
+      const old = p.clips.findIndex((c) => c.intro);
+      const shot = { ...p, clips: p.clips.filter((c) => !c.intro), overlays: p.overlays.filter((o) => o.layer.type !== 'text' && o.layer.type !== 'sticker') };
+      const src = await window.VlogFast.cover(shot, 1080, old === 0 ? Math.max(0, coverAt() - Timeline.len(p.clips[0])) : coverAt());
+      const cv = Render.canvas(src.width, src.height);
+      const x = cv.getContext('2d');
+      if ('filter' in x) x.filter = 'blur(6px) brightness(0.55) saturate(0.9)';
+      x.drawImage(src, -12, -12, src.width + 24, src.height + 24);
+      x.filter = 'none';
+      const jpg = await new Promise((ok) => cv.toBlob(ok, 'image/jpeg', 0.9));
+      if (!jpg) throw new Error('no picture');
+      const m = await Engine.importFile(new File([jpg], 'intro.jpg', { type: 'image/jpeg' }));
+      const dated = p.clips.map((c) => p.media[c.media] && p.media[c.media].taken).filter(Boolean);
+      m.taken = dated.length ? Math.min(...dated) : Date.now();
+      const st = allStyles().find((s) => s.id === autoStyle) || AUTO_STYLES[0];
+      const { anim, ...look } = st.title;
+      const name = (entry() && entry().name) || t('Влог');
+      hist.push(p);
+      /* прошлая заставка и её подписи уходят; остальное сдвигается за новой */
+      if (old >= 0) {
+        const keep0 = Timeline.anchors(p);
+        p.clips.splice(old, 1);
+        Timeline.reanchor(p, keep0);
+        p.overlays = p.overlays.filter((o) => !o.layer.intro);
+      }
+      const keep = Timeline.anchors(p);
+      p.media[m.id] = m;
+      const [c] = Timeline.add(p, [m], 0);
+      c.out = 2500;
+      c.move = 'in';
+      c.intro = true;
+      Timeline.reanchor(p, keep);
+      const title = Timeline.addOverlay(p, { type: 'text', text: name, size: 0.1, x: 0.5, y: 0.45, rot: 0, intro: true, ...look }, 0);
+      title.start = 0;
+      title.end = 2500;
+      title.anim = anim;
+      const date = Timeline.addOverlay(p, { type: 'text', text: window.VlogData.dateText(m.taken, 'words', I18n.lang), font: 'mono', color: '#ffffff', style: 'none', shadow: 'soft', size: 0.04, x: 0.5, y: 0.55, rot: 0, intro: true }, 0);
+      date.start = 300;
+      date.end = 2500;
+      date.anim = 'fade';
+      at = 0;
+      sel = -1;
+      changed();
+      toast(t('Заставка готова. Название меняется в списке влогов, вид — в «Собрать».'));
+    } catch {
+      toast(t('Не получилось сделать заставку.'));
+    } finally { busy = false; }
   }
 
   /* сценарий: подписи на клипах по порядку, видом как подпись выбранного стиля */
@@ -2161,6 +2384,7 @@ window.Vlog = (function () {
   }
   function sheetVoiceVol(body, o) {
     body.append(slider('Громкость голоса', 0, 200, 5, o.layer.vol ?? 100, (v) => `${v}%`, (v) => { o.layer.vol = v; }));
+    body.append(checkRow('Чистый голос', !!o.layer.clean, (on) => commit(() => { o.layer.clean = on; })));
     sheetSpanVoice(body, o);
   }
   function sheetSpanVoice(body, o) {
@@ -2191,6 +2415,7 @@ window.Vlog = (function () {
       const blob = await window.VlogFile.pack(p, name, Engine.blobOf);
       const safe = name.replace(/[\\/:*?"<>|]+/g, '').trim().slice(0, 60) || 'vlog';
       window.Export.save(blob, `${safe}.${window.VlogFile.EXT}`);
+      if (e) { e.saved = Date.now(); await Store.set('vlogs', index); }
       toast(`${t('Влог сохранён файлом')}: ${sizeText(blob.size)}.`);
     } catch {
       toast(t('Не получилось сохранить влог файлом.'));
@@ -2304,6 +2529,7 @@ window.Vlog = (function () {
       seg.append(b);
     });
     body.append(group('Формат ролика', seg), el('p', 'hint', t('9:16 для Reels, Shorts и TikTok. Как клип ляжет в кадр, настраивается у клипа в «Кадр».')));
+    body.append(checkRow('Показать, где кнопки соцсетей', safeOn, (on) => { safeOn = on; try { localStorage.setItem('vlog-safe', on ? '1' : ''); } catch { /* без памяти браузера */ } positionSafe(); }));
     if (p.clips.length > 1) {
       const sort = el('button', 'btn small', t('Разложить по дате съёмки'));
       sort.type = 'button';
@@ -2353,8 +2579,8 @@ window.Vlog = (function () {
     if (fixed) body.append(el('p', 'hint', t('У клипа есть карточка, макет или фигура: окошко для кадра задают они, а сам кадр внутри окошка двигается пальцем и масштабом.')));
     body.append(group('Как вписать', chips(Engine.FITS.map((f) => [f.id, t(f.name)]), c.fit || '', (v) => commit(() => { c.fit = v; }))));
     body.append(slider('Масштаб', 100, Engine.ZOOM_MAX * 100, 5, Math.round((c.zoom || 1) * 100), (v) => `${v}%`, (v) => { c.zoom = v / 100; }));
-    if (c.kind === 'image') {
-      body.append(group('Движение фото', chips(Engine.MOVES.map((m) => [m.id, t(m.name)]), c.move || 'in', (v) => {
+    {
+      body.append(group(c.kind === 'image' ? 'Движение фото' : 'Движение', chips(Engine.MOVES.map((m) => [m.id, t(m.name)]), c.move || (c.kind === 'image' ? 'in' : 'none'), (v) => {
         commit(() => { c.move = v; });
         /* показываем движение сразу */
         const s = Timeline.starts(p)[sel];
@@ -2367,6 +2593,7 @@ window.Vlog = (function () {
     reset.onclick = () => commit(() => { delete c.fit; delete c.zoom; delete c.x; delete c.y; delete c.cx; delete c.cy; });
     row.append(reset, toAll('Вписать так все клипы', () => p.clips.forEach((x) => { x.fit = c.fit || ''; })));
     if (c.kind === 'image') row.append(toAll('Движение ко всем фото', () => p.clips.forEach((x) => { if (x.kind === 'image') x.move = c.move || 'in'; })));
+    else row.append(toAll('Движение ко всем видео', () => p.clips.forEach((x) => { if (x.kind === 'video') x.move = c.move || 'none'; })));
     body.append(row);
     body.append(el('p', 'hint', t(fixed ? 'Двигай кадр в окошке пальцем на просмотре, щипком или колесом меняй масштаб.' : 'Двигай кадр пальцем прямо на просмотре, щипком меняй масштаб. На компьютере: мышью и колесом.')));
   }
@@ -2511,7 +2738,7 @@ window.Vlog = (function () {
       const b = el('button', `thumb${c.look === id ? ' on' : ''}`);
       b.type = 'button';
       b.append(lookThumb(c, look), el('span', '', look ? t(look.name) : t('Без цвета')));
-      b.onclick = () => commit(() => { c.look = id; });
+      b.onclick = () => commit(() => { targets().forEach((x) => { x.look = id; }); });
       grid.append(b);
     });
     body.append(grid, toAll('Ко всем клипам', () => p.clips.forEach((x) => { x.look = c.look; })));
@@ -3040,6 +3267,13 @@ window.Vlog = (function () {
       }).catch(() => {});
     }
     syncCover();
+    let lim = $('vlogLimits');
+    if (!lim) {
+      lim = el('p', 'hint');
+      lim.id = 'vlogLimits';
+      $('vlogExportNote').after(lim);
+    }
+    lim.textContent = window.VlogData.limitsText(total(), p.ratio, I18n.lang);
     d.showModal();
   }
   let fastOk = false;
@@ -3142,7 +3376,7 @@ window.Vlog = (function () {
     else if (k === 'End') seekTo(total());
     else if (k === '+' || k === '=') zoom(1.4);
     else if (k === '-' || k === '_') zoom(1 / 1.4);
-    else if (k === 'Escape') { if (sheet) openSheet(''); else if (ov) selectOv(''); else if (join >= 0) selectJoin(-1); else select(-1); }
+    else if (k === 'Escape') { if (multi.size) select(-1); else if (sheet) openSheet(''); else if (ov) selectOv(''); else if (join >= 0) selectJoin(-1); else select(-1); }
   }
 
   /* ---------- открыть и закрыть ---------- */
@@ -3203,6 +3437,7 @@ window.Vlog = (function () {
     sel = -1;
     sheet = '';
     if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(() => {});
+    remindBackup();
     requestAnimationFrame(() => {
       sizeCanvas();
       /* масштаб ленты: весь ролик примерно на ширину экрана */
@@ -3211,6 +3446,16 @@ window.Vlog = (function () {
       syncAll();
       kick();
     });
+  }
+
+  /* влог живёт только в памяти браузера: если в нём много работы и давно не было копии файлом, напоминаем раз за открытие */
+  let reminded = false;
+  function remindBackup() {
+    const e = entry();
+    if (reminded || !e || (e.clips || 0) < 6) return;
+    if (e.saved && (e.updated || 0) - e.saved < 3 * 864e5) return;
+    reminded = true;
+    setTimeout(() => { if (open) toast(t('Влог хранится только в этом браузере. Сохрани копию файлом: нажми на название влога → «Сохранить влог файлом».'), 9000); }, 1500);
   }
 
   function close() {

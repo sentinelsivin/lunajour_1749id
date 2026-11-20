@@ -79,6 +79,14 @@ window.VlogFast = (function () {
     return k ? Math.sqrt(sum / k) : 0;
   }
 
+  /* звук к громкости: напрямую или через «чистый голос», как в просмотре */
+  function wire(oc, src, g, clean) {
+    if (!clean) { src.connect(g); return; }
+    const ch = Engine.cleanChain(oc);
+    src.connect(ch.input);
+    ch.output.connect(g);
+  }
+
   async function mix(p, total, signal) {
     const T = total / 1000;
     const oc = new OfflineAudioContext(2, Math.max(1, Math.ceil(T * SR)), SR);
@@ -106,7 +114,8 @@ window.VlogFast = (function () {
       g.gain.linearRampToValueAtTime(v, s + fin);
       g.gain.setValueAtTime(v, s + l - fout);
       g.gain.linearRampToValueAtTime(0, s + l);
-      src.connect(g).connect(oc.destination);
+      wire(oc, src, g, c.clean);
+      g.connect(oc.destination);
       src.start(s, c.in / 1000, l);
       voices.push({ s, l, buf, off: c.in / 1000, v });
       any = true;
@@ -127,7 +136,8 @@ window.VlogFast = (function () {
       src.buffer = buf;
       const g = oc.createGain();
       g.gain.value = v;
-      src.connect(g).connect(oc.destination);
+      wire(oc, src, g, o.layer.clean);
+      g.connect(oc.destination);
       src.start(s, off, l);
       voices.push({ s, l, buf, off, v });
       any = true;
@@ -326,5 +336,91 @@ window.VlogFast = (function () {
     }
   }
 
-  return { can, record, cover };
+  /* ---------- обратная перемотка ----------
+     Клип перекодируется задом наперёд в новый MP4 (до 30 с, не больше 1280 по длинной стороне).
+     Файл читается кусками по полсекунды вперёд, каждый кусок записывается в обратном порядке: памяти нужно немного. */
+  const REVERSE_MAX_MS = 30000;
+  async function reverse(clip, onProgress, signal) {
+    const MB = await lib();
+    const blob = await Engine.blobOf(clip.media);
+    if (!blob) throw new Error('no file');
+    const input = new MB.Input({ source: new MB.BlobSource(blob), formats: MB.ALL_FORMATS });
+    let output = null;
+    let ok = false;
+    try {
+      const track = await input.getPrimaryVideoTrack();
+      if (!track || !(await track.canDecode())) throw new Error('cannot decode');
+      const first = await track.getFirstTimestamp();
+      const sw = track.displayWidth;
+      const sh = track.displayHeight;
+      const k = Math.min(1, 1280 / Math.max(sw, sh));
+      const W = Math.max(2, Math.round((sw * k) / 2) * 2);
+      const H = Math.max(2, Math.round((sh * k) / 2) * 2);
+      if (!(await MB.canEncodeVideo('avc', { width: W, height: H, bitrate: bitrateFor(W, H) }))) throw new Error('no encoder');
+      const a = clip.in / 1000;
+      const dur = (clip.out - clip.in) / 1000;
+      const n = Math.max(1, Math.round(dur * FPS));
+
+      /* звук задом наперёд */
+      let sound = null;
+      const abuf = await decode(clip.media);
+      if (abuf && (await MB.canEncodeAudio('aac', { numberOfChannels: 2, sampleRate: SR, bitrate: 160000 }))) {
+        const from = Math.floor(a * abuf.sampleRate);
+        const len = Math.max(1, Math.min(abuf.length - from, Math.round(dur * abuf.sampleRate)));
+        sound = new AudioBuffer({ numberOfChannels: abuf.numberOfChannels, length: len, sampleRate: abuf.sampleRate });
+        for (let ch = 0; ch < abuf.numberOfChannels; ch++) {
+          const src = abuf.getChannelData(ch);
+          const dst = sound.getChannelData(ch);
+          for (let i = 0; i < len; i++) dst[i] = src[from + len - 1 - i] || 0;
+        }
+      }
+
+      const c = Render.canvas(W, H);
+      const x = c.getContext('2d');
+      output = new MB.Output({ format: new MB.Mp4OutputFormat({ fastStart: 'in-memory' }), target: new MB.BufferTarget() });
+      const video = new MB.CanvasSource(c, { codec: 'avc', bitrate: bitrateFor(W, H), keyFrameInterval: 1 });
+      output.addVideoTrack(video, { frameRate: FPS });
+      const audio = sound ? new MB.AudioBufferSource({ codec: 'aac', bitrate: 160000 }) : null;
+      if (audio) output.addAudioTrack(audio);
+      await output.start();
+      if (audio) await audio.add(sound);
+
+      const sink = new MB.VideoSampleSink(track);
+      const SEG = 15;
+      const pool = [...Array(SEG)].map(() => Render.canvas(W, H));
+      for (let end = n; end > 0; end -= SEG) {
+        if (signal && signal.aborted) return null;
+        const startK = Math.max(0, end - SEG);
+        const times = [];
+        for (let i = startK; i < end; i++) times.push(first + a + i / FPS);
+        const have = [];
+        let q = 0;
+        for await (const sample of sink.samplesAtTimestamps(times)) {
+          if (sample) {
+            sample.draw(pool[q].getContext('2d'), 0, 0, W, H);
+            sample.close();
+            have[q] = true;
+          } else have[q] = q > 0 && have[q - 1];
+          q++;
+        }
+        for (let r = times.length - 1; r >= 0; r--) {
+          /* кадра нет (конец файла): остаётся предыдущий */
+          if (have[r]) x.drawImage(pool[r], 0, 0);
+          const j = n - 1 - (startK + r);
+          await video.add(j / FPS, 1 / FPS);
+        }
+        onProgress(1 - startK / n);
+      }
+      video.close();
+      if (audio) audio.close();
+      await output.finalize();
+      ok = true;
+      return new Blob([output.target.buffer], { type: 'video/mp4' });
+    } finally {
+      if (output && !ok) await output.cancel().catch(() => {});
+      if (input.dispose) input.dispose();
+    }
+  }
+
+  return { can, record, cover, mix, reverse, REVERSE_MAX_MS };
 })();

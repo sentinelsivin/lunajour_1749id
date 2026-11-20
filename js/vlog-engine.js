@@ -255,7 +255,8 @@ window.VlogEngine = (function () {
   ];
   const ZOOM_MAX = 4;
   const clamp1 = (v) => Math.max(-1, Math.min(1, v));
-  const moveOf = (clip) => (clip.kind === 'image' ? clip.move || 'in' : 'none');
+  /* у фото по умолчанию лёгкий наезд, у видео движения нет, пока его не выбрать */
+  const moveOf = (clip) => (clip.kind === 'image' ? clip.move || 'in' : clip.move || 'none');
 
   /* где рисовать источник sw×sh в кадре W×H; into01 — доля показа клипа, для движения фото */
   function framing(clip, sw, sh, W, H, into01 = 0) {
@@ -768,6 +769,46 @@ window.VlogEngine = (function () {
     s.start(now, offset);
     music = { s, g };
   }
+  /* ---------- чистый голос ----------
+     Без нейросетей: срезаем гул и низ ниже 90 Гц, шипение выше 8 кГц, чуть поднимаем разборчивость около 3 кГц
+     и выравниваем громкость компрессором. Шум улицы так не убрать, а гул, ветер в микрофоне и шипение заметно тише. */
+  function cleanChain(ctx) {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 90;
+    hp.Q.value = 0.7;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = Math.min(8000, ctx.sampleRate / 2 - 100);
+    lp.Q.value = 0.7;
+    const pres = ctx.createBiquadFilter();
+    pres.type = 'peaking';
+    pres.frequency.value = 3000;
+    pres.Q.value = 1;
+    pres.gain.value = 3;
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -26;
+    comp.ratio.value = 3;
+    comp.knee.value = 8;
+    comp.attack.value = 0.005;
+    comp.release.value = 0.2;
+    const make = ctx.createGain();
+    make.gain.value = 1.4;
+    hp.connect(lp).connect(pres).connect(comp).connect(make);
+    return { input: hp, output: make };
+  }
+  /* у живого видео цепочка включается и выключается переключением проводов: без неё звук идёт напрямую */
+  function setClean(v, on) {
+    if (!v.node || !v.gain || !!v.clean === on) return;
+    if (on && !v.chain) {
+      v.chain = cleanChain(audio());
+      v.chain.output.connect(v.gain);
+    }
+    v.node.disconnect();
+    v.node.connect(on ? v.chain.input : v.gain);
+    v.clean = on;
+  }
+
   /* ---------- озвучка: полоски layer.type 'voice' (layer.media — запись, layer.from — откуда в записи, мс) ----------
      Голос идёт через шину клипов: музыка под ним приглушается так же, как под голосом в клипе. */
   const voiceBufs = new Map();
@@ -802,7 +843,12 @@ window.VlogEngine = (function () {
       s.buffer = buf;
       const g = c.createGain();
       g.gain.value = Math.max(0, (o.layer.vol ?? 100) / 100);
-      s.connect(g).connect(clips);
+      if (o.layer.clean) {
+        const ch = cleanChain(c);
+        s.connect(ch.input);
+        ch.output.connect(g);
+      } else s.connect(g);
+      g.connect(clips);
       const offset = ((o.layer.from || 0) + (begin - o.start)) / 1000;
       if (offset >= buf.duration) continue;
       s.start(c.currentTime + (begin - nowMs) / 1000, offset, (o.end - begin) / 1000);
@@ -888,6 +934,7 @@ window.VlogEngine = (function () {
       const v = video(clip.media);
       if (v) {
         setClipGain(v, (clip.vol / 100) * edgeLevel(p, i, into, Timeline.len(clip)));
+        setClean(v, !!clip.clean);
         v.el.playbackRate = clip.speed;
         if (Math.abs(v.el.currentTime * 1000 - local) > DRIFT_MS * clip.speed) v.el.currentTime = local / 1000;
         if (v.el.paused && v.ready) v.el.play().catch(() => {});
@@ -1057,7 +1104,7 @@ window.VlogEngine = (function () {
   }
 
   return {
-    importFile, forget, persist, inMemory, blobOf, muteSpeakers, voiceBuffer, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
+    importFile, forget, persist, cleanChain, inMemory, blobOf, muteSpeakers, voiceBuffer, drawFrame, preloadLooks, steer, play, pause, seek, record, canRecord,
     /* для быстрой записи (js/vlog-fast.js) */
     preload, prepareFrame, frameNeeds, seekClip, setFrame, setExporting, musicBuffer, musicInfo, beatTimes, WAVE_RATE, edgeMs, DUCK_TO, DUCK_RMS, DUCK_HOLD,
     audio, looks, lookOf, TRANSITIONS, ANIMS, FITS, MOVES, ZOOM_MAX, framing, visible, overlayBox, assets,
